@@ -38,6 +38,7 @@ from todo_orchestrator.model import (
     QualifiedDestination,
     QualifiedSourceRevision,
     SourceSafety,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import CompiledPlan
@@ -57,7 +58,28 @@ HEARTBEAT_ACTION = StableId("todo.attempt.heartbeat")
 RELEASE_ACTION = StableId("todo.attempt.release")
 FINISH_ACTION = StableId("todo.attempt.finish")
 RECONCILE_ACTION = StableId("todo.attempt.reconcile_expired")
+VERIFICATION_ACTION = StableId("todo.verification.execute")
+VERIFICATION_RECONCILE_ACTION = StableId("todo.verification.reconcile")
+OUTCOME_REPORT_ACTION = StableId("todo.outcome.report")
 ATTEMPT_SESSION_ACTIONS = (HEARTBEAT_ACTION, RELEASE_ACTION, FINISH_ACTION)
+ATTEMPT_SESSION_VERIFY_ACTIONS = (*ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION)
+ATTEMPT_SESSION_RECONCILE_ACTIONS = (*ATTEMPT_SESSION_ACTIONS, VERIFICATION_RECONCILE_ACTION)
+ATTEMPT_SESSION_REPORT_ACTIONS = (*ATTEMPT_SESSION_ACTIONS, OUTCOME_REPORT_ACTION)
+ATTEMPT_SESSION_VERIFICATION_ACTIONS = (
+    *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION,
+)
+ATTEMPT_SESSION_VERIFY_REPORT_ACTIONS = (
+    *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, OUTCOME_REPORT_ACTION,
+)
+ATTEMPT_SESSION_RECONCILE_REPORT_ACTIONS = (
+    *ATTEMPT_SESSION_ACTIONS, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
+)
+ATTEMPT_SESSION_VERIFICATION_REPORT_ACTIONS = (
+    *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
+)
+_ATTEMPT_SESSION_ACTION_CEILING = frozenset((
+    *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
+))
 _LIVE_STATES = (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED)
 _TERMINAL_STATES = (AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED)
 
@@ -149,6 +171,15 @@ def _workspace_values(qualification: WorkspaceQualification) -> tuple[object, ..
     base = qualification.common_base
     destination = qualification.destination
     receipt = qualification.receipt
+    isolation = qualification.isolation
+    isolation_json = json.dumps(
+        None if isolation is None else {
+            "repository_storage": isolation.repository_storage.hex,
+            "workspace_root": isolation.workspace_root.hex,
+            "index_file": isolation.index_file.hex,
+            "head_ref": str(isolation.head_ref),
+        }, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"),
+    )
     return (
         str(qualification.workspace_id), str(qualification.repository_id),
         str(base.project_id), str(base.ref), base.digest,
@@ -157,6 +188,7 @@ def _workspace_values(qualification: WorkspaceQualification) -> tuple[object, ..
         receipt.provider.contract_version, str(receipt.receipt_id),
         str(receipt.correlation_id), receipt.request_digest.hex,
         str(receipt.provenance_ref), _iso(receipt.observed_at),
+        isolation_json, hashlib.sha256(isolation_json.encode("ascii")).hexdigest(),
     )
 
 
@@ -169,6 +201,31 @@ def _workspace_from_row(project: Project, row: sqlite3.Row) -> WorkspaceQualific
         Sha256Digest(row["request_digest"]), StableId(row["provenance_ref"]),
         _parse_time(row["observed_at"]),
     )
+    isolation_json = row["isolation_json"]
+    isolation_digest = row["isolation_digest"]
+    if hashlib.sha256(isolation_json.encode("ascii")).hexdigest() != isolation_digest:
+        raise AttemptObservationMismatchError("stored workspace isolation digest does not match")
+    try:
+        isolation_value = json.loads(isolation_json)
+        if isolation_value is None:
+            isolation = None
+        elif isinstance(isolation_value, dict) and set(isolation_value) == {
+            "repository_storage", "workspace_root", "index_file", "head_ref",
+        }:
+            isolation = WorkspaceIsolation(
+                Sha256Digest(isolation_value["repository_storage"]),
+                Sha256Digest(isolation_value["workspace_root"]),
+                Sha256Digest(isolation_value["index_file"]),
+                StableId(isolation_value["head_ref"]),
+            )
+        else:
+            raise ValueError("unexpected isolation fields")
+        if json.dumps(
+            isolation_value, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"),
+        ) != isolation_json:
+            raise ValueError("isolation JSON is not canonical")
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        raise AttemptObservationMismatchError(f"stored workspace isolation is invalid: {exc}") from exc
     return WorkspaceQualification(
         StableId(row["workspace_id"]), StableId(row["repository_id"]),
         QualifiedSourceRevision(
@@ -180,6 +237,7 @@ def _workspace_from_row(project: Project, row: sqlite3.Row) -> WorkspaceQualific
             StableId(row["destination_ref"]),
         ),
         receipt,
+        isolation,
     )
 
 
@@ -256,7 +314,8 @@ def _insert_workspace(
         "INSERT INTO attempt_workspace_qualifications(attempt_id, workspace_id, repository_id, "
         "base_project_id, base_ref, base_digest, destination_project_id, destination_ref, provider_id, "
         "provider_version, provider_contract_version, receipt_id, correlation_id, request_digest, "
-        "provenance_ref, observed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "provenance_ref, observed_at, isolation_json, isolation_digest) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (str(attempt_id), *_workspace_values(qualification)),
     )
 
@@ -554,7 +613,7 @@ class _HeartbeatHandler(_AttemptHandlerBase):
             expected_run=attempt.run,
             expected_assignment=attempt.assignment,
             expected_attempt=attempt.ref,
-            expected_actions=ATTEMPT_SESSION_ACTIONS,
+            expected_actions=None,
             expires_at=expires_at,
             now=now,
         )

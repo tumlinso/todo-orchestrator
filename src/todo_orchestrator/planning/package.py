@@ -26,6 +26,7 @@ from todo_orchestrator.contracts.domain import (
     StableId,
     WorkItem,
 )
+from todo_orchestrator.contracts.verification import EvidenceRequirement, VerificationContract
 
 
 PLAN_FORMAT = "todo-orchestrator.plan"
@@ -654,6 +655,30 @@ def _validate_record(raw: dict[str, Any], path: str, kind: str, allowed: set[str
         if result["kind"] not in {item.value for item in RequirementKind}:
             _fail("unsupported_requirement_kind", f"{path}/kind", f"unsupported requirement kind {result['kind']!r}")
         result["description"] = _string(raw["description"], f"{path}/description")
+        if "verification" in raw:
+            try:
+                result["verification"] = VerificationContract.from_mapping(raw["verification"]).to_mapping()
+            except (TypeError, ValueError) as error:
+                _fail("invalid_verification_contract", f"{path}/verification", str(error))
+        if "required_evidence" in raw:
+            if not isinstance(raw["required_evidence"], list):
+                _fail("expected_array", f"{path}/required_evidence", "required_evidence must be an array")
+            evidence = []
+            seen_evidence = set()
+            for index, item in enumerate(raw["required_evidence"]):
+                try:
+                    normalized = EvidenceRequirement.from_mapping(item).to_mapping()
+                except (TypeError, ValueError) as error:
+                    _fail("invalid_required_evidence", f"{path}/required_evidence/{index}", str(error))
+                if normalized["name"] in seen_evidence:
+                    _fail("duplicate_required_evidence", f"{path}/required_evidence/{index}/name", "required evidence names must be unique")
+                seen_evidence.add(normalized["name"])
+                evidence.append(normalized)
+            result["required_evidence"] = sorted(evidence, key=lambda entry: entry["name"])
+        if "required_evidence" in result and "verification" not in result:
+            _fail("evidence_without_verifier", f"{path}/required_evidence", "required evidence must be bound to a verification contract")
+        if result["kind"] == RequirementKind.PREREQUISITE.value and ("verification" in result or "required_evidence" in result):
+            _fail("verification_on_prerequisite", path, "verification contracts and required evidence belong to check requirements")
         if result["kind"] == RequirementKind.PREREQUISITE.value:
             if "target" not in raw or "check_key" in raw:
                 _fail("invalid_requirement", path, "prerequisite requires target and must not declare check_key")
@@ -908,7 +933,7 @@ def parse_plan_json(
         records: dict[str, list[dict[str, Any]]] = {}
         records["work_items"] = _id_records(top["work_items"], "$/work_items", work_allowed, project["project_id"])
         record_specs = {
-            "requirements": {"id", "work_item_id", "kind", "description", "target", "check_key"},
+            "requirements": {"id", "work_item_id", "kind", "description", "target", "check_key", "verification", "required_evidence"},
             "checkpoints": {"id", "title", "acceptance", "unknowns", "producers"},
             "interfaces": {"id", "title", "version", "contract", "producers", "consumers", "compatibility"},
             "decisions": {"id", "title", "question", "options", "selected_option_id", "unknowns", "resolvers"},
@@ -1225,6 +1250,10 @@ def compile_plan(
                 description=raw["description"],
                 target=None if target_ref is None else target_ref.reference,
                 check_key=None if raw["kind"] == RequirementKind.PREREQUISITE.value else StableId(raw["check_key"]),
+                verification=None if "verification" not in raw else VerificationContract.from_mapping(_thaw(raw["verification"])),
+                required_evidence=tuple(
+                    EvidenceRequirement.from_mapping(_thaw(item)) for item in raw.get("required_evidence", [])
+                ),
             )
             compiled_requirements[raw["id"]] = PlannedRequirement(definition, target_ref)
 

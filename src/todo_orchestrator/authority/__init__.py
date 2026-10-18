@@ -32,6 +32,7 @@ from .attempts import (
     HEARTBEAT_ACTION,
     RECONCILE_ACTION,
     RELEASE_ACTION,
+    OUTCOME_REPORT_ACTION,
 )
 from .commands import (
     CommandActorNotRegisteredError,
@@ -86,6 +87,7 @@ __all__ = [
     "HEARTBEAT_ACTION",
     "RECONCILE_ACTION",
     "RELEASE_ACTION",
+    "OUTCOME_REPORT_ACTION",
     "AuthenticatedPrincipal",
     "AuthenticationFailedError",
     "AuthenticationProviderUnavailableError",

@@ -1,4 +1,4 @@
-# SQLite authority v8
+# SQLite authority v12
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v8 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v8
+Schema v12 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v12
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -48,7 +48,7 @@ Reusing an exact definition reference requires identical bundle bytes, digest,
 and normalized projections. Snapshot, membership, and definition corruption
 fails closed; the reader does not repair or infer missing authority state.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v8
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v13
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -74,14 +74,14 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v8 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v7 or any other unsupported version
+Schema v12 is the only implemented version. `migrate()` is an explicit current
+version no-op and rejects schema v1 through v11 or any other unsupported version
 without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v7 migration is provided. A future migration must preserve
+be recreated; no v1-v11 migration is provided. A future migration must preserve
 definition identity and full accepted-snapshot meaning; it cannot infer mixed
 membership from matching revision IDs.
 
-Schema v8 adds immutable run-schedule snapshots, lane policies, and queue
+Schema v8 introduced immutable run-schedule snapshots, lane policies, and queue
 positions attached to immutable assignments. A schedule can omit lane
 hierarchy, in which case one serial `default` lane is persisted. Role
 constraints are required action IDs on the same capability that grants a
@@ -91,6 +91,14 @@ distinct provider-qualified workspaces with matching common base and
 destination. Lane and queue policy never bypass capability, assignment, or
 shared admission checks. Direct assignment-free claims remain available for
 work that is not scheduled in a run.
+Schema v9 introduced typed verification/evidence contracts to requirement projections
+and the distinct `evaluated_not_promoted` outcome disposition. Their exact
+canonical forms remain bound to the immutable accepted definition bundle.
+Schema v10 adds durable verification operations, source and receipt provenance,
+and named typed evidence facts. These records do not accept work outcomes.
+Schemas v11 and v12 add candidate reports, immutable accepted outcome provenance
+and typed benchmark measurement payloads. They preserve the distinction between
+verification observations, candidate reports and separately authorized outcomes.
 For a future supported migration, first validate the source identity/version
 read-only, create a non-overwriting adjacent backup with SQLite's online backup
 API, and apply the versioned DDL in one transaction with the version marker

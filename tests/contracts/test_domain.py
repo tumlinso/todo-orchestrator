@@ -73,7 +73,7 @@ def digest(value: str = "a" * 64) -> Sha256Digest:
 
 class DomainValueTests(unittest.TestCase):
     def test_contract_version_and_identifiers_are_stable_values(self):
-        self.assertEqual(DOMAIN_CONTRACT_VERSION, 1)
+        self.assertEqual(DOMAIN_CONTRACT_VERSION, 2)
         self.assertEqual(str(sid("work-17")), "work-17")
         for invalid in ("", "  ", "has space", "a\nb", "\x7f", "\x80", "a\x9fb", "x" * 129):
             with self.subTest(invalid=invalid), self.assertRaises(ValueError):

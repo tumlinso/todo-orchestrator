@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields, is_dataclass
 from datetime import datetime
 from enum import Enum
-from typing import Generic, Protocol, TypeVar
+import hashlib
+import json
+import math
+from typing import Generic, Mapping, Protocol, TypeVar
 
 from .domain import EntityKind, EntityRef, EvidenceInput, EvidenceResult, Sha256Digest, StableId
+from .verification import EvidenceKind, EvidenceRequirement, VerificationContract
 
 
-PROVIDER_CONTRACT_VERSION = 1
+PROVIDER_CONTRACT_VERSION = 3
 T = TypeVar("T")
 
 
@@ -46,6 +50,35 @@ def _actor_ref(value: EntityRef, project_id: StableId, name: str = "actor") -> N
 def _aware(value: datetime, name: str) -> None:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         raise ValueError(f"{name} must be timezone-aware")
+
+
+def _provider_value(value: object) -> object:
+    if isinstance(value, StableId):
+        return str(value)
+    if isinstance(value, Sha256Digest):
+        return value.hex
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, datetime):
+        return value.isoformat(timespec="microseconds")
+    if isinstance(value, Mapping):
+        return {str(key): _provider_value(item) for key, item in sorted(value.items())}
+    if isinstance(value, (tuple, list)):
+        return [_provider_value(item) for item in value]
+    if is_dataclass(value):
+        return {field.name: _provider_value(getattr(value, field.name)) for field in fields(value)}
+    if value is None or type(value) in {str, int, float, bool}:
+        return value
+    raise TypeError(f"unsupported provider request value: {type(value).__name__}")
+
+
+def provider_request_digest(request: object) -> Sha256Digest:
+    """Canonical digest providers must echo in receipts for an exact request."""
+    material = json.dumps(
+        _provider_value(request), ensure_ascii=False, allow_nan=False,
+        sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8")
+    return Sha256Digest(hashlib.sha256(material).hexdigest())
 
 
 @dataclass(frozen=True)
@@ -189,10 +222,44 @@ class TrustedContextProvider(Protocol):
 
 
 @dataclass(frozen=True)
+class ArtifactExpectation:
+    """Exact stored artifact whose current availability a trusted observer checks."""
+
+    artifact_id: StableId
+    expected_digest: Sha256Digest
+
+    def __post_init__(self) -> None:
+        _id(self.artifact_id, "artifact_id")
+        if not isinstance(self.expected_digest, Sha256Digest):
+            raise TypeError("expected_digest must be a Sha256Digest")
+
+
+@dataclass(frozen=True)
+class ArtifactAvailability:
+    artifact_id: StableId
+    available: bool
+    content_digest: Sha256Digest | None
+
+    def __post_init__(self) -> None:
+        _id(self.artifact_id, "artifact_id")
+        if type(self.available) is not bool:
+            raise TypeError("available must be bool")
+        if self.available != (self.content_digest is not None):
+            raise ValueError("available artifacts require a digest and unavailable artifacts must omit it")
+        if self.content_digest is not None and not isinstance(self.content_digest, Sha256Digest):
+            raise TypeError("content_digest must be a Sha256Digest")
+
+
+@dataclass(frozen=True)
 class SourceObservationRequest:
     context: ProviderCallContext
     correlation_id: StableId
     expected_source: Sha256Digest | None = None
+    attempt: EntityRef | None = None
+    workspace_id: StableId | None = None
+    target: EntityRef | None = None
+    contract: VerificationContract | None = None
+    artifacts: tuple[ArtifactExpectation, ...] = ()
 
     def __post_init__(self) -> None:
         _id(self.correlation_id, "correlation_id")
@@ -200,6 +267,26 @@ class SourceObservationRequest:
             raise TypeError("context must be a ProviderCallContext")
         if self.expected_source is not None and not isinstance(self.expected_source, Sha256Digest):
             raise TypeError("expected_source must be a Sha256Digest")
+        if self.attempt is not None and (
+            not isinstance(self.attempt, EntityRef) or self.attempt.kind is not EntityKind.ATTEMPT
+            or self.attempt.project_id != self.context.project_id
+        ):
+            raise ValueError("attempt must be a project-local attempt reference")
+        if self.workspace_id is not None:
+            _id(self.workspace_id, "workspace_id")
+        if self.target is not None and (
+            not isinstance(self.target, EntityRef) or self.target.kind is not EntityKind.WORK_ITEM
+            or self.target.project_id != self.context.project_id
+        ):
+            raise ValueError("target must be a project-local qualified work-item reference")
+        if self.contract is not None and not isinstance(self.contract, VerificationContract):
+            raise TypeError("contract must be a VerificationContract")
+        _tuple(self.artifacts, "artifacts", ArtifactExpectation, unique=True)
+        if len({item.artifact_id for item in self.artifacts}) != len(self.artifacts):
+            raise ValueError("artifact expectations must not repeat identifiers")
+        bound = (self.attempt, self.workspace_id, self.target)
+        if any(value is not None for value in bound) and any(value is None for value in bound):
+            raise ValueError("attempt, workspace_id, and target must be supplied together")
 
 
 class WorkingTreeState(str, Enum):
@@ -213,6 +300,8 @@ class SourceObservation:
     source_digest: Sha256Digest
     base_digest: Sha256Digest | None
     working_tree: WorkingTreeState
+    inputs: tuple[EvidenceInput, ...] = ()
+    artifacts: tuple[ArtifactAvailability, ...] = ()
 
     def __post_init__(self) -> None:
         _id(self.repository_id, "repository_id")
@@ -222,10 +311,94 @@ class SourceObservation:
             raise TypeError("base_digest must be a Sha256Digest")
         if not isinstance(self.working_tree, WorkingTreeState):
             raise TypeError("working_tree must be a WorkingTreeState")
+        _tuple(self.inputs, "inputs", EvidenceInput, unique=True)
+        _tuple(self.artifacts, "artifacts", ArtifactAvailability, unique=True)
+        if len({item.name for item in self.inputs}) != len(self.inputs):
+            raise ValueError("source inputs must not repeat names")
+        if len({item.artifact_id for item in self.artifacts}) != len(self.artifacts):
+            raise ValueError("source artifact observations must not repeat identifiers")
 
 
 class SourceObserver(Protocol):
     def observe(self, request: SourceObservationRequest) -> ProviderResult[SourceObservation]: ...
+
+
+class DeclarationKind(str, Enum):
+    CHECKPOINT = "checkpoint"
+    INTERFACE = "interface"
+    BARRIER = "barrier"
+    RENDEZVOUS = "rendezvous"
+
+
+class DeclarationStatus(str, Enum):
+    SATISFIED = "satisfied"
+    UNSATISFIED = "unsatisfied"
+    UNRESOLVED = "unresolved"
+
+
+@dataclass(frozen=True)
+class DeclarationObservationRequest:
+    """Fresh exact-version query for state not represented by an authored declaration."""
+
+    context: ProviderCallContext
+    correlation_id: StableId
+    attempt: EntityRef
+    workspace_id: StableId
+    plan_revision_id: StableId
+    target: EntityRef
+    declaration_kind: DeclarationKind
+    declaration_digest: Sha256Digest
+    expected_version: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.context, ProviderCallContext):
+            raise TypeError("context must be a ProviderCallContext")
+        _id(self.correlation_id, "correlation_id")
+        _id(self.workspace_id, "workspace_id")
+        _id(self.plan_revision_id, "plan_revision_id")
+        if not isinstance(self.attempt, EntityRef) or self.attempt.kind is not EntityKind.ATTEMPT:
+            raise ValueError("attempt must reference an attempt")
+        if self.attempt.project_id != self.context.project_id:
+            raise ValueError("attempt must belong to the context project")
+        kinds = {
+            DeclarationKind.CHECKPOINT: EntityKind.CHECKPOINT,
+            DeclarationKind.INTERFACE: EntityKind.INTERFACE,
+            DeclarationKind.BARRIER: EntityKind.BARRIER,
+            DeclarationKind.RENDEZVOUS: EntityKind.BARRIER,
+        }
+        if not isinstance(self.declaration_kind, DeclarationKind) or not isinstance(self.target, EntityRef):
+            raise TypeError("declaration_kind and target must be typed values")
+        if self.target.kind is not kinds[self.declaration_kind] or self.target.project_id != self.context.project_id:
+            raise ValueError("target must be the exact project-local declaration reference")
+        if not isinstance(self.declaration_digest, Sha256Digest):
+            raise TypeError("declaration_digest must be a Sha256Digest")
+        if self.expected_version is not None:
+            _text(self.expected_version, "expected_version")
+
+
+@dataclass(frozen=True)
+class DeclarationObservation:
+    target: EntityRef
+    declaration_kind: DeclarationKind
+    declaration_digest: Sha256Digest
+    status: DeclarationStatus
+    observed_version: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.target, EntityRef):
+            raise TypeError("target must be an EntityRef")
+        if not isinstance(self.declaration_kind, DeclarationKind):
+            raise TypeError("declaration_kind must be a DeclarationKind")
+        if not isinstance(self.declaration_digest, Sha256Digest):
+            raise TypeError("declaration_digest must be a Sha256Digest")
+        if not isinstance(self.status, DeclarationStatus):
+            raise TypeError("status must be a DeclarationStatus")
+        if self.observed_version is not None:
+            _text(self.observed_version, "observed_version")
+
+
+class DeclarationObserver(Protocol):
+    def observe_declaration(self, request: DeclarationObservationRequest) -> ProviderResult[DeclarationObservation]: ...
 
 
 @dataclass(frozen=True)
@@ -237,6 +410,7 @@ class EffectInspectionRequest:
     idempotency_key: StableId
     original_request_digest: Sha256Digest
     correlation_id: StableId
+    git_effect_request: GitEffectRequest | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -248,6 +422,13 @@ class EffectInspectionRequest:
             _id(value, name)
         if not isinstance(self.original_request_digest, Sha256Digest):
             raise TypeError("original_request_digest must be a Sha256Digest")
+        if self.git_effect_request is not None:
+            if not isinstance(self.git_effect_request, GitEffectRequest):
+                raise TypeError("git_effect_request must be a GitEffectRequest")
+            if (self.git_effect_request.operation_id != self.operation_id
+                    or self.git_effect_request.idempotency_key != self.idempotency_key
+                    or provider_request_digest(self.git_effect_request) != self.original_request_digest):
+                raise ValueError("git_effect_request must match the inspected operation identity and digest")
 
 
 class GitOperationKind(str, Enum):
@@ -276,6 +457,10 @@ class GitEffectRequest:
     expected_source: Sha256Digest
     expected_authority_revision: int
     workspace_id: StableId | None = None
+    base_ref: StableId | None = None
+    source_commit: StableId | None = None
+    destination_ref: StableId | None = None
+    expected_destination: StableId | None = None
 
     def __post_init__(self) -> None:
         for value, name in ((self.operation_id, "operation_id"), (self.idempotency_key, "idempotency_key")):
@@ -290,6 +475,12 @@ class GitEffectRequest:
             raise ValueError("expected_authority_revision must be positive")
         if self.workspace_id is not None:
             _id(self.workspace_id, "workspace_id")
+        for value, name in (
+            (self.base_ref, "base_ref"), (self.source_commit, "source_commit"),
+            (self.destination_ref, "destination_ref"), (self.expected_destination, "expected_destination"),
+        ):
+            if value is not None:
+                _id(value, name)
 
 
 @dataclass(frozen=True)
@@ -298,6 +489,7 @@ class GitEffectObservation:
     disposition: GitEffectDisposition
     resulting_source: Sha256Digest | None = None
     conflict_refs: tuple[StableId, ...] = ()
+    external_ref: StableId | None = None
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -305,6 +497,8 @@ class GitEffectObservation:
             raise TypeError("disposition must be a GitEffectDisposition")
         if self.resulting_source is not None and not isinstance(self.resulting_source, Sha256Digest):
             raise TypeError("resulting_source must be a Sha256Digest")
+        if self.external_ref is not None:
+            _id(self.external_ref, "external_ref")
         _tuple(self.conflict_refs, "conflict_refs", StableId, unique=True)
         if self.disposition is GitEffectDisposition.APPLIED and self.resulting_source is None:
             raise ValueError("an applied Git effect requires resulting_source")
@@ -535,6 +729,10 @@ class VerificationRequest:
     expected_source: Sha256Digest
     contract_digest: Sha256Digest
     inputs: tuple[EvidenceInput, ...]
+    contract: VerificationContract | None = None
+    workspace_id: StableId | None = None
+    verifier_version: str | None = None
+    required_evidence: tuple[EvidenceRequirement, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -554,9 +752,66 @@ class VerificationRequest:
             _id(value, name)
         if not isinstance(self.expected_source, Sha256Digest) or not isinstance(self.contract_digest, Sha256Digest):
             raise TypeError("expected_source and contract_digest must be Sha256Digest values")
+        if self.contract is not None and not isinstance(self.contract, VerificationContract):
+            raise TypeError("contract must be a VerificationContract")
+        if self.workspace_id is not None:
+            _id(self.workspace_id, "workspace_id")
+        if self.verifier_version is not None:
+            _text(self.verifier_version, "verifier_version")
+        _tuple(self.required_evidence, "required_evidence", EvidenceRequirement, unique=True)
+        if len({item.name for item in self.required_evidence}) != len(self.required_evidence):
+            raise ValueError("required_evidence must not repeat names")
+        if (self.contract is None) != (self.workspace_id is None):
+            raise ValueError("contract and workspace_id must be supplied together")
+        if self.contract is not None:
+            encoded = json.dumps(
+                self.contract.to_mapping(), ensure_ascii=False, allow_nan=False,
+                sort_keys=True, separators=(",", ":"),
+            )
+            actual = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            if actual != self.contract_digest.hex:
+                raise ValueError("contract_digest does not match the typed contract")
         _tuple(self.inputs, "inputs", EvidenceInput, unique=True)
         if len({item.name for item in self.inputs}) != len(self.inputs):
             raise ValueError("inputs must not repeat names")
+
+
+@dataclass(frozen=True)
+class VerificationEvidenceFact:
+    """One named, versioned evidence value returned by a trusted verifier."""
+
+    name: StableId
+    kind: EvidenceKind
+    version: int
+    digest: Sha256Digest
+    artifact_id: StableId | None = None
+    benchmark_value: float | None = None
+    unit: str | None = None
+    sample_count: int | None = None
+
+    def __post_init__(self) -> None:
+        _id(self.name, "evidence fact name")
+        if not isinstance(self.kind, EvidenceKind):
+            raise TypeError("evidence fact kind must be an EvidenceKind")
+        if type(self.version) is not int or self.version < 1:
+            raise ValueError("evidence fact version must be a positive integer")
+        if not isinstance(self.digest, Sha256Digest):
+            raise TypeError("evidence fact digest must be a Sha256Digest")
+        if self.artifact_id is not None:
+            _id(self.artifact_id, "evidence artifact_id")
+            if self.kind is not EvidenceKind.ARTIFACT_REFERENCE:
+                raise ValueError("artifact_id is only valid for artifact_reference evidence")
+        benchmark_fields = (self.benchmark_value, self.unit, self.sample_count)
+        if self.kind is EvidenceKind.BENCHMARK_SAMPLE:
+            if (type(self.benchmark_value) not in {int, float} or not math.isfinite(self.benchmark_value)
+                    or not isinstance(self.unit, str) or not self.unit or self.unit != self.unit.strip()
+                    or type(self.sample_count) is not int or self.sample_count < 1):
+                raise ValueError("benchmark_sample facts require a finite value, unit, and positive sample_count")
+            if len(self.unit) > 128 or any(ord(char) < 32 for char in self.unit):
+                raise ValueError("benchmark sample unit is invalid")
+            object.__setattr__(self, "benchmark_value", float(self.benchmark_value))
+        elif any(value is not None for value in benchmark_fields):
+            raise ValueError("numeric benchmark fields belong only to benchmark_sample evidence")
 
 
 @dataclass(frozen=True)
@@ -569,6 +824,7 @@ class VerificationObservation:
     contract_digest: Sha256Digest
     inputs: tuple[EvidenceInput, ...]
     artifact_ids: tuple[StableId, ...]
+    evidence_facts: tuple[VerificationEvidenceFact, ...] = ()
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -582,6 +838,12 @@ class VerificationObservation:
         if len({item.name for item in self.inputs}) != len(self.inputs):
             raise ValueError("inputs must not repeat names")
         _tuple(self.artifact_ids, "artifact_ids", StableId, unique=True)
+        _tuple(self.evidence_facts, "evidence_facts", VerificationEvidenceFact, unique=True)
+        if len({item.name for item in self.evidence_facts}) != len(self.evidence_facts):
+            raise ValueError("evidence facts must not repeat names")
+        artifact_refs = [item.artifact_id for item in self.evidence_facts if item.artifact_id is not None]
+        if len(set(artifact_refs)) != len(artifact_refs) or any(item not in self.artifact_ids for item in artifact_refs):
+            raise ValueError("evidence artifact references must be unique members of artifact_ids")
 
 
 class VerificationProvider(Protocol):
@@ -601,6 +863,7 @@ class VerificationInspection:
     operation_id: StableId
     state: VerificationInspectionState
     observation: VerificationObservation | None = None
+    original_receipt: ProviderReceipt | None = None
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -609,21 +872,25 @@ class VerificationInspection:
         if self.state is VerificationInspectionState.COMPLETED:
             if not isinstance(self.observation, VerificationObservation):
                 raise ValueError("completed inspection requires a VerificationObservation")
+            if not isinstance(self.original_receipt, ProviderReceipt):
+                raise ValueError("completed inspection requires the original verification receipt")
             if self.observation.operation_id != self.operation_id:
                 raise ValueError("observation must match the inspected operation")
-        elif self.observation is not None:
-            raise ValueError("running or not-started inspection cannot contain a completion observation")
+        elif self.observation is not None or self.original_receipt is not None:
+            raise ValueError("running or not-started inspection cannot contain completion evidence")
 
 
 __all__ = [
     "PROVIDER_CONTRACT_VERSION", "ProviderIdentity", "ProviderReceipt", "ProviderStatus", "ProviderResult",
+    "provider_request_digest",
     "ProviderCallContext", "TrustedContextRequest", "TrustedActorContext", "TrustedContextProvider",
-    "SourceObservationRequest", "WorkingTreeState", "SourceObservation", "SourceObserver",
+    "ArtifactExpectation", "ArtifactAvailability", "SourceObservationRequest", "WorkingTreeState", "SourceObservation", "SourceObserver",
+    "DeclarationKind", "DeclarationStatus", "DeclarationObservationRequest", "DeclarationObservation", "DeclarationObserver",
     "EffectInspectionRequest",
     "GitOperationKind", "GitEffectDisposition", "GitEffectRequest", "GitEffectObservation", "GitEffectsProvider",
     "CommandExecutionRequest", "CommandObservation", "CommandInspectionState", "CommandExecutionInspection",
     "CommandExecutionProvider", "ResourcePermitRequest", "ResourcePermitRef", "ResourcePermitReleaseRequest",
     "ResourcePermitRelease", "ResourcePermitInspectionState", "ResourcePermitInspection", "ResourcePermitProvider",
-    "VerificationRequest", "VerificationObservation", "VerificationInspectionState", "VerificationInspection",
+    "VerificationRequest", "VerificationEvidenceFact", "VerificationObservation", "VerificationInspectionState", "VerificationInspection",
     "VerificationProvider",
 ]

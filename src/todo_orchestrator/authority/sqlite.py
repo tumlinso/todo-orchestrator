@@ -22,10 +22,11 @@ import tempfile
 from typing import Any, Iterator, Mapping
 
 from todo_orchestrator.contracts import EntityKind, Project, StableId
+from todo_orchestrator.contracts.verification import EvidenceRequirement, VerificationContract
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 13
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -243,6 +244,8 @@ _SCHEMA_STATEMENTS = (
         target_entity_id TEXT,
         target_definition_revision_id TEXT,
         check_key TEXT,
+        verification_json TEXT NOT NULL DEFAULT 'null',
+        required_evidence_json TEXT NOT NULL DEFAULT '[]',
         PRIMARY KEY (requirement_id, definition_revision_id),
         UNIQUE (work_item_id, definition_revision_id, requirement_id),
         CHECK (
@@ -487,6 +490,10 @@ _SCHEMA_STATEMENTS = (
         request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'),
         provenance_ref TEXT NOT NULL,
         observed_at TEXT NOT NULL,
+        isolation_json TEXT NOT NULL,
+        isolation_digest TEXT NOT NULL CHECK (
+            length(isolation_digest) = 64 AND isolation_digest NOT GLOB '*[^0-9a-f]*'
+        ),
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
     )""",
     """CREATE TABLE attempt_scope_snapshots (
@@ -520,18 +527,30 @@ _SCHEMA_STATEMENTS = (
         UNIQUE (provider_id, external_ref),
         CHECK (content_digest IS NULL OR (length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'))
     )""",
+    """CREATE TRIGGER artifacts_identity_and_digest_guard
+        BEFORE UPDATE ON artifacts
+        WHEN OLD.provider_id != NEW.provider_id OR OLD.external_ref != NEW.external_ref
+          OR (OLD.content_digest IS NOT NULL AND NEW.content_digest IS NOT OLD.content_digest)
+          OR (OLD.content_digest IS NULL AND NEW.content_digest IS NULL)
+        BEGIN SELECT RAISE(ABORT, 'artifact identity is immutable and content digest may be pinned once'); END""",
+    """CREATE TRIGGER artifacts_no_delete
+        BEFORE DELETE ON artifacts
+        BEGIN SELECT RAISE(ABORT, 'artifact records are append-only'); END""",
     """CREATE TABLE evidence (
         evidence_id TEXT PRIMARY KEY,
         attempt_id TEXT NOT NULL,
         requirement_id TEXT,
         requirement_definition_revision_id TEXT,
+        operation_id TEXT,
         result TEXT NOT NULL CHECK (result IN ('pass', 'fail', 'inconclusive')),
         verifier_id TEXT NOT NULL,
         verifier_version TEXT NOT NULL,
         contract_digest TEXT NOT NULL CHECK (length(contract_digest) = 64 AND contract_digest NOT GLOB '*[^0-9a-f]*'),
+        source_digest TEXT CHECK (source_digest IS NULL OR (length(source_digest) = 64 AND source_digest NOT GLOB '*[^0-9a-f]*')),
         observed_at TEXT NOT NULL,
         CHECK ((requirement_id IS NULL) = (requirement_definition_revision_id IS NULL)),
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (operation_id) REFERENCES external_operations(operation_id),
         FOREIGN KEY (requirement_id, requirement_definition_revision_id)
             REFERENCES requirements(requirement_id, definition_revision_id)
     )""",
@@ -549,13 +568,29 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (evidence_id) REFERENCES evidence(evidence_id),
         FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id)
     )""",
+    """CREATE TABLE evidence_facts (
+        evidence_id TEXT NOT NULL,
+        fact_name TEXT NOT NULL,
+        fact_kind TEXT NOT NULL CHECK (fact_kind IN (
+            'command_result', 'file_observation', 'artifact_reference', 'benchmark_sample',
+            'predicate_result', 'interface_observation', 'checkpoint_receipt',
+            'manual_attestation', 'provider_receipt'
+        )),
+        fact_version INTEGER NOT NULL CHECK (fact_version > 0),
+        fact_digest TEXT NOT NULL CHECK (length(fact_digest) = 64 AND fact_digest NOT GLOB '*[^0-9a-f]*'),
+        artifact_id TEXT,
+        value_json TEXT,
+        PRIMARY KEY (evidence_id, fact_name),
+        FOREIGN KEY (evidence_id) REFERENCES evidence(evidence_id),
+        FOREIGN KEY (artifact_id) REFERENCES artifacts(artifact_id)
+    )""",
     """CREATE TABLE outcomes (
         outcome_id TEXT PRIMARY KEY,
         work_item_id TEXT NOT NULL,
         definition_revision_id TEXT NOT NULL,
         version INTEGER NOT NULL CHECK (version > 0),
         disposition TEXT NOT NULL CHECK (disposition IN (
-            'completed', 'accepted_negative', 'no_change', 'failed', 'superseded'
+            'completed', 'accepted_negative', 'no_change', 'evaluated_not_promoted', 'failed', 'superseded'
         )),
         accepted_by_actor_id TEXT NOT NULL,
         accepted_by_incarnation_id TEXT NOT NULL,
@@ -575,6 +610,40 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (outcome_id) REFERENCES outcomes(outcome_id),
         FOREIGN KEY (evidence_id) REFERENCES evidence(evidence_id)
     )""",
+    """CREATE TABLE outcome_candidates (
+        candidate_id TEXT PRIMARY KEY,
+        attempt_id TEXT NOT NULL,
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        disposition TEXT NOT NULL CHECK (disposition IN (
+            'completed', 'accepted_negative', 'no_change', 'evaluated_not_promoted', 'failed'
+        )),
+        note TEXT,
+        report_source_json TEXT NOT NULL,
+        report_receipt_json TEXT NOT NULL,
+        reported_by_actor_id TEXT NOT NULL,
+        reported_by_incarnation_id TEXT NOT NULL,
+        reported_at TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'accepted', 'rejected')),
+        outcome_id TEXT UNIQUE,
+        UNIQUE (candidate_id, attempt_id),
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id),
+        FOREIGN KEY (reported_by_actor_id, reported_by_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (outcome_id) REFERENCES outcomes(outcome_id)
+    )""",
+    """CREATE TABLE outcome_provenance (
+        outcome_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL UNIQUE,
+        canonical_json TEXT NOT NULL,
+        content_digest TEXT NOT NULL CHECK (
+            length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        FOREIGN KEY (outcome_id) REFERENCES outcomes(outcome_id),
+        FOREIGN KEY (candidate_id) REFERENCES outcome_candidates(candidate_id)
+    )""",
     """CREATE TABLE external_operations (
         operation_id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
@@ -589,6 +658,80 @@ _SCHEMA_STATEMENTS = (
         CHECK (receipt_digest IS NULL OR (length(receipt_digest) = 64 AND receipt_digest NOT GLOB '*[^0-9a-f]*')),
         CHECK (state NOT IN ('observed', 'finalized') OR receipt_digest IS NOT NULL),
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
+    )""",
+    """CREATE TABLE git_effect_operations (
+        operation_id TEXT PRIMARY KEY,
+        request_json TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (
+            length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        state TEXT NOT NULL CHECK (state IN (
+            'prepared', 'executing', 'applied', 'conflict', 'dirty', 'rejected',
+            'not_applied', 'unknown', 'finalized'
+        )),
+        observation_json TEXT,
+        provider_receipt_json TEXT,
+        updated_at TEXT NOT NULL,
+        CHECK ((state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'finalized')
+                AND observation_json IS NOT NULL AND provider_receipt_json IS NOT NULL)
+            OR state NOT IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'finalized')),
+        FOREIGN KEY (operation_id) REFERENCES external_operations(operation_id)
+    )""",
+    """CREATE TRIGGER git_effect_request_immutable
+        BEFORE UPDATE ON git_effect_operations
+        WHEN OLD.request_json IS NOT NEW.request_json OR OLD.request_digest IS NOT NEW.request_digest
+        BEGIN SELECT RAISE(ABORT, 'Git effect intent is immutable'); END""",
+    """CREATE TRIGGER git_effect_state_transition_guard
+        BEFORE UPDATE ON git_effect_operations
+        WHEN NOT (
+            (OLD.state = 'prepared' AND NEW.state IN ('executing', 'not_applied', 'unknown'))
+            OR (OLD.state = 'executing' AND NEW.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'unknown'))
+            OR (OLD.state = 'unknown' AND NEW.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'unknown'))
+            OR (OLD.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied') AND NEW.state = 'finalized')
+        )
+        BEGIN SELECT RAISE(ABORT, 'Git effect state transition is invalid'); END""",
+    """CREATE TRIGGER git_effect_operations_no_delete
+        BEFORE DELETE ON git_effect_operations
+        BEGIN SELECT RAISE(ABORT, 'Git effect operations are append-only'); END""",
+    """CREATE TABLE verification_attempts (
+        operation_id TEXT PRIMARY KEY,
+        attempt_id TEXT NOT NULL,
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        requirement_id TEXT NOT NULL,
+        requirement_definition_revision_id TEXT NOT NULL,
+        plan_revision_id TEXT NOT NULL,
+        verifier_id TEXT NOT NULL,
+        verifier_version TEXT NOT NULL,
+        contract_json TEXT NOT NULL,
+        contract_digest TEXT NOT NULL CHECK (length(contract_digest) = 64 AND contract_digest NOT GLOB '*[^0-9a-f]*'),
+        source_digest TEXT NOT NULL CHECK (length(source_digest) = 64 AND source_digest NOT GLOB '*[^0-9a-f]*'),
+        inputs_json TEXT NOT NULL,
+        source_receipt_json TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'),
+        state TEXT NOT NULL CHECK (state IN ('prepared', 'executing', 'observed', 'not_started', 'finalized', 'rejected', 'stale', 'unknown', 'failed')),
+        observation_json TEXT,
+        provider_receipt_json TEXT,
+        final_source_receipt_json TEXT,
+        inspection_json TEXT,
+        evidence_id TEXT,
+        stale_reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        finalized_at TEXT,
+        FOREIGN KEY (operation_id) REFERENCES external_operations(operation_id),
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id),
+        FOREIGN KEY (requirement_id, requirement_definition_revision_id)
+            REFERENCES requirements(requirement_id, definition_revision_id),
+        FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id),
+        FOREIGN KEY (evidence_id) REFERENCES evidence(evidence_id),
+        CHECK ((state IN ('finalized', 'rejected', 'stale') AND evidence_id IS NOT NULL
+                AND observation_json IS NOT NULL AND provider_receipt_json IS NOT NULL
+                AND final_source_receipt_json IS NOT NULL AND finalized_at IS NOT NULL)
+            OR state NOT IN ('finalized', 'rejected', 'stale'))
     )""",
     """CREATE TABLE authority_events (
         event_id TEXT PRIMARY KEY,
@@ -666,6 +809,59 @@ _SCHEMA_STATEMENTS = (
     """CREATE TRIGGER run_queue_no_delete
         BEFORE DELETE ON run_queue
         BEGIN SELECT RAISE(ABORT, 'run queue entries are append-only'); END""",
+    """CREATE TRIGGER evidence_facts_no_update
+        BEFORE UPDATE ON evidence_facts
+        BEGIN SELECT RAISE(ABORT, 'evidence facts are append-only'); END""",
+    """CREATE TRIGGER evidence_facts_no_delete
+        BEFORE DELETE ON evidence_facts
+        BEGIN SELECT RAISE(ABORT, 'evidence facts are append-only'); END""",
+    """CREATE TRIGGER evidence_no_update
+        BEFORE UPDATE ON evidence
+        BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END""",
+    """CREATE TRIGGER evidence_no_delete
+        BEFORE DELETE ON evidence
+        BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END""",
+    """CREATE TRIGGER evidence_inputs_no_update
+        BEFORE UPDATE ON evidence_inputs
+        BEGIN SELECT RAISE(ABORT, 'evidence inputs are append-only'); END""",
+    """CREATE TRIGGER evidence_inputs_no_delete
+        BEFORE DELETE ON evidence_inputs
+        BEGIN SELECT RAISE(ABORT, 'evidence inputs are append-only'); END""",
+    """CREATE TRIGGER evidence_artifacts_no_update
+        BEFORE UPDATE ON evidence_artifacts
+        BEGIN SELECT RAISE(ABORT, 'evidence artifacts are append-only'); END""",
+    """CREATE TRIGGER evidence_artifacts_no_delete
+        BEFORE DELETE ON evidence_artifacts
+        BEGIN SELECT RAISE(ABORT, 'evidence artifacts are append-only'); END""",
+    """CREATE TRIGGER outcome_candidates_no_delete
+        BEFORE DELETE ON outcome_candidates
+        BEGIN SELECT RAISE(ABORT, 'outcome candidates are append-only'); END""",
+    """CREATE TRIGGER outcome_candidates_transition_guard
+        BEFORE UPDATE ON outcome_candidates
+        WHEN NOT (
+            OLD.state = 'pending'
+            AND NEW.state IN ('accepted', 'rejected')
+            AND NEW.candidate_id = OLD.candidate_id
+            AND NEW.attempt_id = OLD.attempt_id
+            AND NEW.work_item_id = OLD.work_item_id
+            AND NEW.definition_revision_id = OLD.definition_revision_id
+            AND NEW.disposition = OLD.disposition
+            AND NEW.note IS OLD.note
+            AND NEW.report_source_json = OLD.report_source_json
+            AND NEW.report_receipt_json = OLD.report_receipt_json
+            AND NEW.reported_by_actor_id = OLD.reported_by_actor_id
+            AND NEW.reported_by_incarnation_id = OLD.reported_by_incarnation_id
+            AND NEW.reported_at = OLD.reported_at
+            AND ((NEW.state = 'accepted' AND NEW.outcome_id IS NOT NULL)
+                 OR (NEW.state = 'rejected' AND NEW.outcome_id IS NULL))
+        )
+        BEGIN SELECT RAISE(ABORT, 'outcome candidate transition is invalid'); END""",
+    """CREATE TRIGGER outcome_provenance_no_update
+        BEFORE UPDATE ON outcome_provenance
+        BEGIN SELECT RAISE(ABORT, 'outcome provenance is immutable'); END""",
+    """CREATE TRIGGER outcome_provenance_no_delete
+        BEFORE DELETE ON outcome_provenance
+        BEGIN SELECT RAISE(ABORT, 'outcome provenance is immutable'); END""",
 )
 
 
@@ -678,7 +874,7 @@ def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...
     return tuple(tuple(row) for row in rows)
 
 
-def _compile_schema_v8_signature() -> tuple[tuple[object, ...], ...]:
+def _compile_schema_signature() -> tuple[tuple[object, ...], ...]:
     connection = sqlite3.connect(":memory:")
     try:
         for statement in _SCHEMA_STATEMENTS:
@@ -688,9 +884,9 @@ def _compile_schema_v8_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v8 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v13 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
-_SCHEMA_V8_SIGNATURE = _compile_schema_v8_signature()
+_SCHEMA_SIGNATURE = _compile_schema_signature()
 
 _REQUIRED_TABLES = frozenset({
     "authority_meta", "plan_revisions", "plan_revision_snapshots", "work_items", "plan_revision_work_items",
@@ -699,8 +895,9 @@ _REQUIRED_TABLES = frozenset({
     "attempts", "capabilities", "capability_tokens",
     "local_owner_credentials", "capability_actions",
     "attempt_capabilities", "attempt_workspace_qualifications", "attempt_scope_snapshots",
-    "artifacts", "evidence", "evidence_inputs", "evidence_artifacts",
-    "outcomes", "outcome_evidence", "external_operations", "authority_events",
+    "artifacts", "evidence", "evidence_inputs", "evidence_artifacts", "evidence_facts",
+    "outcomes", "outcome_evidence", "outcome_candidates", "outcome_provenance",
+    "external_operations", "git_effect_operations", "verification_attempts", "authority_events",
     "command_receipts", "command_idempotency",
 })
 
@@ -829,6 +1026,8 @@ def _bundle_projection(record: DefinitionVersionRecord, local_project_id: str) -
         description = requirement.get("description")
         target = requirement.get("target")
         check_key = requirement.get("check_key")
+        verification = requirement.get("verification")
+        required_evidence = requirement.get("required_evidence", [])
         if not isinstance(description, str):
             raise ValueError("requirement description must be a string")
         if kind == "prerequisite":
@@ -852,6 +1051,21 @@ def _bundle_projection(record: DefinitionVersionRecord, local_project_id: str) -
             target_project = target_kind = target_id = target_revision = None
         else:
             raise ValueError("requirement kind must be prerequisite or check")
+        if verification is not None:
+            normalized_verification = VerificationContract.from_mapping(verification).to_mapping()
+            if normalized_verification != verification:
+                raise ValueError("verification contract must use its canonical normalized shape")
+        else:
+            normalized_verification = None
+        if not isinstance(required_evidence, list):
+            raise ValueError("required_evidence must be an array")
+        normalized_evidence = [EvidenceRequirement.from_mapping(value).to_mapping() for value in required_evidence]
+        if normalized_evidence != required_evidence or len({item["name"] for item in normalized_evidence}) != len(normalized_evidence):
+            raise ValueError("required_evidence must use canonical unique typed entries")
+        if normalized_evidence and normalized_verification is None:
+            raise ValueError("required evidence must be bound to a verification contract")
+        verification_json = json.dumps(normalized_verification, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+        required_evidence_json = json.dumps(normalized_evidence, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
         normalized_requirements.append({
             "id": requirement_id,
             "kind": kind,
@@ -861,6 +1075,8 @@ def _bundle_projection(record: DefinitionVersionRecord, local_project_id: str) -
             "target_entity_id": target_id,
             "target_definition_revision_id": target_revision,
             "check_key": check_key,
+            "verification_json": verification_json,
+            "required_evidence_json": required_evidence_json,
         })
 
     normalized_groups = []
@@ -990,12 +1206,13 @@ def _verify_definition_projection(
 
     requirements = connection.execute(
         "SELECT requirement_id, kind, description, target_project_id, target_kind, target_entity_id, "
-        "target_definition_revision_id, check_key FROM requirements "
+        "target_definition_revision_id, check_key, verification_json, required_evidence_json FROM requirements "
         "WHERE work_item_id = ? AND definition_revision_id = ? ORDER BY requirement_id", key,
     ).fetchall()
     expected_requirements = tuple(
         (item["id"], item["kind"], item["description"], item["target_project_id"], item["target_kind"],
-         item["target_entity_id"], item["target_definition_revision_id"], item["check_key"])
+         item["target_entity_id"], item["target_definition_revision_id"], item["check_key"],
+         item["verification_json"], item["required_evidence_json"])
         for item in projection["requirements"]
     )
     if tuple(tuple(row) for row in requirements) != expected_requirements:
@@ -1127,11 +1344,12 @@ def _insert_definition_projections(context: Any, record: DefinitionVersionRecord
     for item in projection["requirements"]:
         context.execute(
             "INSERT INTO requirements(requirement_id, definition_revision_id, work_item_id, kind, description, "
-            "target_project_id, target_kind, target_entity_id, target_definition_revision_id, check_key) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "target_project_id, target_kind, target_entity_id, target_definition_revision_id, check_key, "
+            "verification_json, required_evidence_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (item["id"], revision_id, work_id, item["kind"], item["description"],
              item["target_project_id"], item["target_kind"], item["target_entity_id"],
-             item["target_definition_revision_id"], item["check_key"]),
+             item["target_definition_revision_id"], item["check_key"], item["verification_json"],
+             item["required_evidence_json"]),
         )
     for group in projection["groups"]:
         context.execute(
@@ -1341,8 +1559,8 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
         raise InvalidAuthorityError("authority semantic revision is invalid")
 
     try:
-        if _schema_signature(connection) != _SCHEMA_V8_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v8 definition")
+        if _schema_signature(connection) != _SCHEMA_SIGNATURE:
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v13 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -1406,7 +1624,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v8 authority without replacing an existing path.
+        """Create a new schema-v13 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -1558,7 +1776,7 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v8 is the only supported version. A current v8 authority is a
+        Schema v13 is the only supported version. A current v13 authority is a
         no-op. Older versions and every other unsupported version are rejected
         without opening the file writable; this method never guesses a
         conversion or restores a backup.

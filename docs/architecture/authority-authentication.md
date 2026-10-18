@@ -43,6 +43,26 @@ service; it must not be exposed to an untrusted client. Callers that need an
 exact retry must reuse the original `expected_revision`; omitting it asks the
 service to read the latest revision and makes a later call a different request.
 
+Outcome APIs additionally use the narrow `replay_authorized` lookup for an
+already recorded semantic request. It checks current actor, capability, scope
+and context under the writer lock; the API then matches command kind and exact
+stored report/finalization intent before exposing the original receipt. This
+permits lost-response retries after terminal state or a stale original revision
+without rerunning providers. Changed intent and revoked grants remain refused.
+
+| Outcome action | Authority |
+| --- | --- |
+| `todo.outcome.report` | Attempt actor; dispatch may derive it only from a parent that grants it |
+| `todo.outcome.accept` | Separately authorized acceptance actor |
+| `todo.outcome.reject` | Separately authorized rejection actor |
+| `todo.outcome.read` | Current scoped grant for external applicability observations |
+| `todo.outcome.manual.<role>` | Additional grant for a selected manual criterion; exact authored human incarnation also required |
+
+Manual roles are `owner`, `maintainer`, `reviewer` and `project_admin`. Acceptance,
+rejection and manual-role actions are not automatically issued to a worker
+session. A read uses its genuine grant reference; historical records cannot mint
+provider authority.
+
 This service establishes local principals and enforces grant lineage. Future
 commands must still validate referenced entity existence, lifecycle state,
 lease ownership, evidence policy, and operation-specific authorization scope.

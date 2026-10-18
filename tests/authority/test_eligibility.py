@@ -270,12 +270,12 @@ class EligibilityPolicyTests(unittest.TestCase):
         )
         request = request_for(self.project, required_plan)
         missing = evaluate_eligibility(request, base_facts(self.project, required_plan))
-        self.assertEqual(missing.status, EligibilityStatus.UNKNOWN)
+        self.assertEqual(missing.status, EligibilityStatus.ALLOWED)
         failed = base_facts(
             self.project, required_plan,
             check_observations={sid("review"): ConditionResult(ConditionStatus.UNSATISFIED)},
         )
-        self.assertEqual(evaluate_eligibility(request, failed).status, EligibilityStatus.BLOCKED)
+        self.assertEqual(evaluate_eligibility(request, failed).status, EligibilityStatus.ALLOWED)
 
         # A decision declaration is required for a validated condition reference.
         document = plan_document(items=[{"id": "work-a", "paths": []}, {"id": "work-b", "paths": []}], dependencies=[{

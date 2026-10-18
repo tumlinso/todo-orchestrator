@@ -21,11 +21,17 @@ Effectful ports also expose read-only `inspect` methods using `EffectInspectionR
 
 ## Contracts
 
-- `SourceObserver` reports repository identity, source/base digests, and clean/dirty working-tree state. The service compares the result with any expected source and its configured repository scope.
+- `SourceObserver` reports repository identity, source/base digests, named content/interface inputs, and clean/dirty working-tree state. Requests can bind an exact attempt/workspace/target and an optional authored verification contract. Exact artifact expectations require fresh availability and digest observations under the same correlated receipt. The service compares the result with expected source and persisted workspace scope.
+- `DeclarationObserver` reports accepted checkpoint, published interface, barrier or rendezvous state for an exact plan/declaration payload. Requests and observations bind the target, kind, payload digest, optional interface version and provider receipt. Missing observations remain unresolved; declarations and completed producers do not prove publication or arrival.
 - `GitEffectsProvider` receives an operation and idempotency identity, expected source and authority revision, and optional workspace reference. Its disposition reports applied, conflict, dirty, or rejected effects; `OBSERVED_SUCCESS` means the disposition is known, not that it was applied. Unknown effects require reconciliation and preservation of conflicting or dirty work.
 - `GitEffectsProvider.inspect` resolves a prior effect to its observed disposition, including `NOT_APPLIED` only when absence is definitive.
 - `CommandExecutionProvider` receives an attempt-bound tool ID, argument vector, timeout, expected source/revision, and idempotency identity. It does not accept a shell command string. Exit code and output digests are observations only: they cannot accept requirements or outcomes. Its inspection distinguishes `RUNNING`, `COMPLETED`, and proven `NOT_STARTED`; a running result carries no fabricated exit code or completion time. A timeout or lookup without known process state remains `UNKNOWN`.
 - `ResourcePermitProvider` reserves and releases externally owned permits. Inspection reports a held, absent, or released permit for the original operation; it never reserves or releases. Todo may keep a correlated logical reference and expiry, but this API is not a physical lock ledger and grants no GPU, CPU, memory, or job capacity by itself.
 - `VerificationProvider` returns a verdict bound to the requested requirement, source, contract digest, inputs, verifier identity, and artifacts. Its inspection distinguishes running, completed, and proven not-started work without starting verification again. Todo still checks current applicability, required checks, authorization, and acceptance transactionally; a `PASS` is not an accepted outcome.
+
+Provider contract version 2 adds typed benchmark sample values, units and sample
+counts alongside their evidence digests. An explicit allowed negative evaluation
+can retain a definitive benchmark miss; failed command execution and
+inconclusive/provider failures do not become passing checks.
 
 The contracts use `PROVIDER_CONTRACT_VERSION` for this interface and carry provider-specific versions in identities and receipts. A host decides which versions it trusts. Provider instances are optional: abstract planning and other operations that need no external observation/effect remain usable when a provider is absent. An operation that requires an unavailable provider returns a typed `UNAVAILABLE` result. These contracts add no Project Control adapter, discovery registry, process/Git implementation, network runner, or hardware authority.

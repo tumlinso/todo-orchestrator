@@ -105,6 +105,26 @@ def plan_json(project: Project = PROJECT) -> str:
     return json.dumps(document)
 
 
+def plan_with_unknown_alpha_blocker() -> str:
+    """Add a real, unresolved graph prerequisite to alpha for selector tests."""
+    document = json.loads(plan_json())
+    document["checkpoints"] = [{
+        "id": "alpha-checkpoint", "title": "Alpha checkpoint",
+        "acceptance": {"assertions": ["checkpoint is accepted"], "required_evidence": [],
+                       "allowed_dispositions": ["completed"]},
+        "unknowns": [], "producers": [],
+    }]
+    document["dependencies"] = [{
+        "source": {"project_id": str(PROJECT.project_id), "kind": "work_item", "entity_id": "work-alpha"},
+        "mode": "all",
+        "members": [{
+            "relation": "checkpoint_accepted",
+            "target": {"project_id": str(PROJECT.project_id), "kind": "checkpoint", "entity_id": "alpha-checkpoint"},
+        }],
+    }]
+    return json.dumps(document, sort_keys=True)
+
+
 class FixedClock:
     def __init__(self, now=NOW):
         self.now = now
@@ -178,7 +198,11 @@ class IndependentDispatchTests(unittest.TestCase):
                 expected_revision=enrolled.receipt.semantic_revision,
             )
         self.plan_service = PlanService(self.auth)
-        self.plan_package = plan_json()
+        self.plan_package = (
+            plan_with_unknown_alpha_blocker()
+            if self._testMethodName == "test_run_selector_skips_unknown_candidate_but_preserves_all_unknown_refusal"
+            else plan_json()
+        )
         with self.open_writer() as authority:
             preview = self.plan_service.preview(authority, self.plan_package)
             self.plan_service.commit(
@@ -425,29 +449,6 @@ with SQLiteAuthority.open_writer(Path(request["path"]), project) as authority:
         self.assertEqual(self.state_snapshot(), before_denial)
 
     def test_run_selector_skips_unknown_candidate_but_preserves_all_unknown_refusal(self):
-        document = json.loads(self.plan_package)
-        alpha = next(item for item in document["work_items"] if item["id"] == "work-alpha")
-        alpha["requirement_groups"] = [{
-            "kind": "check", "mode": "all", "members": ["alpha-check"],
-        }]
-        document["requirements"] = [{
-            "id": "alpha-check", "work_item_id": "work-alpha", "kind": "check",
-            "description": "An external validator must report this check",
-            "check_key": "alpha-validation",
-        }]
-        self.plan_package = json.dumps(document, sort_keys=True)
-        with self.open_writer() as authority:
-            preview = self.plan_service.preview(authority, self.plan_package)
-            self.plan_service.commit(
-                authority, self.owner.bearer_token, self.plan_package,
-                reviewed_digest=preview.digest,
-                idempotency_key=StableId("dispatch-plan-with-unknown-check"),
-                expected_authority_revision=preview.expected_authority_revision,
-                expected_plan_revision_id=preview.expected_revision_id,
-            )
-        with self.open_reader() as authority:
-            self.plan = self.plan_service.load_accepted_plan(authority)
-
         lane = LaneSpec(
             StableId("dispatch-parallel-lane"), QueuePolicy.PARALLEL,
             isolation_policy=IsolationPolicy.SHARED_SCOPES,

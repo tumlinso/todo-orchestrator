@@ -17,6 +17,7 @@ from .eligibility import (
     EligibilityStatus,
     QualifiedDestination,
     QualifiedSourceRevision,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from .attempts import (
@@ -52,6 +53,7 @@ __all__ = [
     "AttemptScopeSnapshot",
     "QualifiedDestination",
     "QualifiedSourceRevision",
+    "WorkspaceIsolation",
     "WorkspaceQualification",
     "AttemptSafetyObservation",
     "ChildActivity",

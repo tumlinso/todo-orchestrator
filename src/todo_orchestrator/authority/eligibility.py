@@ -463,6 +463,11 @@ def _independent_workspaces(
         and first.common_base.project_id == project_id
         and first.destination == second.destination
         and first.receipt.provider == second.receipt.provider
+        and first.isolation is not None and second.isolation is not None
+        and first.isolation.repository_storage == second.isolation.repository_storage
+        and first.isolation.workspace_root != second.isolation.workspace_root
+        and first.isolation.index_file != second.isolation.index_file
+        and first.isolation.head_ref != second.isolation.head_ref
     )
 
 
@@ -818,6 +823,12 @@ def evaluate_eligibility(request: EligibilityRequest, facts: EligibilityFacts) -
             if value.definition.owner == request.target
         }
         for group in item.definition.requirement_groups:
+            # CHECKs describe evidence needed to evaluate/promote a result.
+            # They are performed by the verification lifecycle and must not
+            # make the work they verify impossible to claim. Prerequisites
+            # remain admission gates; typed graph blockers are evaluated below.
+            if group.kind is RequirementKind.CHECK:
+                continue
             results = tuple(
                 _requirement_result(requirement_by_id[requirement_id], facts)
                 for requirement_id in group.requirement_ids

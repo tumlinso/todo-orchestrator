@@ -10,6 +10,8 @@ from todo_orchestrator.contracts import (
     CommandInspectionState,
     EntityKind,
     EntityRef,
+    ArtifactAvailability,
+    ArtifactExpectation,
     EffectInspectionRequest,
     EvidenceInput,
     EvidenceResult,
@@ -34,6 +36,7 @@ from todo_orchestrator.contracts import (
     VerificationObservation,
     VerificationRequest,
     WorkingTreeState,
+    provider_request_digest,
 )
 
 
@@ -194,6 +197,24 @@ class ProviderEnvelopeTests(unittest.TestCase):
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_source_observation_artifact_availability_is_exact_and_typed(self) -> None:
+        expectation = ArtifactExpectation(sid("artifact-1"), DIGEST)
+        request = SourceObservationRequest(
+            CONTEXT, sid("artifact-source-call"), DIGEST, ATTEMPT, sid("workspace"),
+            EntityRef(PROJECT, EntityKind.WORK_ITEM, sid("target"), definition_revision_id=sid("definition")),
+            artifacts=(expectation,),
+        )
+        no_artifacts = SourceObservationRequest(
+            CONTEXT, request.correlation_id, DIGEST, ATTEMPT, sid("workspace"), request.target,
+        )
+        self.assertNotEqual(provider_request_digest(request), provider_request_digest(no_artifacts))
+        available = ArtifactAvailability(sid("artifact-1"), True, DIGEST)
+        observation = SourceObservation(sid("repo"), DIGEST, None, WorkingTreeState.CLEAN,
+                                        artifacts=(available,))
+        self.assertEqual(observation.artifacts, (available,))
+        with self.assertRaises(ValueError):
+            ArtifactAvailability(sid("artifact-1"), True, None)
+
     def test_fake_source_observer_returns_a_disposable_correlated_observation(self) -> None:
         request = SourceObservationRequest(CONTEXT, sid("source-call"), DIGEST)
         result = FakeSourceObserver().observe(request)

@@ -24,7 +24,13 @@ from todo_orchestrator.contracts import (
 )
 from todo_orchestrator.model import CommandEffect, CommandEnvelope, CommandResult
 
-from .commands import CommandDispatcher, MutationContext
+from .commands import (
+    CommandDispatcher,
+    IdempotencyConflictError,
+    MutationContext,
+    _authorization_authorizer,
+    _receipt_from_row,
+)
 from .scopes import plan_scope_membership, scope_covers as _scope_covers
 from .sqlite import AuthorityError, InvalidAuthorityError, SQLiteAuthority
 
@@ -33,6 +39,13 @@ LOCAL_OWNER_SCRYPT_N = 1 << 14
 LOCAL_OWNER_SCRYPT_R = 8
 LOCAL_OWNER_SCRYPT_P = 1
 _OWNER_ACTIONS = (StableId("todo.capability.delegate"), StableId("todo.capability.revoke"))
+_ATTEMPT_SESSION_ACTIONS = frozenset({
+    StableId("todo.attempt.heartbeat"), StableId("todo.attempt.release"), StableId("todo.attempt.finish"),
+})
+_ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
+    StableId("todo.verification.execute"), StableId("todo.verification.reconcile"),
+    StableId("todo.outcome.report"),
+})
 
 
 class AuthorizationError(AuthorityError):
@@ -113,6 +126,7 @@ class AuthorizationRequirement:
     run: EntityRef | None = None
     assignment: EntityRef | None = None
     attempt: EntityRef | None = None
+    additional_actions: tuple[StableId, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StableId):
@@ -126,6 +140,10 @@ class AuthorizationRequirement:
         ):
             if value is not None and (value.kind is not kind or value.project_id != self.scope.project_id):
                 raise ValueError(f"{name} must be a project-local {kind.value} reference")
+        if not isinstance(self.additional_actions, tuple) or any(
+            not isinstance(action, StableId) for action in self.additional_actions
+        ) or len(set(self.additional_actions)) != len(self.additional_actions):
+            raise ValueError("additional_actions must be a tuple of unique StableId values")
 
 
 @dataclass(frozen=True)
@@ -736,8 +754,10 @@ class AuthorityAuthService:
         if not _context_covers((run, assignment, attempt),
                                (requirement.run, requirement.assignment, requirement.attempt)):
             raise CapabilityDeniedError("capability does not cover the requested run or attempt context")
-        if requirement.action not in _stored_actions(connection, StableId(row["capability_id"])):
-            raise CapabilityDeniedError("capability does not grant the requested action")
+        granted = set(_stored_actions(connection, StableId(row["capability_id"])))
+        required_actions = (requirement.action, *requirement.additional_actions)
+        if any(action not in granted for action in required_actions):
+            raise CapabilityDeniedError("capability does not grant every requested action")
         return StableId(row["capability_id"])
 
     def _derive_scoped_capability_in_transaction(
@@ -815,7 +835,7 @@ class AuthorityAuthService:
         expected_run: EntityRef | None,
         expected_assignment: EntityRef | None,
         expected_attempt: EntityRef,
-        expected_actions: tuple[StableId, ...],
+        expected_actions: tuple[StableId, ...] | None,
         expires_at: datetime,
         now: datetime,
     ) -> int:
@@ -824,8 +844,10 @@ class AuthorityAuthService:
             not isinstance(context, MutationContext) or not isinstance(attempt_id, StableId)
             or not isinstance(expected_scope, EntityRef) or not isinstance(expected_attempt, EntityRef)
             or expected_attempt.kind is not EntityKind.ATTEMPT
-            or not isinstance(expected_actions, tuple)
-            or any(not isinstance(action, StableId) for action in expected_actions)
+            or (expected_actions is not None and (
+                not isinstance(expected_actions, tuple)
+                or any(not isinstance(action, StableId) for action in expected_actions)
+            ))
         ):
             raise TypeError("active context and exact typed attempt grant identity are required")
         expires_at = _aware(expires_at, "attempt grant expiry")
@@ -849,7 +871,13 @@ class AuthorityAuthService:
             current = datetime.fromisoformat(row["expires_at"])
             if current <= now:
                 continue
-            if _stored_actions(context._connection, StableId(row["capability_id"])) != expected_actions:
+            current_actions = _stored_actions(context._connection, StableId(row["capability_id"]))
+            if expected_actions is not None and current_actions != expected_actions:
+                continue
+            if expected_actions is None and (
+                not set(current_actions).issubset(_ATTEMPT_SESSION_ACTION_CEILING)
+                or not set(_ATTEMPT_SESSION_ACTIONS).issubset(current_actions)
+            ):
                 continue
             lineage_ids = [StableId(row["capability_id"])]
             parent_id = row["parent_capability_id"]
@@ -934,6 +962,63 @@ class AuthorityAuthService:
             self._authorize_capability(connection, authority.project, digest, current_actor, requirement)
 
         return self.dispatcher._execute_authorized(authority, envelope, check)
+
+    def replay_authorized(
+        self,
+        authority: SQLiteAuthority,
+        bearer_token: str,
+        idempotency_key: StableId,
+        requirement: AuthorizationRequirement,
+        command_kind: str,
+        validate_intent: Callable[[sqlite3.Connection, sqlite3.Row], bool],
+    ) -> CommandResult | None:
+        """Return a matching prior receipt after checking current authorization.
+
+        This narrow service seam supports retries whose transient provider
+        observations cannot be regenerated. The caller must validate the
+        stored domain event against the requested semantic intent. Existing
+        receipts are discovered under the writer lock, and authentication and
+        current capability scope are checked before the receipt is exposed.
+        """
+        if not isinstance(authority, SQLiteAuthority):
+            raise TypeError("authority must be a SQLiteAuthority")
+        _id(idempotency_key, "idempotency_key")
+        if not isinstance(requirement, AuthorizationRequirement):
+            raise TypeError("requirement must be an AuthorizationRequirement")
+        _nonempty(command_kind, "command_kind")
+        if not callable(validate_intent):
+            raise TypeError("validate_intent must be callable")
+        digest = _token_digest(bearer_token)
+        actor, _ = self._actor_for_token(authority, digest)
+        with authority.write_transaction() as connection:
+            before_changes = connection.total_changes
+            connection.set_authorizer(_authorization_authorizer)
+            try:
+                self._authorize_capability(connection, authority.project, digest, actor, requirement)
+                row = connection.execute(
+                    "SELECT r.receipt_id, r.command_kind, r.semantic_revision, r.changed, r.event_id, "
+                    "r.actor_id, r.actor_incarnation_id, r.result_json, r.created_at, m.project_id, "
+                    "e.event_kind, e.payload_json FROM command_idempotency AS i "
+                    "JOIN command_receipts AS r USING(receipt_id) "
+                    "LEFT JOIN authority_events AS e USING(event_id) "
+                    "CROSS JOIN authority_meta AS m WHERE i.idempotency_key = ? AND m.singleton = 1",
+                    (str(idempotency_key),),
+                ).fetchone()
+                if row is None:
+                    return None
+                if (row["command_kind"] != command_kind
+                        or row["actor_id"] != str(actor.entity_id)
+                        or row["actor_incarnation_id"] != str(actor.incarnation_id)
+                        or not validate_intent(connection, row)):
+                    raise IdempotencyConflictError(
+                        f"idempotency key {idempotency_key} is bound to a different request"
+                    )
+                result = CommandResult(_receipt_from_row(row), replayed=True)
+            finally:
+                connection.set_authorizer(None)
+            if connection.total_changes != before_changes:
+                raise AuthorizationError("receipt replay validation attempted to mutate authority state")
+            return result
 
     def delegate(self, authority: SQLiteAuthority, bearer_token: str, child_credential: object, *,
                  actions: Sequence[StableId], scope: EntityRef,

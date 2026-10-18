@@ -1,16 +1,18 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-V01: Specify typed verification and acceptance requirements
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `104`; current project revision is in `todo-status.md`.
 
 ## Objective
 Retain declared gates, checkpoints and evidence contracts without embedding concrete runners. Make required evidence and accepted negative results first-class, distinguishing acceptance from runtime exit status.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

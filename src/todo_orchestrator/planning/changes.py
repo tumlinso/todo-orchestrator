@@ -246,7 +246,7 @@ def _requirement_value(
     source_revision_id: StableId | None = None,
 ) -> dict[str, Any]:
     definition = item.definition
-    return {
+    value = {
         "id": str(definition.requirement_id),
         "work_item_id": str(definition.work_item_id),
         "kind": definition.kind.value,
@@ -254,6 +254,11 @@ def _requirement_value(
         "target": _qualified_payload(item.target, effective_refs, local_project_id, source_revision_id),
         "check_key": None if definition.check_key is None else str(definition.check_key),
     }
+    if definition.verification is not None:
+        value["verification"] = definition.verification.to_mapping()
+    if definition.required_evidence:
+        value["required_evidence"] = [item.to_mapping() for item in definition.required_evidence]
+    return value
 
 
 def _declaration_value(item: PlanDeclaration) -> dict[str, Any]:

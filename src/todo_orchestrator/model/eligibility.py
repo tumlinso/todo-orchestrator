@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
-from todo_orchestrator.contracts import EntityKind, EntityRef, StableId
+from todo_orchestrator.contracts import EntityKind, EntityRef, Sha256Digest, StableId
 
 from todo_orchestrator.contracts.providers import ProviderReceipt
 
@@ -122,6 +122,29 @@ class QualifiedDestination:
 
 
 @dataclass(frozen=True)
+class WorkspaceIsolation:
+    """Provider-measured physical identities for one linked workspace.
+
+    The path values are one-way identities, not caller supplied paths. A
+    provider may claim overlap is safe only when the repository storage is
+    shared while workspace roots, indexes, and refs are all distinct.
+    """
+
+    repository_storage: Sha256Digest
+    workspace_root: Sha256Digest
+    index_file: Sha256Digest
+    head_ref: StableId
+
+    def __post_init__(self) -> None:
+        if not all(isinstance(value, Sha256Digest) for value in (
+            self.repository_storage, self.workspace_root, self.index_file,
+        )):
+            raise TypeError("workspace isolation identities must be Sha256Digest values")
+        if not isinstance(self.head_ref, StableId):
+            raise TypeError("head_ref must be a StableId")
+
+
+@dataclass(frozen=True)
 class WorkspaceQualification:
     """Provider-observed workspace identity and its exact base/destination.
 
@@ -135,6 +158,7 @@ class WorkspaceQualification:
     common_base: QualifiedSourceRevision
     destination: QualifiedDestination
     receipt: ProviderReceipt
+    isolation: WorkspaceIsolation | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.workspace_id, StableId) or not isinstance(self.repository_id, StableId):
@@ -149,6 +173,8 @@ class WorkspaceQualification:
             raise ValueError("common base and destination must belong to the same project")
         if not isinstance(self.receipt, ProviderReceipt):
             raise TypeError("workspace qualification must retain a provider receipt")
+        if self.isolation is not None and not isinstance(self.isolation, WorkspaceIsolation):
+            raise TypeError("isolation must be a WorkspaceIsolation value")
 
 
 @dataclass(frozen=True)

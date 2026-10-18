@@ -15,7 +15,7 @@ from typing import Mapping
 from unicodedata import category
 
 
-DOMAIN_CONTRACT_VERSION = 1
+DOMAIN_CONTRACT_VERSION = 2
 
 
 def _ids(*values: StableId) -> None:
@@ -242,10 +242,20 @@ class Requirement:
     description: str
     target: EntityRef | None = None
     check_key: StableId | None = None
+    verification: object | None = None
+    required_evidence: tuple[object, ...] = ()
 
     def __post_init__(self) -> None:
         _ids(self.requirement_id, self.project_id, self.definition_revision_id, self.work_item_id)
         _text(self.description, "description")
+        from .verification import EvidenceRequirement, VerificationContract
+        if self.verification is not None and not isinstance(self.verification, VerificationContract):
+            raise TypeError("verification must be a VerificationContract")
+        _items(self.required_evidence, "required_evidence", EvidenceRequirement, unique=True)
+        if len({item.name for item in self.required_evidence}) != len(self.required_evidence):
+            raise ValueError("required_evidence names must be unique")
+        if self.kind is RequirementKind.PREREQUISITE and (self.verification is not None or self.required_evidence):
+            raise ValueError("verification contracts and required evidence belong to check requirements")
         if self.kind is RequirementKind.PREREQUISITE:
             if not isinstance(self.target, EntityRef) or self.target.kind not in BLOCKING_ENTITY_KINDS:
                 names = ", ".join(kind.value for kind in sorted(BLOCKING_ENTITY_KINDS, key=lambda kind: kind.value))
@@ -257,6 +267,8 @@ class Requirement:
                 raise ValueError("a check uses a check_key, not a work-item target")
             if not isinstance(self.check_key, StableId):
                 raise ValueError("a check must have a StableId check_key")
+            if self.required_evidence and self.verification is None:
+                raise ValueError("required evidence requires a verification contract")
         else:
             raise TypeError("kind must be a RequirementKind")
 
@@ -548,6 +560,8 @@ class Evidence:
     observed_at: datetime
     requirement: EntityRef | None = None
     artifacts: tuple[EntityRef, ...] = ()
+    source_digest: Sha256Digest | None = None
+    operation: EntityRef | None = None
 
     def __post_init__(self) -> None:
         _ids(self.evidence_id, self.project_id, self.verifier_id)
@@ -563,6 +577,10 @@ class Evidence:
         _aware(self.observed_at, "observed_at")
         if self.requirement is not None:
             _ref(self.requirement, EntityKind.REQUIREMENT, self.project_id, "requirement")
+        if self.source_digest is not None and not isinstance(self.source_digest, Sha256Digest):
+            raise TypeError("source_digest must be a Sha256Digest")
+        if self.operation is not None:
+            _ref(self.operation, EntityKind.EXTERNAL_OPERATION, self.project_id, "operation")
         _items(self.artifacts, "artifacts", EntityRef, unique=True)
         for artifact in self.artifacts:
             _ref(artifact, EntityKind.ARTIFACT, self.project_id, "artifact")
@@ -576,6 +594,7 @@ class OutcomeDisposition(str, Enum):
     COMPLETED = "completed"
     ACCEPTED_NEGATIVE = "accepted_negative"
     NO_CHANGE = "no_change"
+    EVALUATED_NOT_PROMOTED = "evaluated_not_promoted"
     FAILED = "failed"
     SUPERSEDED = "superseded"
 

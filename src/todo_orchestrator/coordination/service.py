@@ -17,9 +17,15 @@ from todo_orchestrator.authority.attempts import (
     AttemptTransitionError,
     AttemptLeaseMismatchError,
     ATTEMPT_SESSION_ACTIONS,
+    ATTEMPT_SESSION_VERIFY_ACTIONS,
+    ATTEMPT_SESSION_RECONCILE_ACTIONS,
+    ATTEMPT_SESSION_VERIFICATION_ACTIONS,
+    OUTCOME_REPORT_ACTION,
     CLAIM_ACTION,
     FINISH_ACTION,
     RELEASE_ACTION,
+    VERIFICATION_ACTION,
+    VERIFICATION_RECONCILE_ACTION,
     _Claim,
     _ClaimHandler,
     _Release,
@@ -314,6 +320,16 @@ class _DispatchHandler:
             ))
             expires_at = datetime.fromisoformat(str(claimed.result["lease_expires_at"]))
             attempt_ref = EntityRef(context.project.project_id, EntityKind.ATTEMPT, command.attempt_id)
+            session_actions = ATTEMPT_SESSION_ACTIONS
+            for optional_action in (VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION):
+                try:
+                    self.service.auth._authorize_capability(
+                        context._connection, context.project, command.parent_bearer_digest,
+                        context.actor, AuthorizationRequirement(optional_action, target, run, assignment),
+                    )
+                except CapabilityDeniedError:
+                    continue
+                session_actions = (*session_actions, optional_action)
             derived = self.service.auth._derive_scoped_capability_in_transaction(
                 context,
                 bearer_digest=command.parent_bearer_digest,
@@ -321,7 +337,7 @@ class _DispatchHandler:
                 capability_id=command.capability_id,
                 token_digest=command.child_token_digest,
                 scope=target,
-                actions=ATTEMPT_SESSION_ACTIONS,
+                actions=session_actions,
                 run=run,
                 assignment=assignment,
                 attempt=attempt_ref,
