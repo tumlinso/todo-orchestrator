@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T15:46:10Z",
+  "generated_at": "2026-10-18T16:17:43Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 23,
+  "project_revision": 35,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 23,
+    "project_revision": 35,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -267,6 +267,126 @@
         "revision": 23,
         "seq": 23,
         "timestamp": "2026-10-18T15:46:10Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-FOUNDATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-FOUNDATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-F04\"}",
+        "revision": 24,
+        "seq": 24,
+        "timestamp": "2026-10-18T15:46:54Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "c698e6a6-a6c2-4581-ad48-2b3261dc03e1",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 25,
+        "seq": 25,
+        "timestamp": "2026-10-18T15:57:36Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-F04-PROVIDER-CONTRACTS",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-F04-PROVIDER-CONTRACTS\"}",
+        "revision": 26,
+        "seq": 26,
+        "timestamp": "2026-10-18T15:58:18Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-F04-PROVIDER-CONTRACTS",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"973382bd-599c-4891-aef0-64f6f5e8f2d3\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 27,
+        "seq": 27,
+        "timestamp": "2026-10-18T15:58:18Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-F04",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 28, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 28,
+        "seq": 28,
+        "timestamp": "2026-10-18T15:58:18Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-FOUNDATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-FOUNDATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-FOUNDATION\"}",
+        "revision": 29,
+        "seq": 29,
+        "timestamp": "2026-10-18T15:58:19Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-FOUNDATION",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 30, \"disposition\": \"validated\", \"reached_checkpoints\": []}",
+        "revision": 30,
+        "seq": 30,
+        "timestamp": "2026-10-18T15:58:36Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-AUTHORITY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-AUTHORITY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-A01\"}",
+        "revision": 31,
+        "seq": 31,
+        "timestamp": "2026-10-18T15:58:36Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "e23075cc-1744-4f9c-a116-2cfd375a56fa",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 32,
+        "seq": 32,
+        "timestamp": "2026-10-18T16:09:53Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A01-SQLITE-AUTHORITY",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-A01-SQLITE-AUTHORITY\"}",
+        "revision": 33,
+        "seq": 33,
+        "timestamp": "2026-10-18T16:17:40Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A01-SQLITE-AUTHORITY",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"f8969bce-284f-4266-b925-4ef43f57e152\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 34,
+        "seq": 34,
+        "timestamp": "2026-10-18T16:17:43Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A01",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 35, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 35,
+        "seq": 35,
+        "timestamp": "2026-10-18T16:17:43Z"
       }
     ],
     "evidence": [
@@ -334,9 +454,48 @@
         "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/5beea833-d76f-47b8-bfd9-5428454b3331",
         "revision": 20,
         "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T15:58:18Z",
+        "gate_id": "TO-F04-PROVIDER-CONTRACTS",
+        "id": "973382bd-599c-4891-aef0-64f6f5e8f2d3",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/contracts\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/contracts\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"fa70d128d99cdac2dc5f0ee9ffd03c23ce426ed53faa3b6a71a6617670b6d8f6\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/contracts/__init__.py\", \"src/todo_orchestrator/contracts/providers.py\", \"tests/contracts/test_providers.py\", \"todo-status.md\", \"todos.md\", \"todos/to-f04.md\"], \"files\": [{\"path\": \"docs/architecture/provider-contracts.md\", \"sha256\": \"bc751209a6225aad11d54d715716cd135044bf3ae0b54c41a313a15518234e33\"}, {\"path\": \"src/todo_orchestrator/contracts\", \"sha256\": \"missing\"}, {\"path\": \"tests/contracts\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 26}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/973382bd-599c-4891-aef0-64f6f5e8f2d3",
+        "revision": 27,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T16:17:43Z",
+        "gate_id": "TO-A01-SQLITE-AUTHORITY",
+        "id": "f8969bce-284f-4266-b925-4ef43f57e152",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"58172c560b7fd3f745af74606311682c4e1a8cca7e4f083ef1c7cc22e6328b18\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/__init__.py\", \"src/todo_orchestrator/contracts/providers.py\", \"tests/authority/__init__.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_providers.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a01.md\", \"todos/to-f04.md\", \"todos/to-foundation.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/authority\", \"sha256\": \"missing\"}, {\"path\": \"tests/authority\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 33}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/f8969bce-284f-4266-b925-4ef43f57e152",
+        "revision": 34,
+        "status": "passed"
       }
     ],
     "gates": [
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/authority\", \"tests/authority\"]}",
+        "id": "TO-A01-SQLITE-AUTHORITY",
+        "input_fingerprint": "7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c",
+        "last_run_at": "2026-10-18T16:17:43Z",
+        "required": 1,
+        "revision": 34,
+        "status": "passed",
+        "task_id": "TO-A01",
+        "type": "command",
+        "valid": 1
+      },
       {
         "checkpoint_id": null,
         "config_json": "{\"argv\": [\"python\", \"scripts/check_reference_baseline.py\"], \"cwd\": \".\", \"input_paths\": [\"docs/product\", \"scripts/check_reference_baseline.py\"]}",
@@ -401,9 +560,32 @@
         "task_id": "TO-F03",
         "type": "command",
         "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/contracts\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/contracts\", \"tests/contracts\", \"docs/architecture/provider-contracts.md\"]}",
+        "id": "TO-F04-PROVIDER-CONTRACTS",
+        "input_fingerprint": "6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370",
+        "last_run_at": "2026-10-18T15:58:18Z",
+        "required": 1,
+        "revision": 27,
+        "status": "passed",
+        "task_id": "TO-F04",
+        "type": "command",
+        "valid": 1
       }
     ],
     "handoffs": [
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T15:58:36Z",
+        "id": "1a0ce11d-2fff-49e1-a32f-2f379edec702",
+        "kind": "complete",
+        "note": "Foundation closure: F01-F04 completed with executable gates and independent reviews. Source baseline/preservation verified;29contract tests and6temporary offline installed-package tests pass at current tree. Scope and remaining risks explicit: no authentication/provider mechanisms/transactional workflow functionality claimed. Only standalone repository development authority changed; no active Project Control or original source changes.",
+        "payload_json": "{\"authority_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"changed_owned_paths\": [], \"checkpoints\": [], \"completion_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"completion_gates\": [], \"completion_revision\": 30, \"finalized_checkpoints\": [], \"gates\": [], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 161 +++++++++++++++++++++++-----\\n src/todo_orchestrator/contracts/__init__.py |   6 +-\\n todo-status.md                              |   6 +-\\n todos.md                                    |   6 +-\\n todos/to-f04.md                             |   8 +-\\n todos/to-foundation.md                      |   8 +-\\n 6 files changed, 154 insertions(+), 41 deletions(-)\", \"git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Foundation closure: F01-F04 completed with executable gates and independent reviews. Source baseline/preservation verified;29contract tests and6temporary offline installed-package tests pass at current tree. Scope and remaining risks explicit: no authentication/provider mechanisms/transactional workflow functionality claimed. Only standalone repository development authority changed; no active Project Control or original source changes.\", \"producer_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-FOUNDATION\"}",
+        "revision": 30,
+        "task_id": "TO-FOUNDATION"
+      },
       {
         "claim_id": null,
         "created_at": "2026-10-18T15:06:19Z",
@@ -416,6 +598,16 @@
       },
       {
         "claim_id": null,
+        "created_at": "2026-10-18T15:58:18Z",
+        "id": "5e74a4a1-97eb-4860-af56-d9beb60a111f",
+        "kind": "complete",
+        "note": "Versioned trust/provider contracts and docs accepted after independent review.29isolatedcontracttests pass. Provider observations remain separate from Todo grants/acceptance; failure/unknown/unavailable outcomes explicit. Correlated read-only inspection ports support current recovery authority and original operation binding without effect replay. No provider implementations, physical ledger, Project Control integration, service/config/source edits.",
+        "payload_json": "{\"authority_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"changed_owned_paths\": [\"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/contracts/__init__.py\", \"src/todo_orchestrator/contracts/providers.py\", \"tests/contracts/test_providers.py\"], \"checkpoints\": [], \"completion_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"completion_gates\": [{\"evidence_id\": \"973382bd-599c-4891-aef0-64f6f5e8f2d3\", \"evidence_revision\": 27, \"id\": \"TO-F04-PROVIDER-CONTRACTS\", \"input_fingerprint\": \"6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\"}], \"completion_revision\": 28, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-F04-PROVIDER-CONTRACTS\", \"input_fingerprint\": \"6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370\", \"last_run_at\": \"2026-10-18T15:58:18Z\", \"revision\": 27, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 57 +++++++++++++++++++++++------\\n src/todo_orchestrator/contracts/__init__.py |  6 ++-\\n todo-status.md                              |  4 +-\\n todos.md                                    |  2 +-\\n todos/to-f04.md                             |  4 +-\\n 5 files changed, 54 insertions(+), 19 deletions(-)\", \"git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Versioned trust/provider contracts and docs accepted after independent review.29isolatedcontracttests pass. Provider observations remain separate from Todo grants/acceptance; failure/unknown/unavailable outcomes explicit. Correlated read-only inspection ports support current recovery authority and original operation binding without effect replay. No provider implementations, physical ledger, Project Control integration, service/config/source edits.\", \"producer_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-F04\"}",
+        "revision": 28,
+        "task_id": "TO-F04"
+      },
+      {
+        "claim_id": null,
         "created_at": "2026-10-18T14:50:48Z",
         "id": "815e2124-c64a-4145-941c-7327339bbb46",
         "kind": "complete",
@@ -423,6 +615,16 @@
         "payload_json": "{\"authority_commit\": \"9100f82384ab3099057b272ca5504a64e651aad0\", \"changed_owned_paths\": [\"docs/product/reference-baseline.json\", \"docs/product/reference-baseline.md\", \"scripts/check_reference_baseline.py\", \"tests/reference/test_reference_baseline.py\"], \"checkpoints\": [], \"completion_commit\": \"9100f82384ab3099057b272ca5504a64e651aad0\", \"completion_gates\": [{\"evidence_id\": \"22ce4689-7401-4350-9a2a-a62cb57d88b7\", \"evidence_revision\": 6, \"id\": \"TO-F01-BASELINE-CHECK\", \"input_fingerprint\": \"28053bff07d747bf0e2d41d6f560de588553e4d31f539ed9e6aaa5cc641c1fc9\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"9100f82384ab3099057b272ca5504a64e651aad0\"}, {\"evidence_id\": \"34cfb668-e3bc-4a02-95ac-4ffc076eb17c\", \"evidence_revision\": 8, \"id\": \"TO-F01-CHECKER-TESTS\", \"input_fingerprint\": \"0f2f102fd6bf4c9664f79d871c6a8f6f66e7d70fc84deef78c24790b8631f9ba\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"9100f82384ab3099057b272ca5504a64e651aad0\"}], \"completion_revision\": 9, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-F01-BASELINE-CHECK\", \"input_fingerprint\": \"28053bff07d747bf0e2d41d6f560de588553e4d31f539ed9e6aaa5cc641c1fc9\", \"last_run_at\": \"2026-10-18T14:50:48Z\", \"revision\": 6, \"status\": \"passed\", \"valid\": 1}, {\"id\": \"TO-F01-CHECKER-TESTS\", \"input_fingerprint\": \"0f2f102fd6bf4c9664f79d871c6a8f6f66e7d70fc84deef78c24790b8631f9ba\", \"last_run_at\": \"2026-10-18T14:50:48Z\", \"revision\": 8, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json | 3730 +++++++++++++++++++++++++++++++-\\n todo-status.md                         |   46 +-\\n todos.md                               |   46 +-\\n 3 files changed, 3794 insertions(+), 28 deletions(-)\", \"git_head\": \"9100f82384ab3099057b272ca5504a64e651aad0\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"TO-F01 source inventory accepted: 12 capabilities, 9 disposable fixture descriptions, source/test fingerprints and unchanged pre-existing status in both original checkouts. Offline checker and four adversarial tests pass; optional external read-only preservation check passes. Source/test inspection only; no legacy runtime qualification claimed. No Project Control service/config/source changes.\", \"producer_commit\": \"9100f82384ab3099057b272ca5504a64e651aad0\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-F01\"}",
         "revision": 9,
         "task_id": "TO-F01"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T16:17:43Z",
+        "id": "ab7c8fd3-a898-40c8-b1c2-3b33f7e9c20f",
+        "kind": "complete",
+        "note": "SQLite schema-v1 foundation accepted after independent review and adversarial corrections. 24 disposable authority tests pass; integrated source61 and reference4 pass. Explicit init atomically publishes and syncs directory, preserving valid DB on uncertain sync. Existing opens validate identity, WAL, frozen structural schema and FULL writer mode; missing/foreign/unsupported/malformed authorities rejected without repair. Cross-project target identity preserved. Reader snapshots, writer serialization and rollback qualified in temp DBs. Semantic commands/receipt execution remain A02; no live/legacy authority, service/config/source modification.",
+        "payload_json": "{\"authority_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"changed_owned_paths\": [\"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"tests/authority/__init__.py\", \"tests/authority/test_sqlite.py\"], \"checkpoints\": [], \"completion_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"completion_gates\": [{\"evidence_id\": \"f8969bce-284f-4266-b925-4ef43f57e152\", \"evidence_revision\": 34, \"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\"}], \"completion_revision\": 35, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"last_run_at\": \"2026-10-18T16:17:43Z\", \"revision\": 34, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 242 +++++++++++++++++++++++-----\\n src/todo_orchestrator/contracts/__init__.py |   6 +-\\n todo-status.md                              |   8 +-\\n todos.md                                    |   8 +-\\n todos/to-a01.md                             |   8 +-\\n todos/to-f04.md                             |   8 +-\\n todos/to-foundation.md                      |  10 +-\\n 7 files changed, 229 insertions(+), 61 deletions(-)\", \"git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"SQLite schema-v1 foundation accepted after independent review and adversarial corrections. 24 disposable authority tests pass; integrated source61 and reference4 pass. Explicit init atomically publishes and syncs directory, preserving valid DB on uncertain sync. Existing opens validate identity, WAL, frozen structural schema and FULL writer mode; missing/foreign/unsupported/malformed authorities rejected without repair. Cross-project target identity preserved. Reader snapshots, writer serialization and rollback qualified in temp DBs. Semantic commands/receipt execution remain A02; no live/legacy authority, service/config/source modification.\", \"producer_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-A01\"}",
+        "revision": 35,
+        "task_id": "TO-A01"
       },
       {
         "claim_id": null,
@@ -952,6 +1154,19 @@
     "task_artifacts": [],
     "task_completion_gates": [
       {
+        "completion_git_head": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_revision": 35,
+        "evidence_id": "f8969bce-284f-4266-b925-4ef43f57e152",
+        "evidence_revision": 34,
+        "gate_id": "TO-A01-SQLITE-AUTHORITY",
+        "input_fingerprint": "7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c",
+        "provenance_json": "{\"claim_id\": \"e23075cc-1744-4f9c-a116-2cfd375a56fa\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"58172c560b7fd3f745af74606311682c4e1a8cca7e4f083ef1c7cc22e6328b18\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/__init__.py\", \"src/todo_orchestrator/contracts/providers.py\", \"tests/authority/__init__.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_providers.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a01.md\", \"todos/to-f04.md\", \"todos/to-foundation.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/authority\", \"sha256\": \"missing\"}, {\"path\": \"tests/authority\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 33}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/f8969bce-284f-4266-b925-4ef43f57e152\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-A01",
+        "valid": 1,
+        "validation_git_head": "e4537408a0202cb01e978025725dc45341ac3319"
+      },
+      {
         "completion_git_head": "9100f82384ab3099057b272ca5504a64e651aad0",
         "completion_revision": 9,
         "evidence_id": "22ce4689-7401-4350-9a2a-a62cb57d88b7",
@@ -1015,6 +1230,19 @@
         "task_id": "TO-F03",
         "valid": 1,
         "validation_git_head": "9100f82384ab3099057b272ca5504a64e651aad0"
+      },
+      {
+        "completion_git_head": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_revision": 28,
+        "evidence_id": "973382bd-599c-4891-aef0-64f6f5e8f2d3",
+        "evidence_revision": 27,
+        "gate_id": "TO-F04-PROVIDER-CONTRACTS",
+        "input_fingerprint": "6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370",
+        "provenance_json": "{\"claim_id\": \"c698e6a6-a6c2-4581-ad48-2b3261dc03e1\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/contracts\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"6fdd9c2e76426daba88fc2a5e77c1e7981dd2f4226fdc23d8945b9c4bc245370\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/contracts\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"fa70d128d99cdac2dc5f0ee9ffd03c23ce426ed53faa3b6a71a6617670b6d8f6\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/contracts/__init__.py\", \"src/todo_orchestrator/contracts/providers.py\", \"tests/contracts/test_providers.py\", \"todo-status.md\", \"todos.md\", \"todos/to-f04.md\"], \"files\": [{\"path\": \"docs/architecture/provider-contracts.md\", \"sha256\": \"bc751209a6225aad11d54d715716cd135044bf3ae0b54c41a313a15518234e33\"}, {\"path\": \"src/todo_orchestrator/contracts\", \"sha256\": \"missing\"}, {\"path\": \"tests/contracts\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 26}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/973382bd-599c-4891-aef0-64f6f5e8f2d3\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-F04",
+        "valid": 1,
+        "validation_git_head": "e4537408a0202cb01e978025725dc45341ac3319"
       }
     ],
     "task_dependencies": [
@@ -1739,9 +1967,9 @@
     "tasks": [
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_git_head": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_revision": 35,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-A01",
         "kind": "task",
@@ -1753,14 +1981,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-AUTHORITY",
         "priority": 50,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 35,
+        "status": "done",
         "tags_json": "[]",
         "title": "Define project-local SQLite authority and durable schema",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T16:17:43Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -2113,10 +2341,10 @@
         "version": 3
       },
       {
-        "attention_reason": "Operator requested commit and push of completed bootstrap and first development pass before further implementation; TO-F04 has no implementation edits yet.",
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "attention_reason": null,
+        "completion_commit": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_git_head": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_revision": 28,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-F04",
         "kind": "task",
@@ -2128,20 +2356,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-FOUNDATION",
         "priority": 50,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 22,
-        "status": "in_progress",
+        "revision": 28,
+        "status": "done",
         "tags_json": "[]",
         "title": "Define explicit trust and provider contracts",
-        "updated_at": "2026-10-18T15:46:10Z",
-        "version": 3
+        "updated_at": "2026-10-18T15:58:18Z",
+        "version": 5
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_git_head": "e4537408a0202cb01e978025725dc45341ac3319",
+        "completion_revision": 30,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-FOUNDATION",
         "kind": "workstream",
@@ -2153,14 +2381,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-ROOT",
         "priority": 15,
-        "result": null,
+        "result": "validated",
         "result_policy_json": "{\"allowed_dispositions\": [\"validated\", \"no_change_required\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 30,
+        "status": "done",
         "tags_json": "[]",
         "title": "Foundation and product contracts",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T15:58:36Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -3618,13 +3846,13 @@
     "workflow_integration_queue": [],
     "workflow_lane_tasks": [
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T15:58:36Z",
+        "completed_at": "2026-10-18T16:17:43Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-AUTHORITY",
         "position": 0,
-        "revision": 2,
-        "state": "queued",
+        "revision": 35,
+        "state": "completed",
         "task_id": "TO-A01"
       },
       {
@@ -3768,23 +3996,23 @@
         "task_id": "TO-F03"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T15:46:54Z",
+        "completed_at": "2026-10-18T15:58:18Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-FOUNDATION",
         "position": 3,
-        "revision": 23,
-        "state": "queued",
+        "revision": 28,
+        "state": "completed",
         "task_id": "TO-F04"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T15:58:19Z",
+        "completed_at": "2026-10-18T15:58:36Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-FOUNDATION",
         "position": 4,
-        "revision": 2,
-        "state": "queued",
+        "revision": 30,
+        "state": "completed",
         "task_id": "TO-FOUNDATION"
       },
       {
@@ -4034,11 +4262,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-AUTHORITY",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 2,
+        "revision": 35,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
         "state": "ready",
-        "updated_at": "2026-10-18T14:41:59Z",
+        "updated_at": "2026-10-18T16:17:43Z",
         "workspace_mode": "exclusive"
       },
       {
@@ -4058,11 +4286,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-FOUNDATION",
         "parent_lane_id": null,
-        "revision": 23,
+        "revision": 30,
         "role": "coordinator",
         "run_id": "TO-REDESIGN-V1",
         "state": "ready",
-        "updated_at": "2026-10-18T15:46:10Z",
+        "updated_at": "2026-10-18T15:58:36Z",
         "workspace_mode": "exclusive"
       },
       {

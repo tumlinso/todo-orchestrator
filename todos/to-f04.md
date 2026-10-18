@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-F04: Define explicit trust and provider contracts
 
-Task revision: `22`; current project revision is in `todo-status.md`.
+Task revision: `28`; current project revision is in `todo-status.md`.
 
 ## Objective
 Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.
 
 ## State
-- Lifecycle: `in_progress`
-- Execution: `idle`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

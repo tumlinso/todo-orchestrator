@@ -3,10 +3,10 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # Todo Status v2 Projection
 
-Project revision: `23`
+Project revision: `35`
 
 ## Workstreams
-- `TO-A01` | status: planned | execution: ready | next: Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.
+- `TO-A01` | status: done | execution: closed | next: Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.
 - `TO-A02` | status: planned | execution: ready | next: Define typed command execution and revisioned state transitions in one transaction, with receipt identity, event history and derived read models; avoid a redundant event-sourced database architecture.
 - `TO-A03` | status: planned | execution: ready | next: Provide one deterministic decision engine for structural prerequisites, role/capability rights, source scopes, leases and safe parallelism. Use the same rule set for advisory reads and atomic admission, distinguishing observed eligibility from reservation.
 - `TO-A04` | status: planned | execution: ready | next: Replace Codex environment-variable identity and hardwired skill names with trusted host-supplied actor identity and bounded, revocable capability grants. Authorize parent and child delegation without implicit privilege escalation.
@@ -14,7 +14,7 @@ Project revision: `23`
 - `TO-F01` | status: done | execution: closed | next: Read the original Todo implementation as reference material. Identify observable invariants, Todo contracts, tests, and historical compatibility layers. Record which behavior is product-essential and which is incidental or obsolete.
 - `TO-F02` | status: done | execution: closed | next: Specify PlanRevision, WorkItem, Requirement, Run, Assignment, Attempt, Actor, Authorization, Evidence, Outcome and ExternalOperation, including references and lifecycle boundaries. Separate declarations from execution records and separate current applicability from historical proof.
 - `TO-F03` | status: done | execution: closed | next: Ensure distribution todo-orchestrator, ergonomic Python module/CLI/skill entry points, versioned contracts, tests, no hard dependency on Project Control, and no reliance on a sibling source directory. Work with the new repository scaffold rather than overwriting it.
-- `TO-F04` | status: in_progress | execution: idle | next: Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.
+- `TO-F04` | status: done | execution: closed | next: Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.
 - `TO-C01` | status: planned | execution: ready | next: Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.
 - `TO-C02` | status: planned | execution: ready | next: Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.
 - `TO-C03` | status: planned | execution: ready | next: Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
@@ -40,7 +40,7 @@ Project revision: `23`
 - `TO-V04` | status: planned | execution: ready | next: Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.
 - `TO-AUTHORITY` | status: planned | execution: ready | next: Own project-local transactional state, authorization, resource-independent admission, and history.
 - `TO-COORDINATION` | status: planned | execution: ready | next: Coordinate concurrent human or automated workers without adopting an agent runtime.
-- `TO-FOUNDATION` | status: planned | execution: ready | next: Define the standalone product, baseline semantics, and trust boundaries before changing source.
+- `TO-FOUNDATION` | status: done | execution: closed | next: Define the standalone product, baseline semantics, and trust boundaries before changing source.
 - `TO-INTEGRATION` | status: planned | execution: ready | next: Expose independently usable Python, CLI, and skill interfaces with trusted provider contracts.
 - `TO-PLANNING` | status: planned | execution: ready | next: Make structured plan compilation, dependency validation, and safe change-set application first-class.
 - `TO-QUALIFICATION` | status: planned | execution: ready | next: Prove standalone safety, compatibility, packaging, recovery, and release readiness.

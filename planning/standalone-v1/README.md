@@ -32,3 +32,5 @@ python planning/standalone-v1/derive_plan.py --check
 ```
 
 The source plan's SHA-256 when this draft was derived was `80ad975a8a3a835bd7ba352c34d84f99ee28f46847cb5c199575fab9e72ff722`. The generator does not apply a plan or contact Project Control. The receiving Todo runtime must validate this draft before any separately authorized import or application.
+
+Progress records: [first development pass](first-pass.md) and [provider/storage continuation](provider-storage-pass.md). SQLite remains the authoritative task state; these are bounded implementation and validation summaries.

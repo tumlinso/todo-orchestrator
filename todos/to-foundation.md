@@ -1,16 +1,18 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-FOUNDATION: Foundation and product contracts
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `30`; current project revision is in `todo-status.md`.
 
 ## Objective
 Define the standalone product, baseline semantics, and trust boundaries before changing source.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._
