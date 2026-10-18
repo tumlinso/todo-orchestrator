@@ -1,16 +1,18 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-AUTHORITY: Authority, transactions, and eligibility
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `71`; current project revision is in `todo-status.md`.
 
 ## Objective
 Own project-local transactional state, authorization, resource-independent admission, and history.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._

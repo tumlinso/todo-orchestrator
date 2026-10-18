@@ -97,6 +97,7 @@ class EntityKind(str, Enum):
     INTERFACE = "interface"
     BARRIER = "barrier"
     DECISION = "decision"
+    INVARIANT = "invariant"
 
 
 @dataclass(frozen=True)
@@ -418,6 +419,7 @@ class Capability:
     assignment: EntityRef | None = None
     attempt: EntityRef | None = None
     expires_at: datetime | None = None
+    parent_capability: EntityRef | None = None
 
     def __post_init__(self) -> None:
         _ids(self.capability_id, self.project_id)
@@ -434,6 +436,8 @@ class Capability:
                 _ref(value, kind, self.project_id, name)
         if self.expires_at is not None:
             _aware(self.expires_at, "expires_at")
+        if self.parent_capability is not None:
+            _ref(self.parent_capability, EntityKind.CAPABILITY, self.project_id, "parent_capability")
 
     @property
     def ref(self) -> EntityRef:
@@ -465,9 +469,9 @@ class AttemptState(str, Enum):
 
 
 ATTEMPT_TRANSITIONS: Mapping[AttemptState, frozenset[AttemptState]] = MappingProxyType({
-    AttemptState.ADMITTED: frozenset({AttemptState.ACTIVE, AttemptState.RELEASED, AttemptState.EXPIRED, AttemptState.UNCERTAIN}),
-    AttemptState.ACTIVE: frozenset({AttemptState.REPORTED, AttemptState.RELEASED, AttemptState.EXPIRED, AttemptState.UNCERTAIN}),
-    AttemptState.REPORTED: frozenset({AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED, AttemptState.UNCERTAIN}),
+    AttemptState.ADMITTED: frozenset({AttemptState.ACTIVE, AttemptState.RELEASED, AttemptState.EXPIRED, AttemptState.UNCERTAIN, AttemptState.QUARANTINED}),
+    AttemptState.ACTIVE: frozenset({AttemptState.REPORTED, AttemptState.RELEASED, AttemptState.EXPIRED, AttemptState.UNCERTAIN, AttemptState.QUARANTINED}),
+    AttemptState.REPORTED: frozenset({AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED, AttemptState.UNCERTAIN, AttemptState.QUARANTINED}),
     AttemptState.ACCEPTED: frozenset(),
     AttemptState.REJECTED: frozenset(),
     AttemptState.RELEASED: frozenset(),

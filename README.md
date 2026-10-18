@@ -2,7 +2,7 @@
 
 Todo Orchestrator is being prepared as a standalone, independently usable workflow engine. The redesign will draw on the existing implementation while progressively copying and adapting functionality and preserving the original implementation throughout.
 
-Development has begun from the preserved bootstrap package. The foundation includes a source-qualified behavioral baseline, immutable domain and provider contracts, an independently buildable Python package, and a project-local SQLite store. Plan compilation, claims, and evidence-backed completion are not implemented yet.
+Development has begun from the preserved bootstrap package. The Python library includes immutable domain and provider contracts, a SQLite authority with atomic commands and receipts, capability authentication, eligibility checks, attempt leases, and pure plan compilation and change previews. Guarded plan application, the complete workflow, and evidence-backed completion remain under development.
 
 - Repository: [tumlinso/todo-orchestrator](https://github.com/tumlinso/todo-orchestrator)
 - Project Control workspace and repository ID: `todo-orchestrator`.
@@ -27,12 +27,13 @@ python scripts/check_reference_baseline.py
 python -S -m unittest discover -s tests/reference -v
 PYTHONPATH=src python -S -m unittest discover -s tests/contracts -v
 PYTHONPATH=src python -S -m unittest discover -s tests/authority -v
+PYTHONPATH=src python -S -m unittest discover -s tests/planning -v
 PYTHONPATH=src python -S -m unittest discover -s tests/package -t tests -v
 PYTHONPATH=src python -S -m unittest discover -s tests/smoke -t tests -v
 ```
 
 Package tests require locally installed pip and setuptools 68+ for an offline wheel build. They build and install only into temporary directories, then verify the installed module paths with site packages disabled. SQLite and Git smoke fixtures also use temporary directories; Git must be available to run its fixture test. For an editable development installation, use a fresh repository-local virtual environment; never install into the active Project Control runtime.
 
-SQLite initialization currently requires a POSIX filesystem supporting hard links and directory synchronization. Only schema v1 is supported; migration recognizes the current version and rejects unsupported versions. Runtime tests use disposable databases, never this repository's development Todo authority.
+SQLite initialization currently requires a POSIX filesystem supporting hard links and directory synchronization. Only the current schema is supported; migration recognizes it and rejects unsupported versions. Runtime tests use disposable databases, never this repository's development Todo authority.
 
 The optional `python scripts/check_reference_baseline.py --verify-external` checks the captured original source/test fingerprints read-only. These checks cover baseline integrity, value contracts, package isolation, and storage behavior. They do not qualify a complete workflow runtime or power-loss recovery.

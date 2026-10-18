@@ -102,6 +102,18 @@ class MaliciousHandler(SetActorLabelHandler):
         return CommandEffect(False, {})
 
 
+class BootstrapActorHandler(SetActorLabelHandler):
+    kind = "actor.bootstrap"
+    allows_unregistered_actor = True
+
+    def apply(self, context, command):
+        context.execute(
+            "INSERT INTO actors(actor_id, incarnation_id, kind, label) VALUES (?, ?, 'human', ?)",
+            (str(context.actor.entity_id), str(context.actor.incarnation_id), command.label),
+        )
+        return CommandEffect(True, {"label": command.label}, "actor.enrolled", {})
+
+
 def project() -> Project:
     return Project(StableId("project-1"), StableId("authority-1"))
 
@@ -132,6 +144,72 @@ class CommandAuthorityTests(unittest.TestCase):
 
     def dispatcher(self, handler=None) -> CommandDispatcher:
         return CommandDispatcher([handler or SetActorLabelHandler()])
+
+    def test_authorization_rechecks_before_exact_retry_without_writes(self):
+        dispatcher = self.dispatcher()
+        envelope = self.envelope("after")
+        seen = []
+
+        def allow(connection, command, handler, actor_ref):
+            self.assertTrue(connection.in_transaction)
+            self.assertEqual(actor_ref, self.actor)
+            self.assertIsInstance(handler, SetActorLabelHandler)
+            seen.append(command.label)
+
+        with SQLiteAuthority.open_writer(self.path, self.project) as authority:
+            first = dispatcher._execute_authorized(authority, envelope, allow)
+            repeated = dispatcher._execute_authorized(authority, envelope, allow)
+        self.assertEqual(seen, ["after", "after"])
+        self.assertEqual(first.receipt, repeated.receipt)
+        before = self.snapshot()
+
+        def deny(*_args):
+            raise PermissionError("grant revoked")
+
+        with SQLiteAuthority.open_writer(self.path, self.project) as authority:
+            with self.assertRaises(PermissionError):
+                dispatcher._execute_authorized(authority, envelope, deny)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_authorization_guard_is_read_only_and_requires_explicit_raise(self):
+        dispatcher = self.dispatcher()
+        before = self.snapshot()
+        for statement in ("UPDATE actors SET label = 'bad'", "COMMIT", "PRAGMA user_version = 99"):
+            with self.subTest(statement=statement):
+                def invalid_guard(connection, *_args):
+                    connection.execute(statement)
+                with SQLiteAuthority.open_writer(self.path, self.project) as authority:
+                    with self.assertRaises(sqlite3.DatabaseError):
+                        dispatcher._execute_authorized(authority, self.envelope("after"), invalid_guard)
+                self.assertEqual(self.snapshot(), before)
+        with SQLiteAuthority.open_writer(self.path, self.project) as authority:
+            with self.assertRaises(CommandHandlerContractError):
+                dispatcher._execute_authorized(authority, self.envelope("after"), lambda *_args: False)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_first_actor_bootstrap_commits_atomically_and_cannot_add_second_actor(self):
+        path = Path(self.directory.name) / "bootstrap.sqlite3"
+        SQLiteAuthority.initialize(path, self.project)
+
+        class FailingBootstrap(BootstrapActorHandler):
+            def apply(self, context, command):
+                super().apply(context, command)
+                raise RuntimeError("interrupted enrollment")
+
+        with SQLiteAuthority.open_writer(path, self.project) as authority:
+            with self.assertRaises(RuntimeError):
+                self.dispatcher(FailingBootstrap()).execute(authority, self.envelope("owner"))
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM actors").fetchone()[0], 0)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0], 0)
+            self.assertEqual(authority.connection.execute("SELECT semantic_revision FROM authority_meta").fetchone()[0], 0)
+            result = self.dispatcher(BootstrapActorHandler()).execute(authority, self.envelope("owner"))
+            self.assertEqual(result.receipt.semantic_revision, 1)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM actors").fetchone()[0], 1)
+            other_actor = EntityRef(self.project.project_id, EntityKind.ACTOR, StableId("other"), incarnation_id=StableId("other-inc"))
+            second = CommandEnvelope(SetActorLabel("other"), StableId("second"), 1, other_actor)
+            with self.assertRaises(CommandActorNotRegisteredError):
+                self.dispatcher(BootstrapActorHandler()).execute(authority, second)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM actors").fetchone()[0], 1)
 
     def snapshot(self):
         with SQLiteAuthority.open_reader(self.path, self.project) as authority:

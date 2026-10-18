@@ -23,7 +23,7 @@ from todo_orchestrator.contracts import Project
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 6
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -243,6 +243,7 @@ _SCHEMA_STATEMENTS = (
         capability_id TEXT PRIMARY KEY,
         actor_id TEXT NOT NULL,
         actor_incarnation_id TEXT NOT NULL,
+        parent_capability_id TEXT,
         scope_kind TEXT NOT NULL CHECK (scope_kind IN (
             'project', 'plan_revision', 'work_item', 'requirement', 'run', 'assignment',
             'attempt', 'actor', 'capability', 'evidence', 'artifact', 'outcome',
@@ -255,13 +256,34 @@ _SCHEMA_STATEMENTS = (
         assignment_id TEXT,
         attempt_id TEXT,
         expires_at TEXT,
+        revoked INTEGER NOT NULL DEFAULT 0 CHECK (revoked IN (0, 1)),
         CHECK ((scope_kind IN ('work_item', 'requirement')) = (scope_definition_revision_id IS NOT NULL)),
         CHECK ((scope_kind = 'actor') = (scope_incarnation_id IS NOT NULL)),
         FOREIGN KEY (actor_id, actor_incarnation_id)
             REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (parent_capability_id) REFERENCES capabilities(capability_id),
         FOREIGN KEY (run_id) REFERENCES runs(run_id),
         FOREIGN KEY (assignment_id) REFERENCES assignments(assignment_id),
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
+    )""",
+    """CREATE TABLE capability_tokens (
+        capability_id TEXT PRIMARY KEY,
+        token_digest TEXT NOT NULL UNIQUE CHECK (
+            length(token_digest) = 64 AND token_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        FOREIGN KEY (capability_id) REFERENCES capabilities(capability_id)
+    )""",
+    """CREATE TABLE local_owner_credentials (
+        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+        actor_id TEXT NOT NULL,
+        bootstrap_incarnation_id TEXT NOT NULL,
+        salt BLOB NOT NULL CHECK (length(salt) = 16),
+        password_digest BLOB NOT NULL CHECK (length(password_digest) = 32),
+        scrypt_n INTEGER NOT NULL CHECK (scrypt_n >= 4096),
+        scrypt_r INTEGER NOT NULL CHECK (scrypt_r > 0),
+        scrypt_p INTEGER NOT NULL CHECK (scrypt_p > 0),
+        FOREIGN KEY (actor_id, bootstrap_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
     )""",
     """CREATE TABLE capability_actions (
         capability_id TEXT NOT NULL,
@@ -278,6 +300,48 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
         FOREIGN KEY (capability_id) REFERENCES capabilities(capability_id)
     )""",
+    """CREATE TABLE attempt_workspace_qualifications (
+        attempt_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        repository_id TEXT NOT NULL,
+        base_project_id TEXT NOT NULL,
+        base_ref TEXT NOT NULL,
+        base_digest TEXT NOT NULL CHECK (length(base_digest) = 64 AND base_digest NOT GLOB '*[^0-9a-f]*'),
+        destination_project_id TEXT NOT NULL,
+        destination_ref TEXT NOT NULL,
+        provider_id TEXT NOT NULL,
+        provider_version TEXT NOT NULL,
+        provider_contract_version INTEGER NOT NULL CHECK (provider_contract_version > 0),
+        receipt_id TEXT NOT NULL,
+        correlation_id TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'),
+        provenance_ref TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
+    )""",
+    """CREATE TABLE attempt_scope_snapshots (
+        attempt_id TEXT PRIMARY KEY,
+        scope_json TEXT NOT NULL,
+        scope_digest TEXT NOT NULL CHECK (
+            length(scope_digest) = 64 AND scope_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
+    )""",
+    """CREATE UNIQUE INDEX one_live_attempt_per_work_item_definition
+        ON attempts(work_item_id, definition_revision_id)
+        WHERE state IN ('admitted', 'active', 'reported')""",
+    """CREATE TRIGGER attempt_workspace_qualifications_no_update
+        BEFORE UPDATE ON attempt_workspace_qualifications
+        BEGIN SELECT RAISE(ABORT, 'attempt workspace qualifications are append-only'); END""",
+    """CREATE TRIGGER attempt_workspace_qualifications_no_delete
+        BEFORE DELETE ON attempt_workspace_qualifications
+        BEGIN SELECT RAISE(ABORT, 'attempt workspace qualifications are append-only'); END""",
+    """CREATE TRIGGER attempt_scope_snapshots_no_update
+        BEFORE UPDATE ON attempt_scope_snapshots
+        BEGIN SELECT RAISE(ABORT, 'attempt scope snapshots are append-only'); END""",
+    """CREATE TRIGGER attempt_scope_snapshots_no_delete
+        BEFORE DELETE ON attempt_scope_snapshots
+        BEGIN SELECT RAISE(ABORT, 'attempt scope snapshots are append-only'); END""",
     """CREATE TABLE artifacts (
         artifact_id TEXT PRIMARY KEY,
         provider_id TEXT NOT NULL,
@@ -420,7 +484,7 @@ def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...
     return tuple(tuple(row) for row in rows)
 
 
-def _compile_schema_v2_signature() -> tuple[tuple[object, ...], ...]:
+def _compile_schema_v6_signature() -> tuple[tuple[object, ...], ...]:
     connection = sqlite3.connect(":memory:")
     try:
         for statement in _SCHEMA_STATEMENTS:
@@ -430,15 +494,17 @@ def _compile_schema_v2_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v2 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v6 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
-_SCHEMA_V2_SIGNATURE = _compile_schema_v2_signature()
+_SCHEMA_V6_SIGNATURE = _compile_schema_v6_signature()
 
 _REQUIRED_TABLES = frozenset({
     "authority_meta", "plan_revisions", "work_items", "plan_revision_work_items",
     "work_item_supersessions", "requirements", "requirement_groups", "requirement_group_members",
-    "actors", "runs", "assignments", "attempts", "capabilities", "capability_actions",
-    "attempt_capabilities", "artifacts", "evidence", "evidence_inputs", "evidence_artifacts",
+    "actors", "runs", "assignments", "attempts", "capabilities", "capability_tokens",
+    "local_owner_credentials", "capability_actions",
+    "attempt_capabilities", "attempt_workspace_qualifications", "attempt_scope_snapshots",
+    "artifacts", "evidence", "evidence_inputs", "evidence_artifacts",
     "outcomes", "outcome_evidence", "external_operations", "authority_events",
     "command_receipts", "command_idempotency",
 })
@@ -531,8 +597,8 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
         raise InvalidAuthorityError("authority semantic revision is invalid")
 
     try:
-        if _schema_signature(connection) != _SCHEMA_V2_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v2 definition")
+        if _schema_signature(connection) != _SCHEMA_V6_SIGNATURE:
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v6 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -586,6 +652,7 @@ class SQLiteAuthority:
         self.readonly = readonly
         self._connection = connection
         self._closed = False
+        self._write_transaction_active = False
 
     @classmethod
     def initialize(
@@ -595,7 +662,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v2 authority without replacing an existing path.
+        """Create a new schema-v6 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -747,8 +814,8 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v2 is the only supported version. A current v2 authority is a
-        no-op. Schema v1 and every other unsupported version are rejected
+        Schema v6 is the only supported version. A current v6 authority is a
+        no-op. Older versions and every other unsupported version are rejected
         without opening the file writable; this method never guesses a
         conversion or restores a backup.
         """
@@ -789,6 +856,7 @@ class SQLiteAuthority:
         if connection.in_transaction:
             raise AuthorityError("nested authority transactions are not supported")
         connection.execute("BEGIN IMMEDIATE")
+        self._write_transaction_active = True
         try:
             yield connection
             connection.execute("COMMIT")
@@ -796,6 +864,13 @@ class SQLiteAuthority:
             if connection.in_transaction:
                 connection.execute("ROLLBACK")
             raise
+        finally:
+            self._write_transaction_active = False
+
+    @property
+    def write_transaction_active(self) -> bool:
+        """Whether this connection holds the authority's explicit writer transaction."""
+        return self._write_transaction_active
 
     def close(self) -> None:
         if not self._closed:

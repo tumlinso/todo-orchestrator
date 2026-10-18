@@ -219,17 +219,22 @@ class DomainValueTests(unittest.TestCase):
         actor = Actor(sid("actor"), sid("project"), sid("incarnation-1"), ActorKind.AUTOMATION)
         grant = Capability(
             sid("grant"), sid("project"), actor.ref, work_ref(), (sid("work.read"),),
+            parent_capability=ref(EntityKind.CAPABILITY, "parent-grant"),
         )
         attempt = Attempt(
             sid("attempt"), sid("project"), work_ref(), actor.ref, AttemptState.ADMITTED,
         )
         self.assertEqual(grant.scope.kind, EntityKind.WORK_ITEM)
         self.assertEqual(grant.actor.incarnation_id, sid("incarnation-1"))
+        self.assertEqual(grant.parent_capability.entity_id, sid("parent-grant"))
         self.assertEqual(attempt.actor, grant.actor)
         self.assertNotIn("role", {field.name for field in fields(Capability)})
         self.assertNotIn("authenticated", {field.name for field in fields(Actor)})
         with self.assertRaisesRegex(ValueError, "must not be empty"):
             Capability(sid("grant"), sid("project"), actor_ref(), work_ref(), ())
+        with self.assertRaisesRegex(ValueError, "parent_capability must belong to this project"):
+            Capability(sid("grant"), sid("project"), actor.ref, work_ref(), (sid("work.read"),),
+                       parent_capability=ref(EntityKind.CAPABILITY, "parent", project="other"))
 
     def test_attempt_lease_binds_to_the_same_actor_and_requires_aware_expiry(self):
         owner = actor_ref()
@@ -253,6 +258,11 @@ class DomainValueTests(unittest.TestCase):
         self.assertIn(AttemptState.QUARANTINED, ATTEMPT_TRANSITIONS[AttemptState.UNCERTAIN])
         self.assertEqual(ATTEMPT_TRANSITIONS[AttemptState.ACCEPTED], frozenset())
         self.assertNotIn(AttemptState.ACCEPTED, ATTEMPT_TRANSITIONS[AttemptState.ADMITTED])
+
+    def test_live_attempts_can_be_quarantined_without_automatic_release(self):
+        for state in (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED):
+            with self.subTest(state=state):
+                self.assertIn(AttemptState.QUARANTINED, ATTEMPT_TRANSITIONS[state])
 
     def test_evidence_requires_input_contract_verifier_and_aware_observation(self):
         evidence = Evidence(

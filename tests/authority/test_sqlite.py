@@ -44,7 +44,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
     def open_writer(self, *, project_value: Project | None = None, busy_timeout: float = 5) -> SQLiteAuthority:
         return SQLiteAuthority.open_writer(self.path, project_value or self.project, busy_timeout=busy_timeout)
 
-    def test_initialization_records_identity_and_schema_v2_in_normalized_tables(self):
+    def test_initialization_records_identity_and_schema_v6_in_normalized_tables(self):
         with self.open_reader() as authority:
             connection = authority.connection
             self.assertEqual(connection.execute("PRAGMA application_id").fetchone()[0], APPLICATION_ID)
@@ -58,7 +58,9 @@ class SQLiteAuthorityTests(unittest.TestCase):
                     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
                 )
             }
-            self.assertTrue({"work_items", "attempts", "capabilities", "evidence", "outcomes", "external_operations"} <= names)
+            self.assertTrue({"work_items", "attempts", "capabilities", "capability_tokens",
+                             "local_owner_credentials", "attempt_scope_snapshots", "evidence", "outcomes",
+                             "external_operations"} <= names)
             for table in (
                 "plan_revisions", "work_items", "assignments", "attempts", "capabilities", "evidence",
                 "outcomes", "external_operations", "authority_events", "command_receipts", "command_idempotency",
@@ -374,7 +376,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v2"
+                InvalidAuthorityError, "frozen schema-v6"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -390,7 +392,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v2"
+                InvalidAuthorityError, "frozen schema-v6"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -406,7 +408,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v2"
+                InvalidAuthorityError, "frozen schema-v6"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -433,7 +435,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v2"
+                InvalidAuthorityError, "frozen schema-v6"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -482,20 +484,21 @@ class SQLiteAuthorityTests(unittest.TestCase):
                 operation()
             self.assertEqual(unsupported.read_bytes(), original)
 
-    def test_schema_v1_is_refused_without_automatic_migration_or_mutation(self):
-        earlier = self.root / "earlier-v1.sqlite3"
-        SQLiteAuthority.initialize(earlier, self.project)
-        with closing(sqlite3.connect(earlier)) as connection:
-            connection.execute("PRAGMA user_version = 1")
-        original = earlier.read_bytes()
-        for operation in (
-            lambda: SQLiteAuthority.open_reader(earlier, self.project),
-            lambda: SQLiteAuthority.open_writer(earlier, self.project),
-            lambda: SQLiteAuthority.migrate(earlier, self.project),
-        ):
-            with self.subTest(operation=operation), self.assertRaises(UnsupportedSchemaVersionError):
-                operation()
-            self.assertEqual(earlier.read_bytes(), original)
+    def test_earlier_schema_versions_are_refused_without_automatic_migration_or_mutation(self):
+        for version in (1, 2, 3, 4, 5):
+            earlier = self.root / f"earlier-v{version}.sqlite3"
+            SQLiteAuthority.initialize(earlier, self.project)
+            with closing(sqlite3.connect(earlier)) as connection:
+                connection.execute(f"PRAGMA user_version = {version}")
+            original = earlier.read_bytes()
+            for operation in (
+                lambda: SQLiteAuthority.open_reader(earlier, self.project),
+                lambda: SQLiteAuthority.open_writer(earlier, self.project),
+                lambda: SQLiteAuthority.migrate(earlier, self.project),
+            ):
+                with self.subTest(version=version, operation=operation), self.assertRaises(UnsupportedSchemaVersionError):
+                    operation()
+                self.assertEqual(earlier.read_bytes(), original)
 
     def test_current_schema_migration_check_is_explicit_noop(self):
         original = self.path.read_bytes()

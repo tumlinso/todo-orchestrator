@@ -7,7 +7,7 @@ single statements against semantic tables and blocks dispatcher-owned state.
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -208,7 +208,7 @@ class MutationContext:
     not.
     """
 
-    __slots__ = ("project", "actor", "starting_revision", "_connection", "_active")
+    __slots__ = ("project", "actor", "starting_revision", "authority", "_connection", "_active")
 
     def __init__(
         self,
@@ -216,10 +216,12 @@ class MutationContext:
         project: Project,
         actor: EntityRef,
         starting_revision: int,
+        authority: SQLiteAuthority,
     ) -> None:
         self.project = project
         self.actor = actor
         self.starting_revision = starting_revision
+        self.authority = authority
         self._connection = connection
         self._active = True
 
@@ -250,6 +252,12 @@ def _handler_authorizer(action: int, first: str | None, second: str | None, _dat
     if action == getattr(sqlite3, "SQLITE_FUNCTION", -1) and (second or first or "").lower() == "load_extension":
         return sqlite3.SQLITE_DENY
     return sqlite3.SQLITE_OK
+
+
+def _authorization_authorizer(action: int, first: str | None, second: str | None, database: str | None, source: str | None) -> int:
+    if action in _DML_SQLITE_ACTIONS:
+        return sqlite3.SQLITE_DENY
+    return _handler_authorizer(action, first, second, database, source)
 
 
 class CommandDispatcher:
@@ -288,7 +296,31 @@ class CommandDispatcher:
             ) from exc
 
     def execute(self, authority: SQLiteAuthority, envelope: CommandEnvelope[Any]) -> CommandResult:
-        """Run one typed command and atomically persist its result and history."""
+        """Run trusted internal code; this entry point does not authenticate callers."""
+        return self._execute(authority, envelope, None)
+
+    def _execute_authorized(
+        self,
+        authority: SQLiteAuthority,
+        envelope: CommandEnvelope[Any],
+        authorization_check: Callable[[sqlite3.Connection, Any, CommandHandler[Any], EntityRef], None],
+    ) -> CommandResult:
+        """Service seam: check current credentials under the writer lock, even on retries.
+
+        The trusted service callback receives the same private command snapshot
+        used for digesting and applying the command. It must raise on refusal
+        and may only read authority state.
+        """
+        if not callable(authorization_check):
+            raise TypeError("authorization_check must be callable")
+        return self._execute(authority, envelope, authorization_check)
+
+    def _execute(
+        self,
+        authority: SQLiteAuthority,
+        envelope: CommandEnvelope[Any],
+        authorization_check: Callable[[sqlite3.Connection, Any, CommandHandler[Any], EntityRef], None] | None,
+    ) -> CommandResult:
 
         if not isinstance(authority, SQLiteAuthority):
             raise TypeError("authority must be a SQLiteAuthority")
@@ -317,6 +349,17 @@ class CommandDispatcher:
         )
 
         with authority.write_transaction() as connection:
+            if authorization_check is not None:
+                before_authorization = connection.total_changes
+                try:
+                    connection.set_authorizer(_authorization_authorizer)
+                    authorization_result = authorization_check(connection, command, binding.handler, envelope.actor)
+                finally:
+                    connection.set_authorizer(None)
+                if connection.total_changes != before_authorization:
+                    raise CommandHandlerContractError("authorization checks must not mutate authority state")
+                if authorization_result is not None:
+                    raise CommandHandlerContractError("authorization checks must return None or raise on refusal")
             existing = connection.execute(
                 "SELECT i.request_digest, r.receipt_id, r.command_kind, r.semantic_revision, r.changed, "
                 "r.event_id, r.actor_id, r.actor_incarnation_id, r.result_json, r.created_at, m.project_id "
@@ -347,13 +390,18 @@ class CommandDispatcher:
                 "SELECT 1 FROM actors WHERE actor_id = ? AND incarnation_id = ?",
                 (str(envelope.actor.entity_id), str(envelope.actor.incarnation_id)),
             ).fetchone()
-            if actor_row is None:
+            bootstrap_actor = (
+                actor_row is None
+                and getattr(binding.handler, "allows_unregistered_actor", False) is True
+                and connection.execute("SELECT 1 FROM actors LIMIT 1").fetchone() is None
+            )
+            if actor_row is None and not bootstrap_actor:
                 raise CommandActorNotRegisteredError(
                     f"actor incarnation is not registered: {envelope.actor.entity_id}/{envelope.actor.incarnation_id}"
                 )
 
             before_changes = connection.total_changes
-            context = MutationContext(connection, authority.project, envelope.actor, current_revision)
+            context = MutationContext(connection, authority.project, envelope.actor, current_revision, authority)
             try:
                 connection.set_authorizer(_handler_authorizer)
                 effect = binding.handler.apply(context, command)

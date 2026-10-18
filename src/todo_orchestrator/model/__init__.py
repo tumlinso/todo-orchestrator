@@ -9,6 +9,22 @@ from .commands import (
     CommandResult,
     HistoryEvent,
 )
+from .eligibility import (
+    AttemptScopeSnapshot,
+    EligibilityCause,
+    EligibilityDecision,
+    EligibilityRequest,
+    EligibilityStatus,
+    QualifiedDestination,
+    QualifiedSourceRevision,
+    WorkspaceQualification,
+)
+from .attempts import (
+    AttemptSafetyObservation,
+    ChildActivity,
+    ProcessLiveness,
+    SourceSafety,
+)
 
 __all__ = [
     "AuthorityDelta",
@@ -18,4 +34,16 @@ __all__ = [
     "CommandReceipt",
     "CommandResult",
     "HistoryEvent",
+    "EligibilityCause",
+    "EligibilityDecision",
+    "EligibilityRequest",
+    "EligibilityStatus",
+    "AttemptScopeSnapshot",
+    "QualifiedDestination",
+    "QualifiedSourceRevision",
+    "WorkspaceQualification",
+    "AttemptSafetyObservation",
+    "ChildActivity",
+    "ProcessLiveness",
+    "SourceSafety",
 ]
