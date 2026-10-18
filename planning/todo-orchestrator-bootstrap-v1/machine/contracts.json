@@ -1,0 +1,83 @@
+{
+  "contracts": [
+    {
+      "consumers": [
+        "planning",
+        "authority",
+        "api"
+      ],
+      "name": "PlanInput",
+      "producer": "planning",
+      "purpose": "Versioned structured plan intake independent of storage"
+    },
+    {
+      "consumers": [
+        "authority",
+        "api"
+      ],
+      "name": "ChangeSet",
+      "producer": "planning",
+      "purpose": "Typed deterministic diff and explicit preconditions"
+    },
+    {
+      "consumers": [
+        "coordination",
+        "views",
+        "api"
+      ],
+      "name": "AdmissionDecision",
+      "producer": "authority",
+      "purpose": "Shared eligibility decision with blockers and observed revision"
+    },
+    {
+      "consumers": [
+        "coordination",
+        "verification",
+        "api"
+      ],
+      "name": "CapabilityGrant",
+      "producer": "authority",
+      "purpose": "Opaque scoped actor authorization and family revocation"
+    },
+    {
+      "consumers": [
+        "authority",
+        "operations",
+        "api"
+      ],
+      "name": "VerificationReceipt",
+      "producer": "verification",
+      "purpose": "Input-bound verifier results and evidence provenance"
+    },
+    {
+      "consumers": [
+        "verification",
+        "operations",
+        "authority"
+      ],
+      "name": "ExternalEffectReceipt",
+      "producer": "providers",
+      "purpose": "Idempotent operation provenance and ambiguous-failure reconciliation"
+    },
+    {
+      "consumers": [
+        "api",
+        "project-control"
+      ],
+      "name": "StateReadModel",
+      "producer": "views",
+      "purpose": "Versioned normalized data without SQLite leakage"
+    },
+    {
+      "consumers": [
+        "verification",
+        "coordination"
+      ],
+      "name": "ResourceReservation",
+      "producer": "external-gpu-interlock-or-host-resource-provider",
+      "purpose": "External physical-resource permit and state, with Todo semantic references only"
+    }
+  ],
+  "format": "todo-orchestrator-bootstrap-design-contracts/1",
+  "status": "proposed_design_not_native_todo_interfaces"
+}

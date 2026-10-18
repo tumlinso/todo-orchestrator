@@ -1,0 +1,1 @@
+"""Disposable fixture smoke checks."""

@@ -1,0 +1,130 @@
+{
+  "format": "todo-orchestrator-bootstrap-lanes/1",
+  "lanes": [
+    {
+      "id": "L-FOUNDATION",
+      "role": "coordinator",
+      "tasks": [
+        "TO-F01",
+        "TO-F02",
+        "TO-F03",
+        "TO-F04",
+        "TO-FOUNDATION",
+        "TO-ROOT"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-PLANNING",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "implementer",
+      "tasks": [
+        "TO-P01",
+        "TO-P02",
+        "TO-P03",
+        "TO-P04",
+        "TO-P05",
+        "TO-PLANNING"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-AUTHORITY",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "implementer",
+      "tasks": [
+        "TO-A01",
+        "TO-A02",
+        "TO-A03",
+        "TO-A04",
+        "TO-A05",
+        "TO-AUTHORITY"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-COORDINATION",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "implementer",
+      "tasks": [
+        "TO-C01",
+        "TO-C02",
+        "TO-C03",
+        "TO-C04",
+        "TO-C05",
+        "TO-COORDINATION"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-VERIFICATION",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "specialist",
+      "tasks": [
+        "TO-V01",
+        "TO-V02",
+        "TO-V03",
+        "TO-V04",
+        "TO-VERIFICATION"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-RECOVERY",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "specialist",
+      "tasks": [
+        "TO-R01",
+        "TO-R02",
+        "TO-R03",
+        "TO-R04",
+        "TO-RECOVERY"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-INTEGRATION",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "implementer",
+      "tasks": [
+        "TO-I01",
+        "TO-I02",
+        "TO-I03",
+        "TO-I04",
+        "TO-INTEGRATION"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    },
+    {
+      "id": "L-QUALIFICATION",
+      "parent_lane_id": "L-FOUNDATION",
+      "role": "specialist",
+      "tasks": [
+        "TO-Q01",
+        "TO-Q02",
+        "TO-Q03",
+        "TO-Q04",
+        "TO-Q05",
+        "TO-QUALIFICATION"
+      ],
+      "workspace": {
+        "mode": "exclusive"
+      }
+    }
+  ],
+  "run_id": "TO-REDESIGN-V1"
+}

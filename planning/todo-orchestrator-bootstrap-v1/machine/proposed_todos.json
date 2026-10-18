@@ -1,0 +1,772 @@
+{
+  "created": "2026-10-18",
+  "format": "todo-orchestrator-bootstrap-proposals/1",
+  "project": "todo-orchestrator",
+  "tasks": [
+    {
+      "acceptance": [
+        "An explicit source-to-capability inventory exists, with decisions to retain, adapt, isolate or retire.",
+        "Representative current behaviors and safety invariants have reproducible fixtures or test descriptions.",
+        "Original repositories and live authorities remain unmodified."
+      ],
+      "dependencies": [],
+      "id": "TO-F01",
+      "owned_source_roots": [
+        "docs/product",
+        "docs/architecture",
+        "src/todo/contracts",
+        "pyproject.toml",
+        "AGENTS.md"
+      ],
+      "purpose": "Read the original Todo implementation and current Project Control adapters as reference material. Identify observable invariants, integration contracts, tests and historical compatibility layers. Record which behavior is product-essential and which is incidental or obsolete.",
+      "risks": [
+        "Confusing historical behavior with a required public contract."
+      ],
+      "title": "Inventory the original contracts and construct a behavioral baseline",
+      "workstream": "TO-FOUNDATION"
+    },
+    {
+      "acceptance": [
+        "Each entity has a unique owner and unambiguous identity/lifecycle.",
+        "State/transition invariants and forbidden transitions are documented with examples.",
+        "Simple single-worker tasks need no ceremonial run/lane configuration."
+      ],
+      "dependencies": [
+        "TO-F01"
+      ],
+      "id": "TO-F02",
+      "owned_source_roots": [
+        "docs/product",
+        "docs/architecture",
+        "src/todo/contracts",
+        "pyproject.toml",
+        "AGENTS.md"
+      ],
+      "purpose": "Specify PlanRevision, WorkItem, Requirement, Run, Assignment, Attempt, Actor, Authorization, Evidence, Outcome and ExternalOperation, including references and lifecycle boundaries. Separate declarations from execution records and separate current applicability from historical proof.",
+      "risks": [],
+      "title": "Ratify one canonical model of work and its invariants",
+      "workstream": "TO-FOUNDATION"
+    },
+    {
+      "acceptance": [
+        "Project Control is not imported by the standalone core.",
+        "Isolated import/CLI and disposable SQLite/Git smoke fixtures are specified and subsequently runnable.",
+        "Existing README/AGENTS/project settings are preserved and amended deliberately."
+      ],
+      "dependencies": [
+        "TO-F01"
+      ],
+      "id": "TO-F03",
+      "owned_source_roots": [
+        "docs/product",
+        "docs/architecture",
+        "src/todo/contracts",
+        "pyproject.toml",
+        "AGENTS.md"
+      ],
+      "purpose": "Ensure distribution todo-orchestrator, ergonomic Python module/CLI/skill entry points, versioned contracts, tests, no hard dependency on Project Control, and no reliance on a sibling source directory. Work with the new repository scaffold rather than overwriting it.",
+      "risks": [],
+      "title": "Establish standalone package boundaries and development harness",
+      "workstream": "TO-FOUNDATION"
+    },
+    {
+      "acceptance": [
+        "Provider contracts specify inputs, authority provenance, receipts, failure/unknown states and versioning.",
+        "GPU interlocks, inference and job execution are expressly external, without duplicate ownership ledgers.",
+        "Provider absence blocks only operations that require it."
+      ],
+      "dependencies": [
+        "TO-F02",
+        "TO-F03"
+      ],
+      "id": "TO-F04",
+      "owned_source_roots": [
+        "docs/product",
+        "docs/architecture",
+        "src/todo/contracts",
+        "pyproject.toml",
+        "AGENTS.md"
+      ],
+      "purpose": "Define interfaces for identity/authorization supplied by trusted hosts, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts. Todo retains semantic authority; providers own mechanisms.",
+      "risks": [],
+      "title": "Define explicit trust and provider contracts",
+      "workstream": "TO-FOUNDATION"
+    },
+    {
+      "acceptance": [
+        "Equivalent inputs compile to stable logical content and diagnostics.",
+        "The format does not expose SQLite or agent scheduling internals.",
+        "Ambiguous paths, foreign references and unsupported conditions are reported rather than guessed."
+      ],
+      "dependencies": [
+        "TO-F02"
+      ],
+      "id": "TO-P01",
+      "owned_source_roots": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "purpose": "Implement a documented, expressive plan input that supports authored objectives, structured work, scope, decisions, acceptance, alternatives, provenance and explicit unknowns. Compile deterministically to the canonical domain model, independent of running workers.",
+      "risks": [],
+      "title": "Specify and compile first-class machine plan packages",
+      "workstream": "TO-PLANNING"
+    },
+    {
+      "acceptance": [
+        "Direct and indirect dependency cycles are rejected with an actionable witness path.",
+        "Condition logic is bounded, typed and deterministic; arbitrary evaluated code is forbidden.",
+        "Cross-project references need explicitly qualified contracts/receipts, not fake local edges."
+      ],
+      "dependencies": [
+        "TO-P01"
+      ],
+      "id": "TO-P02",
+      "owned_source_roots": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "purpose": "Unify tasks, checkpoints, interfaces, decisions, barriers, rendezvous and result requirements under one typed dependency engine. Verify whole-graph cycles and explain unsatisfied, unavailable, and unresolved states.",
+      "risks": [],
+      "title": "Validate the complete typed dependency and condition graph",
+      "workstream": "TO-PLANNING"
+    },
+    {
+      "acceptance": [
+        "Repeated ingestion of the same logical package is a no-op.",
+        "Partial/omitted definitions are not interpreted as deletion.",
+        "Diffs identify affected tasks, requirements, attempts and downstream consumers."
+      ],
+      "dependencies": [
+        "TO-P02",
+        "TO-A02"
+      ],
+      "id": "TO-P03",
+      "owned_source_roots": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "purpose": "Diff compiled declarations against accepted definitions without simulating arbitrary writes on a copied database. Produce precise additions, updates, retirements, impacts and conflicts, preserving historical intent and omitted fields.",
+      "risks": [],
+      "title": "Produce deterministic, inspectable change sets",
+      "workstream": "TO-PLANNING"
+    },
+    {
+      "acceptance": [
+        "Active claims cannot be silently weakened by plan updates.",
+        "Retries cannot duplicate tasks, events, or successful operations.",
+        "Revisions, supersession and downstream rewrites preserve accepted historical evidence."
+      ],
+      "dependencies": [
+        "TO-P03",
+        "TO-A03"
+      ],
+      "id": "TO-P04",
+      "owned_source_roots": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "purpose": "Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.",
+      "risks": [],
+      "title": "Commit plan revisions and replan safely",
+      "workstream": "TO-PLANNING"
+    },
+    {
+      "acceptance": [
+        "Old project-control-preledger and proposed_todos.json cases used in fixtures are ingestible or diagnosed precisely.",
+        "The canonical new package format does not inherit legacy path-string heuristics.",
+        "No old compatibility path is allowed to bypass standard validation and changeset review."
+      ],
+      "dependencies": [
+        "TO-P04",
+        "TO-F01"
+      ],
+      "id": "TO-P05",
+      "owned_source_roots": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "purpose": "Copy or adapt relevant original preledger compilation behavior into a separate import converter, retaining source/provenance and explicit repository selection; lower into the new same typed plan representation.",
+      "risks": [],
+      "title": "Absorb legacy machine-plan import as a compatibility frontend",
+      "workstream": "TO-PLANNING"
+    },
+    {
+      "acceptance": [
+        "Single-writer consistency and multiple read-only connections operate correctly.",
+        "Read methods never initialize, migrate, restore, or write a missing authority.",
+        "Schema evolution has bounded migration/rollback-or-backup policies."
+      ],
+      "dependencies": [
+        "TO-F02",
+        "TO-F03"
+      ],
+      "id": "TO-A01",
+      "owned_source_roots": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "purpose": "Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.",
+      "risks": [],
+      "title": "Define project-local SQLite authority and durable schema",
+      "workstream": "TO-AUTHORITY"
+    },
+    {
+      "acceptance": [
+        "A semantic mutation and its event/receipt commit atomically.",
+        "No-op operations and exact retries do not create accidental revision churn.",
+        "History and logical fingerprints are stable independently of SQLite WAL page layout."
+      ],
+      "dependencies": [
+        "TO-A01"
+      ],
+      "id": "TO-A02",
+      "owned_source_roots": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "purpose": "Define typed command execution and revisioned state transitions in one transaction, with receipt identity, event history and derived read models; avoid a redundant event-sourced database architecture.",
+      "risks": [],
+      "title": "Implement atomic transitions, revisions, idempotency and history",
+      "workstream": "TO-AUTHORITY"
+    },
+    {
+      "acceptance": [
+        "Readiness and claim-time checks cannot disagree by using different policy implementations.",
+        "Blockers are typed and explain causal prerequisites, unknowns and conflicts.",
+        "Admission rechecks preconditions and fails closed under races."
+      ],
+      "dependencies": [
+        "TO-A02",
+        "TO-P02"
+      ],
+      "id": "TO-A03",
+      "owned_source_roots": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "purpose": "Provide one deterministic decision engine for structural prerequisites, role/capability rights, source scopes, leases and safe parallelism. Use the same rule set for advisory reads and atomic admission, distinguishing observed eligibility from reservation.",
+      "risks": [],
+      "title": "Unify eligibility, authorization and conflict evaluation",
+      "workstream": "TO-AUTHORITY"
+    },
+    {
+      "acceptance": [
+        "Raw role names in client payloads confer no authority.",
+        "Capabilities bind project, run, assignment, attempt, permissions and incarnation as applicable.",
+        "Revocation/expiry and child-right subset constraints are enforced."
+      ],
+      "dependencies": [
+        "TO-A01",
+        "TO-F04"
+      ],
+      "id": "TO-A04",
+      "owned_source_roots": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "purpose": "Replace Codex environment-variable identity and hardwired skill names with trusted host-supplied actor identity and bounded, revocable capability grants. Authorize parent and child delegation without implicit privilege escalation.",
+      "risks": [],
+      "title": "Introduce host-agnostic actors, grants, and scoped capabilities",
+      "workstream": "TO-AUTHORITY"
+    },
+    {
+      "acceptance": [
+        "Two competing claimants produce at most one successful claim.",
+        "Parallel-safe assignments overlap only with proven isolation contracts.",
+        "Expiry never erases dirty or potentially live work."
+      ],
+      "dependencies": [
+        "TO-A03",
+        "TO-A04"
+      ],
+      "id": "TO-A05",
+      "owned_source_roots": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "purpose": "Attach exclusive ownership, filesystem scopes, named locks and lifecycle to attempts. Preserve dirty-work quarantine, process-unknown semantics and one-active-claim invariants; external resource reservations remain provider owned.",
+      "risks": [],
+      "title": "Rework claim and lease transactions around attempts",
+      "workstream": "TO-AUTHORITY"
+    },
+    {
+      "acceptance": [
+        "A simple run can claim work without hand-authoring a lane hierarchy.",
+        "Complex runs can assign serial and parallel work with explicit role and isolation policy.",
+        "A work item, assignment and attempt have distinct identities."
+      ],
+      "dependencies": [
+        "TO-A02",
+        "TO-P02"
+      ],
+      "id": "TO-C01",
+      "owned_source_roots": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "purpose": "Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.",
+      "risks": [],
+      "title": "Define runs, assignments and optional worker lanes",
+      "workstream": "TO-COORDINATION"
+    },
+    {
+      "acceptance": [
+        "Claim/dispatch/capability are atomic or leave no partial authority.",
+        "Resumption cannot adopt expired, foreign or revoked work.",
+        "Terminal finish revokes its authority family and preserves accepted results."
+      ],
+      "dependencies": [
+        "TO-C01",
+        "TO-A05"
+      ],
+      "id": "TO-C02",
+      "owned_source_roots": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "purpose": "Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.",
+      "risks": [],
+      "title": "Implement atomic dispatch, resumption and release",
+      "workstream": "TO-COORDINATION"
+    },
+    {
+      "acceptance": [
+        "Read/unread/sync cursor semantics are deterministic.",
+        "Blocking communications affect progress only through declared requirements.",
+        "Messages cannot embed secrets, uncontrolled logs, or grant new privileges."
+      ],
+      "dependencies": [
+        "TO-C01",
+        "TO-A02"
+      ],
+      "id": "TO-C03",
+      "owned_source_roots": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "purpose": "Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.",
+      "risks": [],
+      "title": "Provide typed durable communication and decision synchronization",
+      "workstream": "TO-COORDINATION"
+    },
+    {
+      "acceptance": [
+        "One authored fact has one canonical authority and generated views cite its version.",
+        "Context refresh identifies changed/invalidated fragments.",
+        "Large source bodies remain referenced in external content stores."
+      ],
+      "dependencies": [
+        "TO-C01",
+        "TO-P03",
+        "TO-C03"
+      ],
+      "id": "TO-C04",
+      "owned_source_roots": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "purpose": "Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.",
+      "risks": [],
+      "title": "Derive bounded, provenance-aware worker context",
+      "workstream": "TO-COORDINATION"
+    },
+    {
+      "acceptance": [
+        "Child scope and permissions are strict subsets of the parent grant.",
+        "Child retries, cancellation and acceptance have explicit stable identities.",
+        "The parent or authorized validator must accept a child candidate before promoting it."
+      ],
+      "dependencies": [
+        "TO-C02",
+        "TO-C03"
+      ],
+      "id": "TO-C05",
+      "owned_source_roots": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "purpose": "Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.",
+      "risks": [],
+      "title": "Support restricted delegation and parent-mediated acceptance",
+      "workstream": "TO-COORDINATION"
+    },
+    {
+      "acceptance": [
+        "Requirement types and predicate semantics are versioned and validated.",
+        "Acceptable no-change and evaluated-not-promoted outcomes are representable without being called failures.",
+        "Required checks cannot be weakened by an untrusted worker."
+      ],
+      "dependencies": [
+        "TO-P02",
+        "TO-F04"
+      ],
+      "id": "TO-V01",
+      "owned_source_roots": [
+        "src/todo/verification",
+        "src/todo/providers/git",
+        "tests/verification"
+      ],
+      "purpose": "Retain declared gates, checkpoints and evidence contracts without embedding concrete runners. Make required evidence and accepted negative results first-class, distinguishing acceptance from runtime exit status.",
+      "risks": [],
+      "title": "Specify typed verification and acceptance requirements",
+      "workstream": "TO-VERIFICATION"
+    },
+    {
+      "acceptance": [
+        "Interrupted external checks are recognized and reconciled; no blind replay.",
+        "Evidence attempts retain exact input identity, verifier version and authorized effect.",
+        "External GPU locks remain in separate GPU interlock provider."
+      ],
+      "dependencies": [
+        "TO-V01",
+        "TO-A02",
+        "TO-F04"
+      ],
+      "id": "TO-V02",
+      "owned_source_roots": [
+        "src/todo/verification",
+        "src/todo/providers/git",
+        "tests/verification"
+      ],
+      "purpose": "Use durable gate-attempt identities and prepared/executing/observed/finalized lifecycle. Call trusted provider interfaces for actual commands/resources; correlate completion with source identity, operation identity and receipts.",
+      "risks": [],
+      "title": "Track verification attempts and external execution receipts",
+      "workstream": "TO-VERIFICATION"
+    },
+    {
+      "acceptance": [
+        "An input change during validation cannot produce a falsely current pass.",
+        "Accepted completion captures requirements, artifacts, source identity and evidence IDs.",
+        "Later source changes invalidate current applicability but do not erase historical success."
+      ],
+      "dependencies": [
+        "TO-V02",
+        "TO-C02"
+      ],
+      "id": "TO-V03",
+      "owned_source_roots": [
+        "src/todo/verification",
+        "src/todo/providers/git",
+        "tests/verification"
+      ],
+      "purpose": "Require current applicable evidence for successful dispositions at the final commit, while preserving immutable historical acceptance records. Recheck dependency/requirement inputs after external execution and at acceptance.",
+      "risks": [],
+      "title": "Implement provenance-preserving acceptance of work outcomes",
+      "workstream": "TO-VERIFICATION"
+    },
+    {
+      "acceptance": [
+        "Overlapping edits require actual workspace isolation and a qualified integration destination.",
+        "Dirty work, ambiguous commits and conflicts are preserved for owner review.",
+        "Injected crashes between intent, filesystem effect, and receipt cannot cause silent duplication or loss."
+      ],
+      "dependencies": [
+        "TO-F04",
+        "TO-C02",
+        "TO-V03"
+      ],
+      "id": "TO-V04",
+      "owned_source_roots": [
+        "src/todo/verification",
+        "src/todo/providers/git",
+        "tests/verification"
+      ],
+      "purpose": "Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.",
+      "risks": [],
+      "title": "Isolate and qualify Git workspace/integration operations",
+      "workstream": "TO-VERIFICATION"
+    },
+    {
+      "acceptance": [
+        "Inspection is read-only and reports exact preconditions and blockers.",
+        "Unprovable process or source state remains uncertain, not automatically clean.",
+        "Recovery intent references original attempts and effects."
+      ],
+      "dependencies": [
+        "TO-C02",
+        "TO-V02",
+        "TO-V04"
+      ],
+      "id": "TO-R01",
+      "owned_source_roots": [
+        "src/todo/operations",
+        "src/todo/views",
+        "tests/recovery"
+      ],
+      "purpose": "Determine authoritative reconciliation from attempt, lease, workspace, evidence and external-effect records. Distinguish expired, unknown-live, dirty, irrecoverable and safely retryable states.",
+      "risks": [],
+      "title": "Create unified inspection of interrupted and uncertain operations",
+      "workstream": "TO-RECOVERY"
+    },
+    {
+      "acceptance": [
+        "No unauthorized actor can force recovery by asserting a role.",
+        "Repeat requests are idempotent and each transition is auditable.",
+        "Recoverable work is requeued without losing uncommitted source changes."
+      ],
+      "dependencies": [
+        "TO-R01"
+      ],
+      "id": "TO-R02",
+      "owned_source_roots": [
+        "src/todo/operations",
+        "src/todo/views",
+        "tests/recovery"
+      ],
+      "purpose": "Prepare approved recovery actions, revalidate the exact authority inside the mutation transaction, and preserve state, workspaces and tokens that cannot be safely revoked.",
+      "risks": [],
+      "title": "Apply safe and auditable recovery transitions",
+      "workstream": "TO-RECOVERY"
+    },
+    {
+      "acceptance": [
+        "Completed work and provenance remain accessible after supersession.",
+        "Live work cannot be retired under stale or incomplete expectations.",
+        "Downstream requirements are retargeted or explicitly unresolved, never implicitly dropped."
+      ],
+      "dependencies": [
+        "TO-R02",
+        "TO-P04"
+      ],
+      "id": "TO-R03",
+      "owned_source_roots": [
+        "src/todo/operations",
+        "src/todo/views",
+        "tests/recovery"
+      ],
+      "purpose": "Make plan supersession and quiescent run retirement explicit, with successor lineage, preserving accepted work and user-authorized handoffs. Avoid special-purpose SQL rewriting as the only route.",
+      "risks": [],
+      "title": "Supersede, retire and replace work without history loss",
+      "workstream": "TO-RECOVERY"
+    },
+    {
+      "acceptance": [
+        "Read-only operation never creates or repairs state.",
+        "Export/import preserve semantic identity, evidence references and version compatibility.",
+        "Missing SQLite state reports unavailable until explicit qualified restore."
+      ],
+      "dependencies": [
+        "TO-A02",
+        "TO-R02"
+      ],
+      "id": "TO-R04",
+      "owned_source_roots": [
+        "src/todo/operations",
+        "src/todo/views",
+        "tests/recovery"
+      ],
+      "purpose": "Expose stable versioned read models and derived human-readable views; snapshots are backups/interchange artifacts, not silent startup restoration. Require explicit identity and revision checks for restoration.",
+      "risks": [],
+      "title": "Add trustworthy export, projections and explicit restoration",
+      "workstream": "TO-RECOVERY"
+    },
+    {
+      "acceptance": [
+        "Todo works without Project Control installed.",
+        "Simple create/preview/claim/report/finish workflows are concise.",
+        "Public contracts are versioned; legacy names live only in adapters where necessary."
+      ],
+      "dependencies": [
+        "TO-P04",
+        "TO-C02",
+        "TO-F03"
+      ],
+      "id": "TO-I01",
+      "owned_source_roots": [
+        "src/todo/api",
+        "src/todo/providers/execution",
+        "src/todo/providers/resources",
+        "SKILL.md",
+        "references"
+      ],
+      "purpose": "Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.",
+      "risks": [],
+      "title": "Expose stable standalone Python, CLI and skill interfaces",
+      "workstream": "TO-INTEGRATION"
+    },
+    {
+      "acceptance": [
+        "PC need not import Todo database tables or private plan functions.",
+        "Project ID versus repository root selection is consistent at the PC boundary.",
+        "Read profiles never gain mutation or initialization authority."
+      ],
+      "dependencies": [
+        "TO-I01",
+        "TO-F04"
+      ],
+      "id": "TO-I02",
+      "owned_source_roots": [
+        "src/todo/api",
+        "src/todo/providers/execution",
+        "src/todo/providers/resources",
+        "SKILL.md",
+        "references"
+      ],
+      "purpose": "Allow Project Control to select a registered authority by workspace ID, provide trusted actor/permission context, and map Todo read/command interfaces to MCP. Keep Project Control source intelligence separate from Todo semantic truth.",
+      "risks": [],
+      "title": "Replace direct Project Control internals with a thin adapter",
+      "workstream": "TO-INTEGRATION"
+    },
+    {
+      "acceptance": [
+        "PC no longer hosts an independent plan compiler as its canonical ingress.",
+        "Historical supported inputs pass through one typed validation/change-set path.",
+        "Apply remains an explicit operator-authorized action, not a side effect of read or package import."
+      ],
+      "dependencies": [
+        "TO-P05",
+        "TO-I02"
+      ],
+      "id": "TO-I03",
+      "owned_source_roots": [
+        "src/todo/api",
+        "src/todo/providers/execution",
+        "src/todo/providers/resources",
+        "SKILL.md",
+        "references"
+      ],
+      "purpose": "Route native and legacy machine-plan compilation into Todo; simplify PC to permissioned plan submission, preview and result presentation with explicit authority preconditions.",
+      "risks": [],
+      "title": "Move plan ingestion responsibility out of Project Control",
+      "workstream": "TO-INTEGRATION"
+    },
+    {
+      "acceptance": [
+        "No duplicate physical GPU/resource ownership state is introduced.",
+        "Unavailable providers have narrow, typed effects; normal planning still works.",
+        "Execution outputs, secrets and model runtimes are not embedded in Todo events."
+      ],
+      "dependencies": [
+        "TO-I02",
+        "TO-V02"
+      ],
+      "id": "TO-I04",
+      "owned_source_roots": [
+        "src/todo/api",
+        "src/todo/providers/execution",
+        "src/todo/providers/resources",
+        "SKILL.md",
+        "references"
+      ],
+      "purpose": "Define how standalone Todo and PC adapters request externally-owned resource permits and execution receipts. Strip Todo background worker/host coordinator and CUDA-specific paths from canonical code.",
+      "risks": [],
+      "title": "Integrate external execution and resource providers without double authority",
+      "workstream": "TO-INTEGRATION"
+    },
+    {
+      "acceptance": [
+        "A versioned parity matrix identifies preserved, intentionally changed and unsupported legacy contracts.",
+        "Regression fixtures require no live project authority or hardware.",
+        "Uncertain legacy cases are documented rather than silently normalized."
+      ],
+      "dependencies": [
+        "TO-F01",
+        "TO-F03"
+      ],
+      "id": "TO-Q01",
+      "owned_source_roots": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "purpose": "Build disposable fixtures from the old implementation for plans, claim contention, delegation, gates, integration, dirty recovery, semantics and PC adapters. Classify intentional behavior changes explicitly.",
+      "risks": [],
+      "title": "Capture pre-redesign reference fixtures and safety expectations",
+      "workstream": "TO-QUALIFICATION"
+    },
+    {
+      "acceptance": [
+        "No two active conflicting claims can be admitted.",
+        "Observed eligibility and transactional admission share the same predicates.",
+        "Idempotent retry and stale-plan rejection are reproducible."
+      ],
+      "dependencies": [
+        "TO-P04",
+        "TO-A05",
+        "TO-C05",
+        "TO-Q01"
+      ],
+      "id": "TO-Q02",
+      "owned_source_roots": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "purpose": "Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.",
+      "risks": [],
+      "title": "Qualify planning, admission and multi-agent safety properties",
+      "workstream": "TO-QUALIFICATION"
+    },
+    {
+      "acceptance": [
+        "No stale evidence can be accepted as current success.",
+        "Uncertain external effects cannot be blindly reexecuted.",
+        "Dirty work survives expired claims, recovery and integration conflicts."
+      ],
+      "dependencies": [
+        "TO-V04",
+        "TO-R04",
+        "TO-Q01"
+      ],
+      "id": "TO-Q03",
+      "owned_source_roots": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "purpose": "Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.",
+      "risks": [],
+      "title": "Qualify validation, external effects and crash recovery",
+      "workstream": "TO-QUALIFICATION"
+    },
+    {
+      "acceptance": [
+        "Dry-run migrator yields exact parity/intentional-difference report.",
+        "Ambiguous or unrepresentable states halt cutover with a recovery path.",
+        "Existing runtime remains usable until explicit sign-off; no automatic live state restoration."
+      ],
+      "dependencies": [
+        "TO-I03",
+        "TO-R04",
+        "TO-Q03"
+      ],
+      "id": "TO-Q04",
+      "owned_source_roots": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "purpose": "Test conversion from original Todo authority and Project Control integration, comparing semantic exports, accepted completions, evidence and run status. Do not move or overwrite live state during qualification.",
+      "risks": [],
+      "title": "Rehearse migration and opt-in cutover in isolated clones",
+      "workstream": "TO-QUALIFICATION"
+    },
+    {
+      "acceptance": [
+        "End-to-end scenario runs on a disposable project and produces inspectable receipts.",
+        "Package/version identity independent of PC install layout is tested.",
+        "Release gate explicitly documents unsupported providers and remaining risks."
+      ],
+      "dependencies": [
+        "TO-I04",
+        "TO-Q04",
+        "TO-Q02"
+      ],
+      "id": "TO-Q05",
+      "owned_source_roots": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "purpose": "Complete README, API/CLI/skill reference, schema/migration docs, operational guide, versioned PC adapter contract, release/source pin and qualification evidence; certify the standalone product.",
+      "risks": [],
+      "title": "Deliver qualified release and operator documentation",
+      "workstream": "TO-QUALIFICATION"
+    }
+  ]
+}

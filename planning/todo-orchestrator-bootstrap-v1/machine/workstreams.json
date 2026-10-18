@@ -1,0 +1,111 @@
+{
+  "format": "todo-orchestrator-bootstrap-workstreams/1",
+  "workstreams": [
+    {
+      "id": "TO-FOUNDATION",
+      "lane": "L-FOUNDATION",
+      "objective": "Define the product, baseline semantics, and standalone trust boundaries before changing source.",
+      "owned_areas": [
+        "docs/product",
+        "docs/architecture",
+        "src/todo/contracts",
+        "pyproject.toml",
+        "AGENTS.md"
+      ],
+      "role": "coordinator",
+      "task_count": 4,
+      "title": "Foundation and product contracts"
+    },
+    {
+      "id": "TO-PLANNING",
+      "lane": "L-PLANNING",
+      "objective": "Make structured plan compilation, dependency validation, and safe change-set application first-class.",
+      "owned_areas": [
+        "src/todo/planning",
+        "tests/planning"
+      ],
+      "role": "implementer",
+      "task_count": 5,
+      "title": "Machine planning and controlled revision"
+    },
+    {
+      "id": "TO-AUTHORITY",
+      "lane": "L-AUTHORITY",
+      "objective": "Own project-local transactional state, authorization, resource-independent admission, and history.",
+      "owned_areas": [
+        "src/todo/model",
+        "src/todo/authority",
+        "tests/authority"
+      ],
+      "role": "implementer",
+      "task_count": 5,
+      "title": "Authority, transactions, and eligibility"
+    },
+    {
+      "id": "TO-COORDINATION",
+      "lane": "L-COORDINATION",
+      "objective": "Coordinate concurrent human or automated workers without adopting an agent runtime.",
+      "owned_areas": [
+        "src/todo/coordination",
+        "tests/coordination"
+      ],
+      "role": "implementer",
+      "task_count": 5,
+      "title": "Runs, assignments, and collaboration"
+    },
+    {
+      "id": "TO-VERIFICATION",
+      "lane": "L-VERIFICATION",
+      "objective": "Verify outputs against precise source/input identities and use external providers for effects.",
+      "owned_areas": [
+        "src/todo/verification",
+        "src/todo/providers/git",
+        "tests/verification"
+      ],
+      "role": "specialist",
+      "task_count": 4,
+      "title": "Verification and safe integration"
+    },
+    {
+      "id": "TO-RECOVERY",
+      "lane": "L-RECOVERY",
+      "objective": "Reconcile interruptions and preserve work, evidence, and authoritative provenance.",
+      "owned_areas": [
+        "src/todo/operations",
+        "src/todo/views",
+        "tests/recovery"
+      ],
+      "role": "specialist",
+      "task_count": 4,
+      "title": "Recovery and lifecycle"
+    },
+    {
+      "id": "TO-INTEGRATION",
+      "lane": "L-INTEGRATION",
+      "objective": "Expose independent Python/CLI/skill interfaces and keep Project Control thin.",
+      "owned_areas": [
+        "src/todo/api",
+        "src/todo/providers/execution",
+        "src/todo/providers/resources",
+        "SKILL.md",
+        "references"
+      ],
+      "role": "implementer",
+      "task_count": 4,
+      "title": "Standalone interfaces and host integration"
+    },
+    {
+      "id": "TO-QUALIFICATION",
+      "lane": "L-QUALIFICATION",
+      "objective": "Prove safety, compatibility, packaging and opt-in cutover with disposable fixtures.",
+      "owned_areas": [
+        "tests/system",
+        "tests/qualification",
+        "docs/qualification"
+      ],
+      "role": "specialist",
+      "task_count": 5,
+      "title": "Qualification, migration, and release"
+    }
+  ]
+}

@@ -1,0 +1,791 @@
+{
+  "schema_version": 1,
+  "purpose": "Source-qualified Todo Orchestrator baseline; observations are not a new public contract.",
+  "captured_on": "2026-10-18",
+  "sources": [
+    {
+      "name": "skills-dev standalone package",
+      "root": "/home/tumlinson/skills_dev/todo-orchestrator",
+      "git_root": "/home/tumlinson/skills_dev",
+      "relative_prefix": "todo-orchestrator",
+      "revision": "bfa9238985dfeb2368bad076f1cc51bfdadbae92",
+      "branch": "development",
+      "full_status_before": [
+        " M .todo-orchestrator/state.snapshot.json",
+        " M todo-status.md",
+        " M todos.md",
+        " M todos/sk-cuda-atlas-merge.md",
+        " M todos/sk-mom-recovery-001.md",
+        "?? ._AGENTS.md",
+        "?? todos/cuda-per-device-ncu.md"
+      ],
+      "full_status_after": [
+        " M .todo-orchestrator/state.snapshot.json",
+        " M todo-status.md",
+        " M todos.md",
+        " M todos/sk-cuda-atlas-merge.md",
+        " M todos/sk-mom-recovery-001.md",
+        "?? ._AGENTS.md",
+        "?? todos/cuda-per-device-ncu.md"
+      ],
+      "todo_scoped_status_before": [],
+      "todo_scoped_status_after": [],
+      "hashes": [
+        {
+          "path": "todo_orchestrator/db.py",
+          "sha256_before": "28aa54193566cdbb73ac0ee74026a93478ca395d26fccda52eaef4a6ebc569b2",
+          "sha256_after": "28aa54193566cdbb73ac0ee74026a93478ca395d26fccda52eaef4a6ebc569b2"
+        },
+        {
+          "path": "todo_orchestrator/events.py",
+          "sha256_before": "d63c85bcea95b9dbe9259d99c6b0bba4f93b30ca2c82e1dc142934cdbbd91883",
+          "sha256_after": "d63c85bcea95b9dbe9259d99c6b0bba4f93b30ca2c82e1dc142934cdbbd91883"
+        },
+        {
+          "path": "todo_orchestrator/graph.py",
+          "sha256_before": "3e05e1065dd4b53284e5ef31e3d13821f406363681003f7e2cabfab661ce9b27",
+          "sha256_after": "3e05e1065dd4b53284e5ef31e3d13821f406363681003f7e2cabfab661ce9b27"
+        },
+        {
+          "path": "todo_orchestrator/ownership.py",
+          "sha256_before": "7f14fc19e4c7757d0e5ca0ac2501e0ce29c584c233cb943a59d82fcc55ff5f99",
+          "sha256_after": "7f14fc19e4c7757d0e5ca0ac2501e0ce29c584c233cb943a59d82fcc55ff5f99"
+        },
+        {
+          "path": "todo_orchestrator/readiness.py",
+          "sha256_before": "9cb0203ee72b2fcf182a380eccb0ec513656348436607241930b9fa779baee77",
+          "sha256_after": "9cb0203ee72b2fcf182a380eccb0ec513656348436607241930b9fa779baee77"
+        },
+        {
+          "path": "todo_orchestrator/plan.py",
+          "sha256_before": "b4c054f8ffe70e6557bb0b9ffec655a65f88716bda05cadf73ee7a17fdbe5613",
+          "sha256_after": "b4c054f8ffe70e6557bb0b9ffec655a65f88716bda05cadf73ee7a17fdbe5613"
+        },
+        {
+          "path": "todo_orchestrator/service.py",
+          "sha256_before": "550a438edef49be54158683fba70d42fbe0adbad60061cd2149ab9a0ae7e247d",
+          "sha256_after": "550a438edef49be54158683fba70d42fbe0adbad60061cd2149ab9a0ae7e247d"
+        },
+        {
+          "path": "todo_orchestrator/projections.py",
+          "sha256_before": "9b741aa11c87aaf27c76d4dc7b23cecb62db8f9aa8ae50c2c01ef7370a66c018",
+          "sha256_after": "9b741aa11c87aaf27c76d4dc7b23cecb62db8f9aa8ae50c2c01ef7370a66c018"
+        },
+        {
+          "path": "todo_orchestrator/gates.py",
+          "sha256_before": "e8c1c9f96810f0d050b080f6f35aa89a5c76fc92c14af77885c4db0c2868474b",
+          "sha256_after": "e8c1c9f96810f0d050b080f6f35aa89a5c76fc92c14af77885c4db0c2868474b"
+        },
+        {
+          "path": "todo_orchestrator/evidence.py",
+          "sha256_before": "ae44a2bb3a2a81bd5b2274bdbfb0f7a37f5f4cd0bd28d5b48c43d74992dcfb52",
+          "sha256_after": "ae44a2bb3a2a81bd5b2274bdbfb0f7a37f5f4cd0bd28d5b48c43d74992dcfb52"
+        },
+        {
+          "path": "todo_orchestrator/completion.py",
+          "sha256_before": "77c8231c7dfb0e55b82002fe2042a99be5b33c0f21ef06d6d5185e1162b95e25",
+          "sha256_after": "77c8231c7dfb0e55b82002fe2042a99be5b33c0f21ef06d6d5185e1162b95e25"
+        },
+        {
+          "path": "todo_orchestrator/child_execution.py",
+          "sha256_before": "e8b5d6d42919cd6d115b8dcf29e4c66003363faa3dbfa15d9815de30552857c1",
+          "sha256_after": "e8b5d6d42919cd6d115b8dcf29e4c66003363faa3dbfa15d9815de30552857c1"
+        },
+        {
+          "path": "todo_orchestrator/workflow/foundation.py",
+          "sha256_before": "2cbb4231cb0ca00c0abc3910e82fb33a057f88955cbeb050e0ae6bf7b444e81e",
+          "sha256_after": "2cbb4231cb0ca00c0abc3910e82fb33a057f88955cbeb050e0ae6bf7b444e81e"
+        },
+        {
+          "path": "todo_orchestrator/workflow/capabilities.py",
+          "sha256_before": "1e99d376a812abfa259117a019ec4b431ec4dd9e21f28d50512ddb58492bd8ae",
+          "sha256_after": "1e99d376a812abfa259117a019ec4b431ec4dd9e21f28d50512ddb58492bd8ae"
+        },
+        {
+          "path": "todo_orchestrator/workflow/service.py",
+          "sha256_before": "99a328298ecf3591052ba90726720a4422aa97e16c51bceed8904aa71724557f",
+          "sha256_after": "99a328298ecf3591052ba90726720a4422aa97e16c51bceed8904aa71724557f"
+        },
+        {
+          "path": "todo_orchestrator/workflow/context_fragments.py",
+          "sha256_before": "779e55a4554b3afefc4c8817d283c43bfb5ad1dd77e2c9933f91c0398d9d45e9",
+          "sha256_after": "779e55a4554b3afefc4c8817d283c43bfb5ad1dd77e2c9933f91c0398d9d45e9"
+        },
+        {
+          "path": "todo_orchestrator/semantic/workflow.py",
+          "sha256_before": "ed001129b18d06ecb7dadf106962a1a223c7c4b8f5f7ed583b7e21e4fa52665b",
+          "sha256_after": "ed001129b18d06ecb7dadf106962a1a223c7c4b8f5f7ed583b7e21e4fa52665b"
+        },
+        {
+          "path": "todo_orchestrator/migrations.py",
+          "sha256_before": "9b8c49bf48e0fca1950d23006295ff8e6dc61f120b52b474f855f38860b101c8",
+          "sha256_after": "9b8c49bf48e0fca1950d23006295ff8e6dc61f120b52b474f855f38860b101c8"
+        },
+        {
+          "path": "todo_orchestrator/sessions.py",
+          "sha256_before": "2a38daa2fe91289ee02c87fd70de8202f710b9a854799de2ad8e1de055e0ca1f",
+          "sha256_after": "2a38daa2fe91289ee02c87fd70de8202f710b9a854799de2ad8e1de055e0ca1f"
+        },
+        {
+          "path": "pyproject.toml",
+          "sha256_before": "e1fdfbf58d27ec3a9dc9eb411035838ebbf19e2857d33fbcc07e7b2094ef8530",
+          "sha256_after": "e1fdfbf58d27ec3a9dc9eb411035838ebbf19e2857d33fbcc07e7b2094ef8530"
+        },
+        {
+          "path": "tests/v2_helpers.py",
+          "sha256_before": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d",
+          "sha256_after": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d"
+        },
+        {
+          "path": "tests/test_v2_concurrency.py",
+          "sha256_before": "230fb7dc53c14baeeaf404aea00da358c75e064393e70407fa1050c0585c41b7",
+          "sha256_after": "230fb7dc53c14baeeaf404aea00da358c75e064393e70407fa1050c0585c41b7"
+        },
+        {
+          "path": "tests/test_v2_graph_coordination.py",
+          "sha256_before": "24f669aca4aac8a92be463a6fe09a7dacecdba3ab11ec5394932932fe878f55f",
+          "sha256_after": "24f669aca4aac8a92be463a6fe09a7dacecdba3ab11ec5394932932fe878f55f"
+        },
+        {
+          "path": "tests/test_v2_foundation.py",
+          "sha256_before": "4a56e6f5f2036754d328ace4f7d032847bbe8e3764918a59f018aba609bd6944",
+          "sha256_after": "4a56e6f5f2036754d328ace4f7d032847bbe8e3764918a59f018aba609bd6944"
+        },
+        {
+          "path": "tests/test_workflow_plan_snapshot.py",
+          "sha256_before": "a3e7bac91dbbcde4aad43f9f70522f59e9260d6debaf7a26315c7aa942d399cb",
+          "sha256_after": "a3e7bac91dbbcde4aad43f9f70522f59e9260d6debaf7a26315c7aa942d399cb"
+        },
+        {
+          "path": "tests/test_v2_recovery_migration_context.py",
+          "sha256_before": "07a09b88562ce649440d8aa889474014183da4e2e65e43e2cc394705b38f2611",
+          "sha256_after": "07a09b88562ce649440d8aa889474014183da4e2e65e43e2cc394705b38f2611"
+        },
+        {
+          "path": "tests/test_workflow_completion_provenance.py",
+          "sha256_before": "c0644f71ae0ad829c60486b594273fac7b32a93ecc86f7b8b2abc67fc9b79d66",
+          "sha256_after": "c0644f71ae0ad829c60486b594273fac7b32a93ecc86f7b8b2abc67fc9b79d66"
+        },
+        {
+          "path": "tests/test_child_execution_core.py",
+          "sha256_before": "cbea32eb1800cf8c1371ae0c8a230ef3f4f2097dd62c4c666888650fb9b70653",
+          "sha256_after": "cbea32eb1800cf8c1371ae0c8a230ef3f4f2097dd62c4c666888650fb9b70653"
+        },
+        {
+          "path": "tests/test_child_execution_v2.py",
+          "sha256_before": "20eef50bd3330a27b534a59b1e9a462e6416cfe483d713458776012f5ffc5a8b",
+          "sha256_after": "20eef50bd3330a27b534a59b1e9a462e6416cfe483d713458776012f5ffc5a8b"
+        },
+        {
+          "path": "tests/test_workflow_isolated_claims.py",
+          "sha256_before": "5480abeb0c478fd7ed93b5d92efa684191ecdc0beebd998386febd7a2b5f6e12",
+          "sha256_after": "5480abeb0c478fd7ed93b5d92efa684191ecdc0beebd998386febd7a2b5f6e12"
+        },
+        {
+          "path": "tests/test_workflow_runs_lanes.py",
+          "sha256_before": "0dc498ee311679555dd5da88de874f6f597b1333fa7cde7c51650c41b8291483",
+          "sha256_after": "0dc498ee311679555dd5da88de874f6f597b1333fa7cde7c51650c41b8291483"
+        },
+        {
+          "path": "tests/test_as1_foreign_source_port.py",
+          "sha256_before": "b6256c2746ed80596426363df397754be2492d3b07038d69db9cd86c5299f530",
+          "sha256_after": "b6256c2746ed80596426363df397754be2492d3b07038d69db9cd86c5299f530"
+        },
+        {
+          "path": "tests/test_workflow_foundation.py",
+          "sha256_before": "8764d29d8c8589320ae129d6c0879320c29e641b9c85a458d31bc5ec246df418",
+          "sha256_after": "8764d29d8c8589320ae129d6c0879320c29e641b9c85a458d31bc5ec246df418"
+        },
+        {
+          "path": "tests/test_workflow_context_fragments.py",
+          "sha256_before": "7c1d4ea51c9f160b3c85543331ebe0dc68ca6550d1c1a730473e5a057e5c7bbc",
+          "sha256_after": "7c1d4ea51c9f160b3c85543331ebe0dc68ca6550d1c1a730473e5a057e5c7bbc"
+        },
+        {
+          "path": "tests/test_workflow_messages_rendezvous.py",
+          "sha256_before": "79a9faf22ab6bae07ae7eb19f41326759e6f2746f149d496ac7b4a9aca5205a6",
+          "sha256_after": "79a9faf22ab6bae07ae7eb19f41326759e6f2746f149d496ac7b4a9aca5205a6"
+        }
+      ],
+      "notes": "Latest commit touching package: 05d0fff9d69feb4cb28007a31bf2f011707090fe (2026-10-04). Todo source and tests path-scoped clean before/after.",
+      "verification_paths": [
+        "todo-orchestrator"
+      ]
+    },
+    {
+      "name": "Project Control vendored copy",
+      "root": "/home/tumlinson/project-control",
+      "git_root": "/home/tumlinson/project-control",
+      "relative_prefix": "src/todo_orchestrator",
+      "revision": "fba161b1dc6ed4399c1a3818071eacdb9b80c17d",
+      "branch": "main",
+      "full_status_before": [
+        " M docs/as1-inquiry-cache.md",
+        " M docs/deployment.md",
+        " M scripts/configure_source_state_paths.py",
+        " M src/project_control/as1_jobs.py",
+        " M src/project_control/as1_skill.py",
+        " M src/project_control/assistance/frames.py",
+        " M src/project_control/assistance/policies.py",
+        " M src/project_control/local_runtime/local_worker/observer_runtime.py",
+        " M tests/as1/test_pc_as1_inquiry_cache.py",
+        " M tests/as1/test_pc_as1_skill.py",
+        " M tests/assistance/test_frames.py",
+        " M tests/assistance/test_turn_policies.py",
+        " M tests/local_runtime/test_observer_deadlines.py",
+        " M tests/test_configure_source_state_paths.py"
+      ],
+      "full_status_after": [
+        " M docs/as1-inquiry-cache.md",
+        " M docs/deployment.md",
+        " M scripts/configure_source_state_paths.py",
+        " M src/project_control/as1_jobs.py",
+        " M src/project_control/as1_skill.py",
+        " M src/project_control/assistance/frames.py",
+        " M src/project_control/assistance/policies.py",
+        " M src/project_control/local_runtime/local_worker/observer_runtime.py",
+        " M tests/as1/test_pc_as1_inquiry_cache.py",
+        " M tests/as1/test_pc_as1_skill.py",
+        " M tests/assistance/test_frames.py",
+        " M tests/assistance/test_turn_policies.py",
+        " M tests/local_runtime/test_observer_deadlines.py",
+        " M tests/test_configure_source_state_paths.py"
+      ],
+      "todo_scoped_status_before": [],
+      "todo_scoped_status_after": [],
+      "hashes": [
+        {
+          "path": "src/todo_orchestrator/db.py",
+          "sha256_before": "28aa54193566cdbb73ac0ee74026a93478ca395d26fccda52eaef4a6ebc569b2",
+          "sha256_after": "28aa54193566cdbb73ac0ee74026a93478ca395d26fccda52eaef4a6ebc569b2"
+        },
+        {
+          "path": "src/todo_orchestrator/events.py",
+          "sha256_before": "d63c85bcea95b9dbe9259d99c6b0bba4f93b30ca2c82e1dc142934cdbbd91883",
+          "sha256_after": "d63c85bcea95b9dbe9259d99c6b0bba4f93b30ca2c82e1dc142934cdbbd91883"
+        },
+        {
+          "path": "src/todo_orchestrator/graph.py",
+          "sha256_before": "3e05e1065dd4b53284e5ef31e3d13821f406363681003f7e2cabfab661ce9b27",
+          "sha256_after": "3e05e1065dd4b53284e5ef31e3d13821f406363681003f7e2cabfab661ce9b27"
+        },
+        {
+          "path": "src/todo_orchestrator/ownership.py",
+          "sha256_before": "7f14fc19e4c7757d0e5ca0ac2501e0ce29c584c233cb943a59d82fcc55ff5f99",
+          "sha256_after": "7f14fc19e4c7757d0e5ca0ac2501e0ce29c584c233cb943a59d82fcc55ff5f99"
+        },
+        {
+          "path": "src/todo_orchestrator/readiness.py",
+          "sha256_before": "9cb0203ee72b2fcf182a380eccb0ec513656348436607241930b9fa779baee77",
+          "sha256_after": "9cb0203ee72b2fcf182a380eccb0ec513656348436607241930b9fa779baee77"
+        },
+        {
+          "path": "src/todo_orchestrator/claims.py",
+          "sha256_before": "afeb52c0b8f96ed5b88daee9413f2802ed8f0ab2d45afd0551b8efcb52730402",
+          "sha256_after": "afeb52c0b8f96ed5b88daee9413f2802ed8f0ab2d45afd0551b8efcb52730402"
+        },
+        {
+          "path": "src/todo_orchestrator/plan.py",
+          "sha256_before": "fde2ca5a4b74ec47dc02d46d1ca9d286c902074f3589d1886988e348243e170d",
+          "sha256_after": "fde2ca5a4b74ec47dc02d46d1ca9d286c902074f3589d1886988e348243e170d"
+        },
+        {
+          "path": "src/todo_orchestrator/service.py",
+          "sha256_before": "afefa7ead53229a2bbbe7afa94c574241c22da51a7979c10e266c2d31cdf51a7",
+          "sha256_after": "afefa7ead53229a2bbbe7afa94c574241c22da51a7979c10e266c2d31cdf51a7"
+        },
+        {
+          "path": "src/todo_orchestrator/projections.py",
+          "sha256_before": "9b741aa11c87aaf27c76d4dc7b23cecb62db8f9aa8ae50c2c01ef7370a66c018",
+          "sha256_after": "9b741aa11c87aaf27c76d4dc7b23cecb62db8f9aa8ae50c2c01ef7370a66c018"
+        },
+        {
+          "path": "src/todo_orchestrator/gates.py",
+          "sha256_before": "e8c1c9f96810f0d050b080f6f35aa89a5c76fc92c14af77885c4db0c2868474b",
+          "sha256_after": "e8c1c9f96810f0d050b080f6f35aa89a5c76fc92c14af77885c4db0c2868474b"
+        },
+        {
+          "path": "src/todo_orchestrator/evidence.py",
+          "sha256_before": "ae44a2bb3a2a81bd5b2274bdbfb0f7a37f5f4cd0bd28d5b48c43d74992dcfb52",
+          "sha256_after": "ae44a2bb3a2a81bd5b2274bdbfb0f7a37f5f4cd0bd28d5b48c43d74992dcfb52"
+        },
+        {
+          "path": "src/todo_orchestrator/completion.py",
+          "sha256_before": "77c8231c7dfb0e55b82002fe2042a99be5b33c0f21ef06d6d5185e1162b95e25",
+          "sha256_after": "77c8231c7dfb0e55b82002fe2042a99be5b33c0f21ef06d6d5185e1162b95e25"
+        },
+        {
+          "path": "src/todo_orchestrator/child_execution.py",
+          "sha256_before": "e8b5d6d42919cd6d115b8dcf29e4c66003363faa3dbfa15d9815de30552857c1",
+          "sha256_after": "e8b5d6d42919cd6d115b8dcf29e4c66003363faa3dbfa15d9815de30552857c1"
+        },
+        {
+          "path": "src/todo_orchestrator/sessions.py",
+          "sha256_before": "2a38daa2fe91289ee02c87fd70de8202f710b9a854799de2ad8e1de055e0ca1f",
+          "sha256_after": "2a38daa2fe91289ee02c87fd70de8202f710b9a854799de2ad8e1de055e0ca1f"
+        },
+        {
+          "path": "src/todo_orchestrator/migrations.py",
+          "sha256_before": "9b8c49bf48e0fca1950d23006295ff8e6dc61f120b52b474f855f38860b101c8",
+          "sha256_after": "9b8c49bf48e0fca1950d23006295ff8e6dc61f120b52b474f855f38860b101c8"
+        },
+        {
+          "path": "src/todo_orchestrator/workflow/foundation.py",
+          "sha256_before": "2cbb4231cb0ca00c0abc3910e82fb33a057f88955cbeb050e0ae6bf7b444e81e",
+          "sha256_after": "2cbb4231cb0ca00c0abc3910e82fb33a057f88955cbeb050e0ae6bf7b444e81e"
+        },
+        {
+          "path": "src/todo_orchestrator/workflow/capabilities.py",
+          "sha256_before": "1e99d376a812abfa259117a019ec4b431ec4dd9e21f28d50512ddb58492bd8ae",
+          "sha256_after": "1e99d376a812abfa259117a019ec4b431ec4dd9e21f28d50512ddb58492bd8ae"
+        },
+        {
+          "path": "src/todo_orchestrator/workflow/service.py",
+          "sha256_before": "99a328298ecf3591052ba90726720a4422aa97e16c51bceed8904aa71724557f",
+          "sha256_after": "99a328298ecf3591052ba90726720a4422aa97e16c51bceed8904aa71724557f"
+        },
+        {
+          "path": "src/todo_orchestrator/workflow/context_fragments.py",
+          "sha256_before": "be4322d7cb425cd024a22fd4a238ebd224c10348e9cfae92780332c54757b48d",
+          "sha256_after": "be4322d7cb425cd024a22fd4a238ebd224c10348e9cfae92780332c54757b48d"
+        },
+        {
+          "path": "src/todo_orchestrator/semantic/workflow.py",
+          "sha256_before": "ed001129b18d06ecb7dadf106962a1a223c7c4b8f5f7ed583b7e21e4fa52665b",
+          "sha256_after": "ed001129b18d06ecb7dadf106962a1a223c7c4b8f5f7ed583b7e21e4fa52665b"
+        }
+      ],
+      "notes": "One commit ahead of origin/main. Todo source and tests path-scoped clean before/after.",
+      "verification_paths": [
+        "src/todo_orchestrator",
+        "tests/todo"
+      ]
+    }
+  ],
+  "scope_differences": {
+    "standalone_only": [
+      "todo_orchestrator/workflow/mcp"
+    ],
+    "project_control_only": [
+      "schemas",
+      "workflow/reconcile_cancelled_run.py"
+    ],
+    "changed_in_both": [
+      "background/worker.py",
+      "context.py",
+      "plan.py",
+      "read_port.py",
+      "runtime_identity.py",
+      "service.py",
+      "workflow/context_fragments.py",
+      "workflow/lanes.py",
+      "workflow/runs.py"
+    ],
+    "interpretation": "Treat checkouts as distinct snapshots; do not infer one copy has behavior from the other."
+  },
+  "inventory": [
+    {
+      "id": "package-host-boundary",
+      "capability": "Package and host boundary",
+      "source_refs": [
+        "todo_orchestrator/service.py::Service",
+        "todo_orchestrator/sessions.py::create_session",
+        "pyproject.toml"
+      ],
+      "tests": [
+        "pyproject.toml: distribution todo-orchestrator 0.3.0, mandatory mcp[cli]>=1,<2"
+      ],
+      "treatment": [
+        "adapt",
+        "isolate",
+        "retire"
+      ],
+      "observation": "Codex thread environment variables and codex-* labels are present. Old inspection did not select a namespace; bootstrap overlay selects todo_orchestrator."
+    },
+    {
+      "id": "sqlite-events",
+      "capability": "SQLite authority and events",
+      "source_refs": [
+        "todo_orchestrator/db.py::Database.connect/initialize/read/mutate",
+        "todo_orchestrator/db.py::Unchanged",
+        "todo_orchestrator/events.py::changes_since"
+      ],
+      "tests": [
+        "test_v2_foundation::test_event_revisions_are_unique_and_monotonic",
+        "test_v2_concurrency::test_concurrent_pulses_preserve_events_and_atomic_snapshot"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "BEGIN IMMEDIATE groups semantic writes, revision and event; Unchanged suppresses revision/event. No generic idempotency-key API observed."
+    },
+    {
+      "id": "plan-evolution",
+      "capability": "Plan intake and evolution",
+      "source_refs": [
+        "todo_orchestrator/plan.py::validate_plan/apply_plan/plan_diff/apply_selective_replan",
+        "todo_orchestrator/plan.py::_plan_changes"
+      ],
+      "tests": [
+        "test_as1_foreign_source_port scenarios plan_noop and plan_omitted",
+        "test_workflow_plan_snapshot::test_plan_reapply_never_downgrades_a_frozen_interface",
+        "test_v3_plan_reapply_reconciles_idle_lane_order_and_preserves_omitted_tasks"
+      ],
+      "treatment": [
+        "adapt",
+        "retain",
+        "isolate"
+      ],
+      "observation": "No-op plans use Unchanged; omission is diffed without deleting tasks; comparison uses rolled-back savepoint."
+    },
+    {
+      "id": "dependency-graph",
+      "capability": "Dependencies and blocker graph",
+      "source_refs": [
+        "todo_orchestrator/graph.py::validate_acyclic",
+        "todo_orchestrator/graph.py::dependency_satisfied"
+      ],
+      "tests": [
+        "test_workflow_runs_lanes::test_static_cycles_are_rejected_and_runtime_cycles_are_structured",
+        "test_v2_graph_coordination checkpoint/interface/barrier/conditional cases"
+      ],
+      "treatment": [
+        "adapt"
+      ],
+      "observation": "Static cycle validation covers parent and direct task prerequisites; heterogeneous cycles remain unqualified."
+    },
+    {
+      "id": "claim-admission",
+      "capability": "Eligibility, claim admission and scope overlap",
+      "source_refs": [
+        "todo_orchestrator/readiness.py::explain_task/ready_tasks",
+        "todo_orchestrator/claims.py::claim_best",
+        "todo_orchestrator/ownership.py::ownership_conflicts/acquire_task_locks"
+      ],
+      "tests": [
+        "test_v2_concurrency::test_ten_processes_claim_five_unique_tasks",
+        "test_v2_concurrency::test_multiple_processes_one_task_exactly_one_wins",
+        "test_v2_concurrency::test_overlapping_scopes_block_but_disjoint_scopes_run",
+        "test_v2_concurrency::test_serial_task_waits_for_active_parallel_work",
+        "test_v2_concurrency::test_project_exclusive_task_waits_and_then_runs_alone"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Claim admission computes readiness in the mutation transaction and persists claim/locks atomically."
+    },
+    {
+      "id": "isolated-workspaces",
+      "capability": "Concurrent isolated workspaces",
+      "source_refs": [
+        "todo_orchestrator/ownership.py::_isolated_merge_overlap_allowed",
+        "todo_orchestrator/semantic/workflow.py::_isolated_overlap_is_safe"
+      ],
+      "tests": [
+        "test_workflow_isolated_claims::test_complete_managed_contract_allows_overlapping_first_class_claims",
+        "test_workflow_isolated_claims::test_missing_integrator_destination_keeps_overlap_blocked"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Admission requires separate exclusive integration destination; read-model predicate checks fewer conditions. Not proof of exploitable defect."
+    },
+    {
+      "id": "capability-authority",
+      "capability": "Actor, capability and role authority",
+      "source_refs": [
+        "todo_orchestrator/workflow/foundation.py::CapabilityLineage.validate",
+        "todo_orchestrator/workflow/capabilities.py::WorkflowCapabilityStore.issue_first_class/issue_child/resolve/revoke",
+        "todo_orchestrator/workflow/context_fragments.py::child_scope_is_subset"
+      ],
+      "tests": [
+        "test_workflow_foundation::test_capability_storage_is_hash_only_and_class_separated",
+        "test_workflow_foundation::test_hashes_budgets_and_child_scope_are_stable"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Hash-only grants and operation lineage exist. child_scope_is_subset accepts equality despite strict-subset wording; packet composition separately rejects equal write scopes."
+    },
+    {
+      "id": "child-attempts",
+      "capability": "Subordinate child attempts",
+      "source_refs": [
+        "todo_orchestrator/child_execution.py::authorize_child_execution_for_claim/report_child_result/disposition_child_execution_for_claim",
+        "todo_orchestrator/workflow/context_fragments.py::compose_child_packet"
+      ],
+      "tests": [
+        "test_child_execution_core::test_child_token_is_restricted_and_never_completes_parent",
+        "test_child_execution_core::test_scope_must_be_parent_subset_and_active_child_scopes_do_not_overlap",
+        "test_child_execution_v2::test_ready_result_is_durable_and_blocks_parent_until_rejected"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Children have bounded scopes and parent claims; child results do not complete parent."
+    },
+    {
+      "id": "evidence-acceptance",
+      "capability": "Verification evidence and accepted outcomes",
+      "source_refs": [
+        "todo_orchestrator/evidence.py::gate_input_fingerprint",
+        "todo_orchestrator/gates.py::run_gate/_reusable_static_evidence",
+        "todo_orchestrator/completion.py::snapshot_completion_gates/historical_completion_gates",
+        "todo_orchestrator/service.py::_complete_claim_in_transaction",
+        "todo_orchestrator/workflow/service.py finalization fingerprint recheck"
+      ],
+      "tests": [
+        "test_v2_recovery_migration_context::test_gate_inputs_are_precisely_invalidated",
+        "test_workflow_completion_provenance::test_missing_declared_artifact_blocks_completion"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Direct completion checks stored valid/status; workflow finalization separately recomputes current gate fingerprints."
+    },
+    {
+      "id": "snapshot-recovery",
+      "capability": "Snapshots, reads and recovery",
+      "source_refs": [
+        "todo_orchestrator/projections.py::build_snapshot/write_snapshot/restore_snapshot",
+        "todo_orchestrator/service.py::Service.__init__"
+      ],
+      "tests": [
+        "test_v2_foundation::test_read_only_service_status_and_export_do_not_write_snapshot",
+        "test_v2_foundation::test_database_reconstructs_from_snapshot",
+        "test_v2_recovery_migration_context::test_expired_dirty_claim_is_quarantined"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Service auto-restores snapshot if DB absent; restore checks schema but no project UUID comparison appears in that function."
+    },
+    {
+      "id": "runs-context",
+      "capability": "Runs, lanes, messages and context",
+      "source_refs": [
+        "todo_orchestrator/workflow/service.py::WorkflowKernel",
+        "todo_orchestrator/workflow/runs.py",
+        "todo_orchestrator/workflow/lanes.py",
+        "todo_orchestrator/workflow/messages.py",
+        "todo_orchestrator/workflow/rendezvous.py",
+        "todo_orchestrator/workflow/context_fragments.py",
+        "todo_orchestrator/plan.py v2 compatibility lane"
+      ],
+      "tests": [
+        "test_workflow_runs_lanes::test_run_charter_is_versioned_hashed_and_idempotent",
+        "test_workflow_context_fragments::test_source_context_is_reference_only_and_secrets_are_rejected",
+        "test_workflow_messages_rendezvous::test_all_rendezvous_is_idempotent_and_atomically_opens_join",
+        "test_workflow_plan_snapshot::test_v2_plan_normalizes_to_one_serial_compatibility_lane"
+      ],
+      "treatment": [
+        "retain",
+        "adapt"
+      ],
+      "observation": "Versioned settings, messages, rendezvous and bounded context exist; v2 plans synthesize a serial lane."
+    },
+    {
+      "id": "external-effects-boundary",
+      "capability": "Git effects, physical resources and legacy surfaces",
+      "source_refs": [
+        "MIGRATION_MAP.md",
+        "todo_orchestrator/workflow/workspaces.py",
+        "todo_orchestrator/resources.py",
+        "todo_orchestrator/cuda_gate.py",
+        "todo_orchestrator/migrations.py",
+        "todo_orchestrator/legacy.py",
+        "todo_orchestrator/project_control/"
+      ],
+      "tests": [
+        "test_workflow_isolated_claims uses disposable Git repository"
+      ],
+      "treatment": [
+        "isolate",
+        "exclude"
+      ],
+      "observation": "Git and legacy/host effects are separable. GPU interlocks, runners, MCP and Project Control integration/cutover are outside this Todo-only baseline."
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "atomic-event-replay",
+      "setup": "Ephemeral SQLite authority.",
+      "actions": "Inject failure after domain write; retry stable request key.",
+      "assertions": "Rollback row/revision/event; replay returns same durable receipt without second outcome/revision.",
+      "source_tests": [
+        "test_v2_foundation::test_event_revisions_are_unique_and_monotonic",
+        "test_v2_concurrency::test_concurrent_pulses_preserve_events_and_atomic_snapshot"
+      ],
+      "gap": "Generic command replay is a new parity target."
+    },
+    {
+      "id": "plan-noop-preserve",
+      "setup": "Temporary DB with parent, task, frozen interface and gate.",
+      "actions": "Preview/apply/repeat unchanged plan; omit one item; weaken active/frozen work.",
+      "assertions": "No-op adds no revision/event; omission is explained without deletion; weakening is refused.",
+      "source_tests": [
+        "test_as1_foreign_source_port scenarios plan_noop and plan_omitted",
+        "test_workflow_plan_snapshot::test_plan_reapply_never_downgrades_a_frozen_interface"
+      ]
+    },
+    {
+      "id": "typed-cycle-witness",
+      "setup": "Typed task/checkpoint/producer graph with unresolved decision.",
+      "actions": "Connect task to checkpoint, checkpoint to producer and producer back to task.",
+      "assertions": "Reject heterogeneous cycle with stable witness; keep unresolved branch explicit.",
+      "source_tests": [
+        "test_workflow_runs_lanes::test_static_cycles_are_rejected_and_runtime_cycles_are_structured",
+        "test_v2_graph_coordination"
+      ],
+      "gap": "Extends inspected task/task cycle fixture."
+    },
+    {
+      "id": "admission-race-scope",
+      "setup": "Disposable SQLite file shared by two processes.",
+      "actions": "Race one task; repeat with disjoint and overlapping write scopes.",
+      "assertions": "Exactly one single-task winner/event; disjoint work can proceed; unsafe overlap blocks.",
+      "source_tests": []
+    },
+    {
+      "id": "isolation-proof-pair",
+      "setup": "Ephemeral Git repo, two isolated lanes, common base, overlapping paths and separate integration destination.",
+      "actions": "Admit both, then remove/invalidate integration destination.",
+      "assertions": "Complete proof permits parallel claims; missing destination blocks preview and admission consistently.",
+      "source_tests": [
+        "test_workflow_isolated_claims::test_complete_managed_contract_allows_overlapping_first_class_claims",
+        "test_workflow_isolated_claims::test_missing_integrator_destination_keeps_overlap_blocked"
+      ]
+    },
+    {
+      "id": "explicit-restore",
+      "setup": "Temporary project with snapshot and absent DB.",
+      "actions": "Read status; propose restore bound to identity/schema/revision; try mismatched identity.",
+      "assertions": "Read does not restore; mismatch refused; authorized exact restore records receipt.",
+      "source_tests": [
+        "test_v2_foundation::test_read_only_service_status_and_export_do_not_write_snapshot",
+        "test_v2_foundation::test_database_reconstructs_from_snapshot"
+      ],
+      "gap": "Explicit authorization and identity binding are new parity targets."
+    },
+    {
+      "id": "evidence-freshness",
+      "setup": "Tracked input and verifier pass at identity H.",
+      "actions": "Change input/contract before acceptance; rerun at H2.",
+      "assertions": "Stale evidence refuses acceptance but remains historical; fresh evidence can be pinned and accepted.",
+      "source_tests": [
+        "test_v2_recovery_migration_context::test_gate_inputs_are_precisely_invalidated",
+        "test_workflow_completion_provenance::test_missing_declared_artifact_blocks_completion"
+      ]
+    },
+    {
+      "id": "child-rights-acceptance",
+      "setup": "Parent claim with writable and read-only child.",
+      "actions": "Try nested write, sibling/traversal scope, child parent-completion, read-only changed-path report.",
+      "assertions": "Only in-scope actions pass; child cannot complete parent; ready result awaits review; read-only child cannot report writes.",
+      "source_tests": [
+        "test_child_execution_core::test_child_token_is_restricted_and_never_completes_parent",
+        "test_child_execution_core::test_scope_must_be_parent_subset_and_active_child_scopes_do_not_overlap",
+        "test_child_execution_v2::test_ready_result_is_durable_and_blocks_parent_until_rejected"
+      ]
+    },
+    {
+      "id": "interrupted-dirty-attempt",
+      "setup": "Temporary repo with expired claim, dirty file and unknown process liveness.",
+      "actions": "Inspect then request conservative recovery.",
+      "assertions": "Inspection is read-only; attempt quarantined and file preserved pending authorized reconciliation.",
+      "source_tests": [
+        "test_v2_recovery_migration_context::test_expired_dirty_claim_is_quarantined"
+      ]
+    }
+  ],
+  "test_fingerprints": [
+    {
+      "path": "tests/v2_helpers.py",
+      "sha256_before": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d",
+      "sha256_after": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d"
+    },
+    {
+      "path": "tests/test_v2_concurrency.py",
+      "sha256_before": "230fb7dc53c14baeeaf404aea00da358c75e064393e70407fa1050c0585c41b7",
+      "sha256_after": "230fb7dc53c14baeeaf404aea00da358c75e064393e70407fa1050c0585c41b7"
+    },
+    {
+      "path": "tests/test_v2_graph_coordination.py",
+      "sha256_before": "24f669aca4aac8a92be463a6fe09a7dacecdba3ab11ec5394932932fe878f55f",
+      "sha256_after": "24f669aca4aac8a92be463a6fe09a7dacecdba3ab11ec5394932932fe878f55f"
+    },
+    {
+      "path": "tests/test_v2_foundation.py",
+      "sha256_before": "4a56e6f5f2036754d328ace4f7d032847bbe8e3764918a59f018aba609bd6944",
+      "sha256_after": "4a56e6f5f2036754d328ace4f7d032847bbe8e3764918a59f018aba609bd6944"
+    },
+    {
+      "path": "tests/test_workflow_plan_snapshot.py",
+      "sha256_before": "a3e7bac91dbbcde4aad43f9f70522f59e9260d6debaf7a26315c7aa942d399cb",
+      "sha256_after": "a3e7bac91dbbcde4aad43f9f70522f59e9260d6debaf7a26315c7aa942d399cb"
+    },
+    {
+      "path": "tests/test_v2_recovery_migration_context.py",
+      "sha256_before": "07a09b88562ce649440d8aa889474014183da4e2e65e43e2cc394705b38f2611",
+      "sha256_after": "07a09b88562ce649440d8aa889474014183da4e2e65e43e2cc394705b38f2611"
+    },
+    {
+      "path": "tests/test_workflow_completion_provenance.py",
+      "sha256_before": "c0644f71ae0ad829c60486b594273fac7b32a93ecc86f7b8b2abc67fc9b79d66",
+      "sha256_after": "c0644f71ae0ad829c60486b594273fac7b32a93ecc86f7b8b2abc67fc9b79d66"
+    },
+    {
+      "path": "tests/test_child_execution_core.py",
+      "sha256_before": "cbea32eb1800cf8c1371ae0c8a230ef3f4f2097dd62c4c666888650fb9b70653",
+      "sha256_after": "cbea32eb1800cf8c1371ae0c8a230ef3f4f2097dd62c4c666888650fb9b70653"
+    },
+    {
+      "path": "tests/test_child_execution_v2.py",
+      "sha256_before": "20eef50bd3330a27b534a59b1e9a462e6416cfe483d713458776012f5ffc5a8b",
+      "sha256_after": "20eef50bd3330a27b534a59b1e9a462e6416cfe483d713458776012f5ffc5a8b"
+    },
+    {
+      "path": "tests/test_workflow_isolated_claims.py",
+      "sha256_before": "5480abeb0c478fd7ed93b5d92efa684191ecdc0beebd998386febd7a2b5f6e12",
+      "sha256_after": "5480abeb0c478fd7ed93b5d92efa684191ecdc0beebd998386febd7a2b5f6e12"
+    },
+    {
+      "path": "tests/test_workflow_runs_lanes.py",
+      "sha256_before": "0dc498ee311679555dd5da88de874f6f597b1333fa7cde7c51650c41b8291483",
+      "sha256_after": "0dc498ee311679555dd5da88de874f6f597b1333fa7cde7c51650c41b8291483"
+    },
+    {
+      "path": "tests/test_as1_foreign_source_port.py",
+      "sha256_before": "b6256c2746ed80596426363df397754be2492d3b07038d69db9cd86c5299f530",
+      "sha256_after": "b6256c2746ed80596426363df397754be2492d3b07038d69db9cd86c5299f530"
+    },
+    {
+      "path": "tests/test_workflow_foundation.py",
+      "sha256_before": "8764d29d8c8589320ae129d6c0879320c29e641b9c85a458d31bc5ec246df418",
+      "sha256_after": "8764d29d8c8589320ae129d6c0879320c29e641b9c85a458d31bc5ec246df418"
+    },
+    {
+      "path": "tests/test_workflow_context_fragments.py",
+      "sha256_before": "7c1d4ea51c9f160b3c85543331ebe0dc68ca6550d1c1a730473e5a057e5c7bbc",
+      "sha256_after": "7c1d4ea51c9f160b3c85543331ebe0dc68ca6550d1c1a730473e5a057e5c7bbc"
+    },
+    {
+      "path": "tests/test_workflow_messages_rendezvous.py",
+      "sha256_before": "79a9faf22ab6bae07ae7eb19f41326759e6f2746f149d496ac7b4a9aca5205a6",
+      "sha256_after": "79a9faf22ab6bae07ae7eb19f41326759e6f2746f149d496ac7b4a9aca5205a6"
+    }
+  ],
+  "evidence_limits": [
+    "Old source and tests were inspected; no legacy tests, services, Project Control runtime or production/live Todo authority state were executed or queried during source qualification.",
+    "Bootstrap product documents are proposed design inputs, not evidence of old runtime behavior.",
+    "Predicate differences are source observations, not proof of an exploitable defect.",
+    "Project Control integration and cutover are outside this Todo-only scope; other Project Control tools and the active instance are untouched."
+  ]
+}

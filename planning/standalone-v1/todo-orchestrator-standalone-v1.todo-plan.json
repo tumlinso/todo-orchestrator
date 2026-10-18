@@ -1,0 +1,2007 @@
+{
+  "barriers": [],
+  "decisions": [],
+  "interfaces": [],
+  "invariants": [],
+  "locks": [],
+  "project": {
+    "name": "todo-orchestrator"
+  },
+  "resource_classes": [],
+  "runs": [
+    {
+      "charter": {
+        "acceptance_conditions": [
+          "Plan compiler and guarded revisions",
+          "Single admission policy and durable attempts",
+          "Source-bound evidence and safe external effects",
+          "Explicit recovery and opt-in backup/restore interfaces",
+          "Standalone CLI, Python, skill, and provider interfaces"
+        ],
+        "boundaries": [
+          "Use this repository's standalone Todo authority for development tracking through its supported API. Do not mutate legacy or production Todo authorities.",
+          "Copy and adapt original Todo code incrementally into this repository while preserving the original implementation.",
+          "Project Control integration, reconfiguration, service changes, and cutover are outside this plan.",
+          "No GPU interlocks, model inference, background worker supervision, or source intelligence inside Todo.",
+          "Qualify behavior parity before intentionally changing contract semantics."
+        ],
+        "implementation_notes": "Tasks are outcome-sized; implementing agent chooses detailed substeps. Keep execution serial until source isolation is qualified; do not fan out across a shared checkout.",
+        "objective": "Build todo-orchestrator as an independently usable, trustworthy planning and workflow authority.",
+        "reference": "PRODUCT_SPEC.md"
+      },
+      "id": "TO-REDESIGN-V1",
+      "lanes": [
+        {
+          "id": "L-FOUNDATION",
+          "role": "coordinator",
+          "tasks": [
+            "TO-F01",
+            "TO-F02",
+            "TO-F03",
+            "TO-F04",
+            "TO-FOUNDATION",
+            "TO-ROOT"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-PLANNING",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "implementer",
+          "tasks": [
+            "TO-P01",
+            "TO-P02",
+            "TO-P03",
+            "TO-P04",
+            "TO-PLANNING"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-AUTHORITY",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "implementer",
+          "tasks": [
+            "TO-A01",
+            "TO-A02",
+            "TO-A03",
+            "TO-A04",
+            "TO-A05",
+            "TO-AUTHORITY"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-COORDINATION",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "implementer",
+          "tasks": [
+            "TO-C01",
+            "TO-C02",
+            "TO-C03",
+            "TO-C04",
+            "TO-C05",
+            "TO-COORDINATION"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-VERIFICATION",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "specialist",
+          "tasks": [
+            "TO-V01",
+            "TO-V02",
+            "TO-V03",
+            "TO-V04",
+            "TO-VERIFICATION"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-RECOVERY",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "specialist",
+          "tasks": [
+            "TO-R01",
+            "TO-R02",
+            "TO-R03",
+            "TO-R04",
+            "TO-RECOVERY"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-INTEGRATION",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "implementer",
+          "tasks": [
+            "TO-I01",
+            "TO-I04",
+            "TO-INTEGRATION"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        },
+        {
+          "id": "L-QUALIFICATION",
+          "parent_lane_id": "L-FOUNDATION",
+          "role": "specialist",
+          "tasks": [
+            "TO-Q01",
+            "TO-Q02",
+            "TO-Q03",
+            "TO-Q05",
+            "TO-QUALIFICATION"
+          ],
+          "workspace": {
+            "mode": "exclusive"
+          }
+        }
+      ],
+      "rendezvous": [],
+      "root_task_id": "TO-ROOT"
+    }
+  ],
+  "schema_version": 3,
+  "tasks": [
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-FOUNDATION",
+      "kind": "workstream",
+      "objective": "Define the standalone product, baseline semantics, and trust boundaries before changing source.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Foundation and product contracts"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-PLANNING",
+      "kind": "workstream",
+      "objective": "Make structured plan compilation, dependency validation, and safe change-set application first-class.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Machine planning and controlled revision"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-AUTHORITY",
+      "kind": "workstream",
+      "objective": "Own project-local transactional state, authorization, resource-independent admission, and history.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Authority, transactions, and eligibility"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-COORDINATION",
+      "kind": "workstream",
+      "objective": "Coordinate concurrent human or automated workers without adopting an agent runtime.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Runs, assignments, and collaboration"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-VERIFICATION",
+      "kind": "workstream",
+      "objective": "Verify outputs against precise source/input identities and use external providers for effects.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Verification and safe integration"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-RECOVERY",
+      "kind": "workstream",
+      "objective": "Reconcile interruptions and preserve work, evidence, and authoritative provenance.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Recovery and lifecycle"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-INTEGRATION",
+      "kind": "workstream",
+      "objective": "Expose independently usable Python, CLI, and skill interfaces with trusted provider contracts.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Standalone interfaces and provider contracts"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every child deliverable meets its written acceptance criteria",
+          "Open risks, uncertainties and follow-up work are explicitly recorded"
+        ],
+        "note": "This is a closure/review milestone, not an extra implementation feature."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-QUALIFICATION",
+      "kind": "workstream",
+      "objective": "Prove standalone safety, compatibility, packaging, recovery, and release readiness.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-ROOT",
+      "priority": 15,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated",
+          "no_change_required"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Standalone qualification and release"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "An explicit source-to-capability inventory exists, with decisions to retain, adapt, isolate or retire.",
+          "Representative current behaviors and safety invariants have reproducible fixtures or test descriptions.",
+          "Original repositories and live authorities remain unmodified."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-F01",
+      "kind": "task",
+      "motivation": "Read the original Todo implementation as reference material. Identify observable invariants, Todo contracts, tests, and historical compatibility layers. Record which behavior is product-essential and which is incidental or obsolete.",
+      "objective": "Read the original Todo implementation as reference material. Identify observable invariants, Todo contracts, tests, and historical compatibility layers. Record which behavior is product-essential and which is incidental or obsolete.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-FOUNDATION",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [
+        "Confusing historical behavior with a required public contract."
+      ],
+      "scope": {
+        "exclusive_paths": [
+          "docs/product",
+          "docs/architecture",
+          "tests/reference",
+          "scripts/check_reference_baseline.py"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Inventory the original contracts and construct a behavioral baseline"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Each entity has a unique owner and unambiguous identity/lifecycle.",
+          "State/transition invariants and forbidden transitions are documented with examples.",
+          "Simple single-worker tasks need no ceremonial run/lane configuration."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-F02",
+      "kind": "task",
+      "motivation": "Specify PlanRevision, WorkItem, Requirement, Run, Assignment, Attempt, Actor, Authorization, Evidence, Outcome and ExternalOperation, including references and lifecycle boundaries. Separate declarations from execution records and separate current applicability from historical proof.",
+      "objective": "Specify PlanRevision, WorkItem, Requirement, Run, Assignment, Attempt, Actor, Authorization, Evidence, Outcome and ExternalOperation, including references and lifecycle boundaries. Separate declarations from execution records and separate current applicability from historical proof.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-FOUNDATION",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "docs/product",
+          "docs/architecture",
+          "src/todo_orchestrator/contracts",
+          "tests/contracts"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Ratify one canonical model of work and its invariants"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Project Control is not imported by the standalone core.",
+          "Isolated import/CLI and disposable SQLite/Git smoke fixtures are specified and subsequently runnable.",
+          "Existing README/AGENTS/project settings are preserved and amended deliberately."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-F03",
+      "kind": "task",
+      "motivation": "Ensure distribution todo-orchestrator, ergonomic Python module/CLI/skill entry points, versioned contracts, tests, no hard dependency on Project Control, and no reliance on a sibling source directory. Work with the new repository scaffold rather than overwriting it.",
+      "objective": "Ensure distribution todo-orchestrator, ergonomic Python module/CLI/skill entry points, versioned contracts, tests, no hard dependency on Project Control, and no reliance on a sibling source directory. Work with the new repository scaffold rather than overwriting it.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-FOUNDATION",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator",
+          "tests/package",
+          "tests/smoke",
+          "pyproject.toml",
+          "README.md",
+          "AGENTS.md"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Establish standalone package boundaries and development harness"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Provider contracts specify inputs, authority provenance, receipts, failure/unknown states and versioning.",
+          "GPU interlocks, inference and job execution are expressly external, without duplicate ownership ledgers.",
+          "Provider absence blocks only operations that require it."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-F04",
+      "kind": "task",
+      "motivation": "Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.",
+      "objective": "Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-FOUNDATION",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "docs/architecture",
+          "src/todo_orchestrator/contracts",
+          "tests/contracts"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Define explicit trust and provider contracts"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Equivalent inputs compile to stable logical content and diagnostics.",
+          "The format does not expose SQLite or agent scheduling internals.",
+          "Ambiguous paths, foreign references and unsupported conditions are reported rather than guessed."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-P01",
+      "kind": "task",
+      "motivation": "Implement a documented, expressive plan input that supports authored objectives, structured work, scope, decisions, acceptance, alternatives, provenance and explicit unknowns. Compile deterministically to the canonical domain model, independent of running workers.",
+      "objective": "Implement a documented, expressive plan input that supports authored objectives, structured work, scope, decisions, acceptance, alternatives, provenance and explicit unknowns. Compile deterministically to the canonical domain model, independent of running workers.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-PLANNING",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/planning",
+          "tests/planning"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Specify and compile first-class machine plan packages"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Direct and indirect dependency cycles are rejected with an actionable witness path.",
+          "Condition logic is bounded, typed and deterministic; arbitrary evaluated code is forbidden.",
+          "Cross-project references need explicitly qualified contracts/receipts, not fake local edges."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-P02",
+      "kind": "task",
+      "motivation": "Unify tasks, checkpoints, interfaces, decisions, barriers, rendezvous and result requirements under one typed dependency engine. Verify whole-graph cycles and explain unsatisfied, unavailable, and unresolved states.",
+      "objective": "Unify tasks, checkpoints, interfaces, decisions, barriers, rendezvous and result requirements under one typed dependency engine. Verify whole-graph cycles and explain unsatisfied, unavailable, and unresolved states.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-PLANNING",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/planning",
+          "tests/planning"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Validate the complete typed dependency and condition graph"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Repeated ingestion of the same logical package is a no-op.",
+          "Partial/omitted definitions are not interpreted as deletion.",
+          "Diffs identify affected tasks, requirements, attempts and downstream consumers."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-P03",
+      "kind": "task",
+      "motivation": "Diff compiled declarations against accepted definitions without simulating arbitrary writes on a copied database. Produce precise additions, updates, retirements, impacts and conflicts, preserving historical intent and omitted fields.",
+      "objective": "Diff compiled declarations against accepted definitions without simulating arbitrary writes on a copied database. Produce precise additions, updates, retirements, impacts and conflicts, preserving historical intent and omitted fields.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-PLANNING",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/planning",
+          "tests/planning"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Produce deterministic, inspectable change sets"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Active claims cannot be silently weakened by plan updates.",
+          "Retries cannot duplicate tasks, events, or successful operations.",
+          "Revisions, supersession and downstream rewrites preserve accepted historical evidence."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P03",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-P04",
+      "kind": "task",
+      "motivation": "Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.",
+      "objective": "Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-PLANNING",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/planning",
+          "tests/planning"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Commit plan revisions and replan safely"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Single-writer consistency and multiple read-only connections operate correctly.",
+          "Read methods never initialize, migrate, restore, or write a missing authority.",
+          "Schema evolution has bounded migration/rollback-or-backup policies."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-A01",
+      "kind": "task",
+      "motivation": "Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.",
+      "objective": "Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-AUTHORITY",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/model",
+          "src/todo_orchestrator/authority",
+          "tests/authority"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Define project-local SQLite authority and durable schema"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "A semantic mutation and its event/receipt commit atomically.",
+          "No-op operations and exact retries do not create accidental revision churn.",
+          "History and logical fingerprints are stable independently of SQLite WAL page layout."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-A02",
+      "kind": "task",
+      "motivation": "Define typed command execution and revisioned state transitions in one transaction, with receipt identity, event history and derived read models; avoid a redundant event-sourced database architecture.",
+      "objective": "Define typed command execution and revisioned state transitions in one transaction, with receipt identity, event history and derived read models; avoid a redundant event-sourced database architecture.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-AUTHORITY",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/model",
+          "src/todo_orchestrator/authority",
+          "tests/authority"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Implement atomic transitions, revisions, idempotency and history"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Readiness and claim-time checks cannot disagree by using different policy implementations.",
+          "Blockers are typed and explain causal prerequisites, unknowns and conflicts.",
+          "Admission rechecks preconditions and fails closed under races."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-P02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-A03",
+      "kind": "task",
+      "motivation": "Provide one deterministic decision engine for structural prerequisites, role/capability rights, source scopes, leases and safe parallelism. Use the same rule set for advisory reads and atomic admission, distinguishing observed eligibility from reservation.",
+      "objective": "Provide one deterministic decision engine for structural prerequisites, role/capability rights, source scopes, leases and safe parallelism. Use the same rule set for advisory reads and atomic admission, distinguishing observed eligibility from reservation.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-AUTHORITY",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/model",
+          "src/todo_orchestrator/authority",
+          "tests/authority"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Unify eligibility, authorization and conflict evaluation"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Raw role names in client payloads confer no authority.",
+          "Capabilities bind project, run, assignment, attempt, permissions and incarnation as applicable.",
+          "Revocation/expiry and child-right subset constraints are enforced."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-A04",
+      "kind": "task",
+      "motivation": "Replace Codex environment-variable identity and hardwired skill names with trusted host-supplied actor identity and bounded, revocable capability grants. Authorize parent and child delegation without implicit privilege escalation.",
+      "objective": "Replace Codex environment-variable identity and hardwired skill names with trusted host-supplied actor identity and bounded, revocable capability grants. Authorize parent and child delegation without implicit privilege escalation.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-AUTHORITY",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/model",
+          "src/todo_orchestrator/authority",
+          "tests/authority"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Introduce host-agnostic actors, grants, and scoped capabilities"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Two competing claimants produce at most one successful claim.",
+          "Parallel-safe assignments overlap only with proven isolation contracts.",
+          "Expiry never erases dirty or potentially live work."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A03",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-A05",
+      "kind": "task",
+      "motivation": "Attach exclusive ownership, filesystem scopes, named locks and lifecycle to attempts. Preserve dirty-work quarantine, process-unknown semantics and one-active-claim invariants; external resource reservations remain provider owned.",
+      "objective": "Attach exclusive ownership, filesystem scopes, named locks and lifecycle to attempts. Preserve dirty-work quarantine, process-unknown semantics and one-active-claim invariants; external resource reservations remain provider owned.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-AUTHORITY",
+      "priority": 50,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/model",
+          "src/todo_orchestrator/authority",
+          "tests/authority"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Rework claim and lease transactions around attempts"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "A simple run can claim work without hand-authoring a lane hierarchy.",
+          "Complex runs can assign serial and parallel work with explicit role and isolation policy.",
+          "A work item, assignment and attempt have distinct identities."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-P02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-C01",
+      "kind": "task",
+      "motivation": "Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.",
+      "objective": "Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-COORDINATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/coordination",
+          "tests/coordination"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Define runs, assignments and optional worker lanes"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Claim/dispatch/capability are atomic or leave no partial authority.",
+          "Resumption cannot adopt expired, foreign or revoked work.",
+          "Terminal finish revokes its authority family and preserves accepted results."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-C01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A05",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-C02",
+      "kind": "task",
+      "motivation": "Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.",
+      "objective": "Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-COORDINATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/coordination",
+          "tests/coordination"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Implement atomic dispatch, resumption and release"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Read/unread/sync cursor semantics are deterministic.",
+          "Blocking communications affect progress only through declared requirements.",
+          "Messages cannot embed secrets, uncontrolled logs, or grant new privileges."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-C01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-C03",
+      "kind": "task",
+      "motivation": "Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.",
+      "objective": "Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-COORDINATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/coordination",
+          "tests/coordination"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Provide typed durable communication and decision synchronization"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "One authored fact has one canonical authority and generated views cite its version.",
+          "Context refresh identifies changed/invalidated fragments.",
+          "Large source bodies remain referenced in external content stores."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-C01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-P03",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-C04",
+      "kind": "task",
+      "motivation": "Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.",
+      "objective": "Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-COORDINATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/coordination",
+          "tests/coordination"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Derive bounded, provenance-aware worker context"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Child scope and permissions are strict subsets of the parent grant.",
+          "Child retries, cancellation and acceptance have explicit stable identities.",
+          "The parent or authorized validator must accept a child candidate before promoting it."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-C02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-C05",
+      "kind": "task",
+      "motivation": "Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.",
+      "objective": "Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-COORDINATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/coordination",
+          "tests/coordination"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Support restricted delegation and parent-mediated acceptance"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Requirement types and predicate semantics are versioned and validated.",
+          "Acceptable no-change and evaluated-not-promoted outcomes are representable without being called failures.",
+          "Required checks cannot be weakened by an untrusted worker."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-V01",
+      "kind": "task",
+      "motivation": "Retain declared gates, checkpoints and evidence contracts without embedding concrete runners. Make required evidence and accepted negative results first-class, distinguishing acceptance from runtime exit status.",
+      "objective": "Retain declared gates, checkpoints and evidence contracts without embedding concrete runners. Make required evidence and accepted negative results first-class, distinguishing acceptance from runtime exit status.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-VERIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/verification",
+          "src/todo_orchestrator/providers/git",
+          "tests/verification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Specify typed verification and acceptance requirements"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Interrupted external checks are recognized and reconciled; no blind replay.",
+          "Evidence attempts retain exact input identity, verifier version and authorized effect.",
+          "External GPU locks remain in separate GPU interlock provider."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-V01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-V02",
+      "kind": "task",
+      "motivation": "Use durable gate-attempt identities and prepared/executing/observed/finalized lifecycle. Call trusted provider interfaces for actual commands/resources; correlate completion with source identity, operation identity and receipts.",
+      "objective": "Use durable gate-attempt identities and prepared/executing/observed/finalized lifecycle. Call trusted provider interfaces for actual commands/resources; correlate completion with source identity, operation identity and receipts.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-VERIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/verification",
+          "src/todo_orchestrator/providers/git",
+          "tests/verification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Track verification attempts and external execution receipts"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "An input change during validation cannot produce a falsely current pass.",
+          "Accepted completion captures requirements, artifacts, source identity and evidence IDs.",
+          "Later source changes invalidate current applicability but do not erase historical success."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-V02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-V03",
+      "kind": "task",
+      "motivation": "Require current applicable evidence for successful dispositions at the final commit, while preserving immutable historical acceptance records. Recheck dependency/requirement inputs after external execution and at acceptance.",
+      "objective": "Require current applicable evidence for successful dispositions at the final commit, while preserving immutable historical acceptance records. Recheck dependency/requirement inputs after external execution and at acceptance.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-VERIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/verification",
+          "src/todo_orchestrator/providers/git",
+          "tests/verification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Implement provenance-preserving acceptance of work outcomes"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Overlapping edits require actual workspace isolation and a qualified integration destination.",
+          "Dirty work, ambiguous commits and conflicts are preserved for owner review.",
+          "Injected crashes between intent, filesystem effect, and receipt cannot cause silent duplication or loss."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-V03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-V04",
+      "kind": "task",
+      "motivation": "Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.",
+      "objective": "Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-VERIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/verification",
+          "src/todo_orchestrator/providers/git",
+          "tests/verification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Isolate and qualify Git workspace/integration operations"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Inspection is read-only and reports exact preconditions and blockers.",
+          "Unprovable process or source state remains uncertain, not automatically clean.",
+          "Recovery intent references original attempts and effects."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-C02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-V02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-V04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-R01",
+      "kind": "task",
+      "motivation": "Determine authoritative reconciliation from attempt, lease, workspace, evidence and external-effect records. Distinguish expired, unknown-live, dirty, irrecoverable and safely retryable states.",
+      "objective": "Determine authoritative reconciliation from attempt, lease, workspace, evidence and external-effect records. Distinguish expired, unknown-live, dirty, irrecoverable and safely retryable states.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-RECOVERY",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/operations",
+          "src/todo_orchestrator/views",
+          "tests/recovery"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Create unified inspection of interrupted and uncertain operations"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "No unauthorized actor can force recovery by asserting a role.",
+          "Repeat requests are idempotent and each transition is auditable.",
+          "Recoverable work is requeued without losing uncommitted source changes."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-R01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-R02",
+      "kind": "task",
+      "motivation": "Prepare approved recovery actions, revalidate the exact authority inside the mutation transaction, and preserve state, workspaces and tokens that cannot be safely revoked.",
+      "objective": "Prepare approved recovery actions, revalidate the exact authority inside the mutation transaction, and preserve state, workspaces and tokens that cannot be safely revoked.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-RECOVERY",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/operations",
+          "src/todo_orchestrator/views",
+          "tests/recovery"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Apply safe and auditable recovery transitions"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Completed work and provenance remain accessible after supersession.",
+          "Live work cannot be retired under stale or incomplete expectations.",
+          "Downstream requirements are retargeted or explicitly unresolved, never implicitly dropped."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-R02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-P04",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-R03",
+      "kind": "task",
+      "motivation": "Make plan supersession and quiescent run retirement explicit, with successor lineage, preserving accepted work and user-authorized handoffs. Avoid special-purpose SQL rewriting as the only route.",
+      "objective": "Make plan supersession and quiescent run retirement explicit, with successor lineage, preserving accepted work and user-authorized handoffs. Avoid special-purpose SQL rewriting as the only route.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-RECOVERY",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/operations",
+          "src/todo_orchestrator/views",
+          "tests/recovery"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Supersede, retire and replace work without history loss"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Read-only operation never creates or repairs state.",
+          "Export/import preserve semantic identity, evidence references and version compatibility.",
+          "Missing SQLite state reports unavailable until explicit qualified restore."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-A02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-R02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-R04",
+      "kind": "task",
+      "motivation": "Expose stable versioned read models and derived human-readable views; snapshots are backups/interchange artifacts, not silent startup restoration. Require explicit identity and revision checks for restoration.",
+      "objective": "Expose stable versioned read models and derived human-readable views; snapshots are backups/interchange artifacts, not silent startup restoration. Require explicit identity and revision checks for restoration.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-RECOVERY",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/operations",
+          "src/todo_orchestrator/views",
+          "tests/recovery"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Add trustworthy export, projections and explicit restoration"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Todo works without Project Control installed.",
+          "Simple create/preview/claim/report/finish workflows are concise.",
+          "Public contracts are versioned; legacy names live only in adapters where necessary."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-I01",
+      "kind": "task",
+      "motivation": "Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.",
+      "objective": "Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-INTEGRATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/api",
+          "src/todo_orchestrator/providers/execution",
+          "src/todo_orchestrator/providers/resources",
+          "SKILL.md",
+          "references"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Expose stable standalone Python, CLI and skill interfaces"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "No duplicate physical GPU/resource ownership state is introduced.",
+          "Unavailable providers have narrow, typed effects; normal planning still works.",
+          "Execution outputs, secrets and model runtimes are not embedded in Todo events."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-I01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-V02",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-I04",
+      "kind": "task",
+      "motivation": "Define how standalone Todo requests externally owned resource permits and execution receipts. Keep background worker supervision and CUDA-specific paths outside the canonical engine.",
+      "objective": "Define how standalone Todo requests externally owned resource permits and execution receipts. Keep background worker supervision and CUDA-specific paths outside the canonical engine.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-INTEGRATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "src/todo_orchestrator/api",
+          "src/todo_orchestrator/providers/execution",
+          "src/todo_orchestrator/providers/resources",
+          "SKILL.md",
+          "references"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Define standalone external execution and resource providers"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "A versioned parity matrix identifies preserved, intentionally changed and unsupported legacy contracts.",
+          "Regression fixtures require no live project authority or hardware.",
+          "Uncertain legacy cases are documented rather than silently normalized."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-F01",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-F03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-Q01",
+      "kind": "task",
+      "motivation": "Build disposable fixtures from the old Todo implementation for plans, claim contention, delegation, gates, integration, dirty recovery, and semantics. Classify intentional behavior changes.",
+      "objective": "Build disposable fixtures from the old Todo implementation for plans, claim contention, delegation, gates, integration, dirty recovery, and semantics. Classify intentional behavior changes.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-QUALIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "tests/system",
+          "tests/qualification",
+          "docs/qualification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Capture pre-redesign reference fixtures and safety expectations"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "No two active conflicting claims can be admitted.",
+          "Observed eligibility and transactional admission share the same predicates.",
+          "Idempotent retry and stale-plan rejection are reproducible."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-P04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-A05",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-C05",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-Q01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-Q02",
+      "kind": "validation",
+      "motivation": "Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.",
+      "objective": "Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-QUALIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "tests/system",
+          "tests/qualification",
+          "docs/qualification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Qualify planning, admission and multi-agent safety properties"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "No stale evidence can be accepted as current success.",
+          "Uncertain external effects cannot be blindly reexecuted.",
+          "Dirty work survives expired claims, recovery and integration conflicts."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-V04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-R04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-Q01",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-Q03",
+      "kind": "validation",
+      "motivation": "Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.",
+      "objective": "Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-QUALIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "tests/system",
+          "tests/qualification",
+          "docs/qualification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Qualify validation, external effects and crash recovery"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "End-to-end scenario runs on a disposable project and produces inspectable receipts.",
+          "Package/version identity independent of host installation layout is tested.",
+          "Release gate documents unsupported providers and remaining risks."
+        ],
+        "notes": "Bind actual runnable checks and evidence before accepting completion; bootstrap assertions alone are not executable validation gates."
+      },
+      "depends_on": [
+        {
+          "task_id": "TO-I04",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-Q02",
+          "type": "task"
+        },
+        {
+          "task_id": "TO-Q03",
+          "type": "task"
+        }
+      ],
+      "gates": [],
+      "id": "TO-Q05",
+      "kind": "validation",
+      "motivation": "Complete standalone README, API/CLI/skill reference, schema and backup/restore docs, operational guide, release/source pin, and qualification evidence.",
+      "objective": "Complete standalone README, API/CLI/skill reference, schema and backup/restore docs, operational guide, release/source pin, and qualification evidence.",
+      "parallel_policy": "serial",
+      "parent_id": "TO-QUALIFICATION",
+      "priority": 40,
+      "result_policy": {
+        "allowed_dispositions": [
+          "implemented",
+          "validated",
+          "evaluated_not_promoted",
+          "no_change_required",
+          "failed"
+        ]
+      },
+      "risks": [],
+      "scope": {
+        "exclusive_paths": [
+          "README.md",
+          "docs/qualification",
+          "docs/operations",
+          "SKILL.md",
+          "references",
+          "tests/system",
+          "tests/qualification"
+        ],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Deliver standalone release and operator documentation"
+    },
+    {
+      "checkpoints": [],
+      "completion_contract": {
+        "assertions": [
+          "Every workstream has been formally qualified and closed.",
+          "No legacy or production authority was mutated or converted; development tracking used only this repository's Todo authority through supported APIs.",
+          "Release identity, backup/restore, and operator documentation are complete."
+        ]
+      },
+      "depends_on": [],
+      "gates": [],
+      "id": "TO-ROOT",
+      "kind": "epic",
+      "objective": "Deliver an independently usable, transactional workflow and planning engine for Todo Orchestrator.",
+      "parallel_policy": "serial",
+      "priority": 1,
+      "result_policy": {
+        "allowed_dispositions": [
+          "validated"
+        ]
+      },
+      "scope": {
+        "exclusive_paths": [],
+        "forbidden_paths": [],
+        "read_paths": []
+      },
+      "title": "Deliver standalone todo-orchestrator v1"
+    }
+  ]
+}

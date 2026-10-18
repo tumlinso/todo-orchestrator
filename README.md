@@ -2,13 +2,34 @@
 
 Todo Orchestrator is being prepared as a standalone, independently usable workflow engine. The redesign will draw on the existing implementation while progressively copying and adapting functionality and preserving the original implementation throughout.
 
-This repository currently contains only development scaffolding. The comprehensive bootstrap package is expected before implementation or architectural planning begins.
+Development has begun from the preserved bootstrap package. The current foundation includes a source-qualified behavioral baseline, immutable domain contracts, and an independently buildable Python package. The transactional workflow engine is not implemented yet.
 
 - Repository: [tumlinso/todo-orchestrator](https://github.com/tumlinso/todo-orchestrator)
 - Project Control workspace and repository ID: `todo-orchestrator`.
 - Project identity and workflow configuration: `.todo-orchestrator/project.json`.
 - Codex guidance: [AGENTS.md](AGENTS.md). Future planning material: [planning/](planning/).
 
-Use Project Control for task workflow. Todo's SQLite database in Git metadata is the live authority; tracked snapshots and Markdown task files are generated projections. No tasks are defined yet.
+The [standalone development plan](planning/standalone-v1/README.md) tracks 32 deliverables. Project Control integration, cutover, and optional legacy import are excluded. The active Project Control instance, its other tools, the original implementation, and legacy authorities stay unchanged. Only this repository's development Todo authority is used for task tracking; its tracked snapshots and Markdown task files are generated projections.
 
-Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review. Build tooling, dependencies, tests, packaging, and licensing will be established with the bootstrap package; no implementation environment is required for this scaffold.
+See the [source baseline](docs/product/reference-baseline.md) and [domain model](docs/architecture/domain-model.md). Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review.
+
+Python 3.11+ is required; there are no runtime dependencies. The initial `todo` CLI provides help and version only. Run it from source without importing a preinstalled legacy Todo package:
+
+```sh
+PYTHONPATH=src python -S -m todo_orchestrator --help
+PYTHONPATH=src python -S -m todo_orchestrator --version
+```
+
+Run the checks:
+
+```sh
+python scripts/check_reference_baseline.py
+python -S -m unittest discover -s tests/reference -v
+PYTHONPATH=src python -S -m unittest discover -s tests/contracts -v
+PYTHONPATH=src python -S -m unittest discover -s tests/package -t tests -v
+PYTHONPATH=src python -S -m unittest discover -s tests/smoke -t tests -v
+```
+
+Package tests require locally installed pip and setuptools 68+ for an offline wheel build. They build and install only into temporary directories, then verify the installed module paths with site packages disabled. SQLite and Git smoke fixtures also use temporary directories; Git must be available to run its fixture test. For an editable development installation, use a fresh repository-local virtual environment; never install into the active Project Control runtime.
+
+The optional `python scripts/check_reference_baseline.py --verify-external` checks the captured original source/test fingerprints read-only. These checks establish baseline integrity, domain value contracts, and package isolation, not workflow runtime correctness.

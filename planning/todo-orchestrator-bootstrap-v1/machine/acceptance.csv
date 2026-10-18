@@ -1,0 +1,109 @@
+task_id,assertion_number,acceptance_assertion
+TO-F01,1,"An explicit source-to-capability inventory exists, with decisions to retain, adapt, isolate or retire."
+TO-F01,2,Representative current behaviors and safety invariants have reproducible fixtures or test descriptions.
+TO-F01,3,Original repositories and live authorities remain unmodified.
+TO-F02,1,Each entity has a unique owner and unambiguous identity/lifecycle.
+TO-F02,2,State/transition invariants and forbidden transitions are documented with examples.
+TO-F02,3,Simple single-worker tasks need no ceremonial run/lane configuration.
+TO-F03,1,Project Control is not imported by the standalone core.
+TO-F03,2,Isolated import/CLI and disposable SQLite/Git smoke fixtures are specified and subsequently runnable.
+TO-F03,3,Existing README/AGENTS/project settings are preserved and amended deliberately.
+TO-F04,1,"Provider contracts specify inputs, authority provenance, receipts, failure/unknown states and versioning."
+TO-F04,2,"GPU interlocks, inference and job execution are expressly external, without duplicate ownership ledgers."
+TO-F04,3,Provider absence blocks only operations that require it.
+TO-P01,1,Equivalent inputs compile to stable logical content and diagnostics.
+TO-P01,2,The format does not expose SQLite or agent scheduling internals.
+TO-P01,3,"Ambiguous paths, foreign references and unsupported conditions are reported rather than guessed."
+TO-P02,1,Direct and indirect dependency cycles are rejected with an actionable witness path.
+TO-P02,2,"Condition logic is bounded, typed and deterministic; arbitrary evaluated code is forbidden."
+TO-P02,3,"Cross-project references need explicitly qualified contracts/receipts, not fake local edges."
+TO-P03,1,Repeated ingestion of the same logical package is a no-op.
+TO-P03,2,Partial/omitted definitions are not interpreted as deletion.
+TO-P03,3,"Diffs identify affected tasks, requirements, attempts and downstream consumers."
+TO-P04,1,Active claims cannot be silently weakened by plan updates.
+TO-P04,2,"Retries cannot duplicate tasks, events, or successful operations."
+TO-P04,3,"Revisions, supersession and downstream rewrites preserve accepted historical evidence."
+TO-P05,1,Old project-control-preledger and proposed_todos.json cases used in fixtures are ingestible or diagnosed precisely.
+TO-P05,2,The canonical new package format does not inherit legacy path-string heuristics.
+TO-P05,3,No old compatibility path is allowed to bypass standard validation and changeset review.
+TO-A01,1,Single-writer consistency and multiple read-only connections operate correctly.
+TO-A01,2,"Read methods never initialize, migrate, restore, or write a missing authority."
+TO-A01,3,Schema evolution has bounded migration/rollback-or-backup policies.
+TO-A02,1,A semantic mutation and its event/receipt commit atomically.
+TO-A02,2,No-op operations and exact retries do not create accidental revision churn.
+TO-A02,3,History and logical fingerprints are stable independently of SQLite WAL page layout.
+TO-A03,1,Readiness and claim-time checks cannot disagree by using different policy implementations.
+TO-A03,2,"Blockers are typed and explain causal prerequisites, unknowns and conflicts."
+TO-A03,3,Admission rechecks preconditions and fails closed under races.
+TO-A04,1,Raw role names in client payloads confer no authority.
+TO-A04,2,"Capabilities bind project, run, assignment, attempt, permissions and incarnation as applicable."
+TO-A04,3,Revocation/expiry and child-right subset constraints are enforced.
+TO-A05,1,Two competing claimants produce at most one successful claim.
+TO-A05,2,Parallel-safe assignments overlap only with proven isolation contracts.
+TO-A05,3,Expiry never erases dirty or potentially live work.
+TO-C01,1,A simple run can claim work without hand-authoring a lane hierarchy.
+TO-C01,2,Complex runs can assign serial and parallel work with explicit role and isolation policy.
+TO-C01,3,"A work item, assignment and attempt have distinct identities."
+TO-C02,1,Claim/dispatch/capability are atomic or leave no partial authority.
+TO-C02,2,"Resumption cannot adopt expired, foreign or revoked work."
+TO-C02,3,Terminal finish revokes its authority family and preserves accepted results.
+TO-C03,1,Read/unread/sync cursor semantics are deterministic.
+TO-C03,2,Blocking communications affect progress only through declared requirements.
+TO-C03,3,"Messages cannot embed secrets, uncontrolled logs, or grant new privileges."
+TO-C04,1,One authored fact has one canonical authority and generated views cite its version.
+TO-C04,2,Context refresh identifies changed/invalidated fragments.
+TO-C04,3,Large source bodies remain referenced in external content stores.
+TO-C05,1,Child scope and permissions are strict subsets of the parent grant.
+TO-C05,2,"Child retries, cancellation and acceptance have explicit stable identities."
+TO-C05,3,The parent or authorized validator must accept a child candidate before promoting it.
+TO-V01,1,Requirement types and predicate semantics are versioned and validated.
+TO-V01,2,Acceptable no-change and evaluated-not-promoted outcomes are representable without being called failures.
+TO-V01,3,Required checks cannot be weakened by an untrusted worker.
+TO-V02,1,Interrupted external checks are recognized and reconciled; no blind replay.
+TO-V02,2,"Evidence attempts retain exact input identity, verifier version and authorized effect."
+TO-V02,3,External GPU locks remain in separate GPU interlock provider.
+TO-V03,1,An input change during validation cannot produce a falsely current pass.
+TO-V03,2,"Accepted completion captures requirements, artifacts, source identity and evidence IDs."
+TO-V03,3,Later source changes invalidate current applicability but do not erase historical success.
+TO-V04,1,Overlapping edits require actual workspace isolation and a qualified integration destination.
+TO-V04,2,"Dirty work, ambiguous commits and conflicts are preserved for owner review."
+TO-V04,3,"Injected crashes between intent, filesystem effect, and receipt cannot cause silent duplication or loss."
+TO-R01,1,Inspection is read-only and reports exact preconditions and blockers.
+TO-R01,2,"Unprovable process or source state remains uncertain, not automatically clean."
+TO-R01,3,Recovery intent references original attempts and effects.
+TO-R02,1,No unauthorized actor can force recovery by asserting a role.
+TO-R02,2,Repeat requests are idempotent and each transition is auditable.
+TO-R02,3,Recoverable work is requeued without losing uncommitted source changes.
+TO-R03,1,Completed work and provenance remain accessible after supersession.
+TO-R03,2,Live work cannot be retired under stale or incomplete expectations.
+TO-R03,3,"Downstream requirements are retargeted or explicitly unresolved, never implicitly dropped."
+TO-R04,1,Read-only operation never creates or repairs state.
+TO-R04,2,"Export/import preserve semantic identity, evidence references and version compatibility."
+TO-R04,3,Missing SQLite state reports unavailable until explicit qualified restore.
+TO-I01,1,Todo works without Project Control installed.
+TO-I01,2,Simple create/preview/claim/report/finish workflows are concise.
+TO-I01,3,Public contracts are versioned; legacy names live only in adapters where necessary.
+TO-I02,1,PC need not import Todo database tables or private plan functions.
+TO-I02,2,Project ID versus repository root selection is consistent at the PC boundary.
+TO-I02,3,Read profiles never gain mutation or initialization authority.
+TO-I03,1,PC no longer hosts an independent plan compiler as its canonical ingress.
+TO-I03,2,Historical supported inputs pass through one typed validation/change-set path.
+TO-I03,3,"Apply remains an explicit operator-authorized action, not a side effect of read or package import."
+TO-I04,1,No duplicate physical GPU/resource ownership state is introduced.
+TO-I04,2,"Unavailable providers have narrow, typed effects; normal planning still works."
+TO-I04,3,"Execution outputs, secrets and model runtimes are not embedded in Todo events."
+TO-Q01,1,"A versioned parity matrix identifies preserved, intentionally changed and unsupported legacy contracts."
+TO-Q01,2,Regression fixtures require no live project authority or hardware.
+TO-Q01,3,Uncertain legacy cases are documented rather than silently normalized.
+TO-Q02,1,No two active conflicting claims can be admitted.
+TO-Q02,2,Observed eligibility and transactional admission share the same predicates.
+TO-Q02,3,Idempotent retry and stale-plan rejection are reproducible.
+TO-Q03,1,No stale evidence can be accepted as current success.
+TO-Q03,2,Uncertain external effects cannot be blindly reexecuted.
+TO-Q03,3,"Dirty work survives expired claims, recovery and integration conflicts."
+TO-Q04,1,Dry-run migrator yields exact parity/intentional-difference report.
+TO-Q04,2,Ambiguous or unrepresentable states halt cutover with a recovery path.
+TO-Q04,3,Existing runtime remains usable until explicit sign-off; no automatic live state restoration.
+TO-Q05,1,End-to-end scenario runs on a disposable project and produces inspectable receipts.
+TO-Q05,2,Package/version identity independent of PC install layout is tested.
+TO-Q05,3,Release gate explicitly documents unsupported providers and remaining risks.

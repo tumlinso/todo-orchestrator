@@ -15,7 +15,9 @@ one parent claim and never become first-class participants.
 
 ## Scope and preservation
 
-Todo Orchestrator is being prepared as a standalone workflow engine. Work in this repository is scaffolding until the comprehensive bootstrap package arrives. Do not implement functionality, copy or migrate code, or settle architecture before then. Future work may progressively copy and adapt the existing implementation; preserve that original implementation throughout.
+Build Todo Orchestrator as a standalone workflow engine. The bootstrap package is preserved in `planning/todo-orchestrator-bootstrap-v1/`; the operator-approved scope and derived native development plan are in `planning/standalone-v1/`. The standalone plan takes precedence where the supplied package describes Project Control integration, legacy import, or cutover work that the operator excluded. Progressively copy and adapt qualified Todo functionality into this repository; preserve the original implementation throughout.
+
+Do not modify the active Project Control service, configuration, source, other tools, or legacy/production Todo authorities. This repository's development Todo authority may be updated through supported workflows. Project Control integration and cutover require separate explicit operator direction. Keep only one development task claimed at a time until isolation is qualified: the existing engine's `serial` policy is lane-local, not a global lock.
 
 Preserve unknown files, uncommitted edits, task state, and history. Do not reset, clean, or overwrite work you did not create. Use supported Project Control workflows for authoritative task state; never hand-edit SQLite state or generated projections. The workflow guidance above describes the installed engine; this repository's workforce policy below restricts engineering to configured Codex subagents.
 
@@ -30,8 +32,12 @@ Preserve unknown files, uncommitted edits, task state, and history. Do not reset
 
 ## Development conventions
 
-- Keep changes small, reviewable, and consistent with established repository conventions. Do not introduce architecture, module layout, dependencies, or build tooling ahead of the bootstrap package.
+- Keep changes small and reviewable. Follow the scoped native plan and its task dependencies, qualify copied behavior, and preserve the supplied package unchanged. Record substantial domain decisions in `docs/architecture/`.
 - Once implementation work is authorized, add or update meaningful tests for behavior changes and run checks appropriate to the change. Report checks that could not be run; never claim unexecuted validation.
 - Keep documentation accurate and concise. Distinguish source inspection, static checks, fixtures, and runtime evidence, and make claims only as strong as the evidence supports.
 - Return changes, validation, exact artifact references, integration state, blockers, and coverage limits. Performance claims require measurements; research includes source identity and counterevidence.
 - Do not commit unless explicitly asked.
+
+## Development isolation
+
+The public import namespace is `todo_orchestrator`; the distribution is `todo-orchestrator`. Use a repository-local virtual environment or a disposable install, never the existing Project Control runtime. An existing Python environment may resolve the same import name to the legacy package. Source tests must disable site packages and select `src` explicitly; package smoke tests must prove they loaded the new installed artifact. Keep SQLite/Git fixtures temporary and separate from this repository's development authority. Do not mistake contract or packaging tests for workflow runtime qualification.

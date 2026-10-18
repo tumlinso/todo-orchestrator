@@ -1,0 +1,22 @@
+{
+  "authorization_note": "Plan not applied; package may be staged and reviewed without mutation",
+  "errors": [],
+  "implementation_started": false,
+  "live_authority_modified": false,
+  "live_project_control_plan_validate_executed": false,
+  "live_todo_validation": "not_run_workspace_not_permitted",
+  "native_schema_conformance": "not verified against recipient runtime; local check required before apply",
+  "new_workspace_access": "project_not_permitted",
+  "prepared": "2026-10-18",
+  "scope": "offline_package_consistency_only",
+  "source": "read-only Project Control source inspections and deterministic search, no agentic calls",
+  "statistics": {
+    "design_contracts": 8,
+    "lanes": 8,
+    "outcome_tasks": 36,
+    "plan_records": 45,
+    "task_dependencies": 74,
+    "workstreams": 8
+  },
+  "valid": true
+}
