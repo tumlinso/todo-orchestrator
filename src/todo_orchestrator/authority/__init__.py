@@ -58,12 +58,17 @@ from .sqlite import (
     AuthorityIdentityMismatchError,
     AuthorityNotFoundError,
     AuthorityPublicationDurabilityUncertainError,
+    DefinitionVersionRecord,
     InvalidAuthorityError,
     MigrationResult,
+    PlanRevisionSnapshotRecord,
+    PlanWorkMembership,
     ReadOnlyAuthorityError,
     SQLiteAuthority,
     UnsupportedAuthorityPlatformError,
     UnsupportedSchemaVersionError,
+    load_plan_revision_snapshot,
+    store_plan_revision_snapshot,
 )
 
 __all__ = [
@@ -116,10 +121,15 @@ __all__ = [
     "AuthorityIdentityMismatchError",
     "AuthorityNotFoundError",
     "AuthorityPublicationDurabilityUncertainError",
+    "DefinitionVersionRecord",
     "InvalidAuthorityError",
     "MigrationResult",
+    "PlanRevisionSnapshotRecord",
+    "PlanWorkMembership",
     "ReadOnlyAuthorityError",
     "SQLiteAuthority",
     "UnsupportedAuthorityPlatformError",
     "UnsupportedSchemaVersionError",
+    "load_plan_revision_snapshot",
+    "store_plan_revision_snapshot",
 ]

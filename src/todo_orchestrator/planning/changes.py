@@ -15,11 +15,18 @@ from todo_orchestrator.contracts.domain import (
     EntityKind,
     EntityRef,
     Outcome,
+    PlanRevision,
+    RequirementGroup,
+    RequirementKind,
+    RequirementMode,
     Sha256Digest,
     StableId,
 )
 
-from .package import CompiledPlan, PlanDeclaration, PlannedRequirement, PlannedWorkItem, QualifiedReference, _freeze, _thaw
+from .package import (
+    CompiledPlan, OwnershipConstraint, PlanDeclaration, PlannedRequirement,
+    PlannedWorkItem, QualifiedReference, WorkItemContext, _freeze, _thaw,
+)
 
 
 class ChangeKind(str, Enum):
@@ -56,17 +63,18 @@ class AcceptedSnapshot:
     authority_id: StableId
     project_id: StableId
     authority_revision: int
-    accepted_plan: CompiledPlan
+    accepted_plan: CompiledPlan | None
     attempts: tuple[Attempt, ...] = ()
     outcomes: tuple[Outcome, ...] = ()
     locked_work_items: tuple[EntityRef, ...] = ()
     downstream_refs: tuple[EntityRef, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.accepted_plan.project.project_id != self.project_id:
-            raise ValueError("accepted plan project does not match snapshot project")
-        if self.accepted_plan.project.authority_id != self.authority_id:
-            raise ValueError("accepted plan authority does not match snapshot authority")
+        if self.accepted_plan is not None:
+            if self.accepted_plan.project.project_id != self.project_id:
+                raise ValueError("accepted plan project does not match snapshot project")
+            if self.accepted_plan.project.authority_id != self.authority_id:
+                raise ValueError("accepted plan authority does not match snapshot authority")
         if type(self.authority_revision) is not int or self.authority_revision < 0:
             raise ValueError("snapshot authority revision must be a non-negative integer")
         for name, value, expected in (
@@ -85,8 +93,8 @@ class AcceptedSnapshot:
                 raise ValueError("snapshot outcomes must belong to the snapshot project")
 
     @property
-    def accepted_revision_id(self) -> StableId:
-        return self.accepted_plan.revision.plan_revision_id
+    def accepted_revision_id(self) -> StableId | None:
+        return None if self.accepted_plan is None else self.accepted_plan.revision.plan_revision_id
 
 
 @dataclass(frozen=True)
@@ -124,7 +132,7 @@ class AffectedWork:
 class ChangeSet:
     authority_id: StableId
     project_id: StableId
-    expected_revision_id: StableId
+    expected_revision_id: StableId | None
     expected_authority_revision: int
     proposed_revision_id: StableId
     operations: tuple[ChangeOperation, ...]
@@ -134,6 +142,7 @@ class ChangeSet:
     warnings: tuple[str, ...]
     diagnostics: tuple[Any, ...]
     digest: Sha256Digest
+    effective_plan: CompiledPlan
 
     @property
     def is_noop(self) -> bool:
@@ -170,11 +179,14 @@ def _qualified_payload(
     ref: QualifiedReference | None,
     effective_refs: Mapping[tuple[str, str], EntityRef] | None = None,
     local_project_id: StableId | None = None,
+    source_revision_id: StableId | None = None,
 ) -> Any:
     if ref is None:
         return None
     reference = ref.reference
-    if effective_refs is not None and reference.project_id == local_project_id:
+    if (effective_refs is not None and reference.project_id == local_project_id
+            and (reference.definition_revision_id is None
+                 or reference.definition_revision_id == source_revision_id)):
         replacement = effective_refs.get((ref.declared_kind, str(reference.entity_id)))
         if replacement is not None:
             reference = replacement
@@ -209,6 +221,7 @@ def _work_value(item: PlannedWorkItem) -> dict[str, Any]:
             "actors": [_qualified_payload(actor) for actor in item.context.ownership.actors],
         },
         "parent_id": None if definition.parent is None else str(definition.parent.entity_id),
+        "parent_ref": None if definition.parent is None else _ref_payload(definition.parent),
         "supersedes": [_ref_payload(ref) for ref in definition.supersedes],
         "requirement_groups": [
             {
@@ -222,10 +235,15 @@ def _work_value(item: PlannedWorkItem) -> dict[str, Any]:
     }
 
 
+def _manifest_payload(item: Any) -> dict[str, str]:
+    return {"id": str(item.source_id), "location": item.location, "sha256": item.digest.hex}
+
+
 def _requirement_value(
     item: PlannedRequirement,
     effective_refs: Mapping[tuple[str, str], EntityRef] | None = None,
     local_project_id: StableId | None = None,
+    source_revision_id: StableId | None = None,
 ) -> dict[str, Any]:
     definition = item.definition
     return {
@@ -233,7 +251,7 @@ def _requirement_value(
         "work_item_id": str(definition.work_item_id),
         "kind": definition.kind.value,
         "description": definition.description,
-        "target": _qualified_payload(item.target, effective_refs, local_project_id),
+        "target": _qualified_payload(item.target, effective_refs, local_project_id, source_revision_id),
         "check_key": None if definition.check_key is None else str(definition.check_key),
     }
 
@@ -287,16 +305,16 @@ def _source_version(plan: CompiledPlan) -> tuple[str, str]:
 def _blocking_members(plan: CompiledPlan, effective_refs: Mapping[tuple[str, str], EntityRef] | None = None) -> dict[str, dict[str, Any]]:
     output = {}
     for group in plan.blocking_groups:
-        source_payload = _qualified_payload(group.source, effective_refs, plan.project.project_id)
+        source_payload = _qualified_payload(group.source, effective_refs, plan.project.project_id, plan.revision.plan_revision_id)
         source_key = _canonical({key: source_payload[key] for key in ("project_id", "kind", "entity_id")})
         output[source_key] = {
-            "source": _qualified_payload(group.source),
+            "source": source_payload,
             "mode": group.mode.value,
             "quorum": group.quorum,
             "members": [
                 {
                     "relation": member.relation.value,
-                    "target": _qualified_payload(member.target, effective_refs, plan.project.project_id),
+                    "target": _qualified_payload(member.target, effective_refs, plan.project.project_id, plan.revision.plan_revision_id),
                     "expected_version": member.expected_version,
                     "condition": None if member.condition is None else _condition_payload(member.condition),
                 }
@@ -346,7 +364,7 @@ def preview_changes(
         raise ValueError("proposal project/authority does not match the explicit accepted snapshot")
     if not isinstance(explicit_retirements, tuple) or any(not isinstance(item, ExplicitRetirement) for item in explicit_retirements):
         raise TypeError("explicit_retirements must be a tuple of ExplicitRetirement values")
-    accepted = snapshot.accepted_plan
+    accepted = snapshot.accepted_plan or _empty_plan(proposal)
     operations: list[ChangeOperation] = []
     conflicts: list[ChangeConflict] = []
     warnings: list[str] = []
@@ -421,13 +439,67 @@ def preview_changes(
         resulting_refs[identifier] = after_ref
         changed_work.add(identifier)
 
+    # Parent links bind exact immutable definitions. Rebind descendants after
+    # a parent revision and revise the child bundle rather than changing its
+    # parent pointer under the old identity.
+    for _ in range(max(1, len(new_work))):
+        parent_links_changed = False
+        for identifier, candidate in sorted(new_work.items()):
+            before_item = old_work.get(identifier)
+            if before_item is None:
+                value = _work_value(candidate)
+            else:
+                candidate_value = _work_value(candidate)
+                value = _merge_patch(
+                    _work_value(before_item), candidate_value,
+                    _masks(proposal, "work_items", identifier, set(candidate_value)) - {"id"},
+                )
+            parent_id = value.get("parent_id")
+            parent_ref = None if parent_id is None else resulting_refs.get(str(parent_id))
+            if parent_id is not None and parent_ref is None:
+                continue
+            next_parent = None if parent_ref is None else _ref_payload(parent_ref)
+            if value.get("parent_ref") == next_parent:
+                continue
+            value["parent_ref"] = next_parent
+            new_revision = _new_definition_revision("work_item", value)
+            after_ref = EntityRef(proposal.project.project_id, EntityKind.WORK_ITEM, StableId(identifier), new_revision)
+            index = next((i for i, operation in enumerate(operations)
+                          if operation.entity_kind == EntityKind.WORK_ITEM.value
+                          and operation.entity_id == StableId(identifier)
+                          and operation.kind in {ChangeKind.CREATE, ChangeKind.REVISE}), None)
+            if index is None:
+                operations.append(ChangeOperation(
+                    ChangeKind.REVISE, EntityKind.WORK_ITEM.value, StableId(identifier),
+                    before_item.definition.ref, after_ref, _freeze(_work_value(before_item)), _freeze(value),
+                    relation="parent_definition_revision",
+                ))
+            else:
+                operation = operations[index]
+                operations[index] = replace(operation, after=after_ref, after_value=_freeze(value))
+            if resulting_refs.get(identifier) != after_ref:
+                resulting_refs[identifier] = after_ref
+                changed_work.add(identifier)
+                parent_links_changed = True
+        if not parent_links_changed:
+            break
+
     effective_work_refs = {
         (EntityKind.WORK_ITEM.value, identifier): reference
         for identifier, reference in resulting_refs.items()
     }
     _preview_requirements(proposal, accepted, operations, effective_work_refs)
-    _preview_declarations(proposal, accepted, operations)
+    _preview_declarations(proposal, accepted, operations, effective_work_refs)
     _preview_blocking(proposal, accepted, operations, effective_work_refs)
+    if proposal.source_manifests_supplied:
+        before_manifests = [_manifest_payload(item) for item in accepted.source_manifests]
+        after_manifests = [_manifest_payload(item) for item in proposal.source_manifests]
+        if _canonical(before_manifests) != _canonical(after_manifests):
+            operations.append(ChangeOperation(
+                ChangeKind.REVISE, "plan_metadata", StableId("source_manifests"),
+                None, None, _freeze({"source_manifests": before_manifests}),
+                _freeze({"source_manifests": after_manifests}), relation="source_manifests",
+            ))
     resulting_refs = _revise_owned_definition_bundles(proposal, accepted, operations, resulting_refs)
 
     for operation in operations:
@@ -453,11 +525,6 @@ def preview_changes(
             if operation.after is not None:
                 effective_refs.add(operation.after)
 
-    effective_graph = _effective_graph_plan(proposal, accepted, resulting_refs, operations)
-    from .graph import validate_plan_graph
-    graph_validation = validate_plan_graph(effective_graph)
-    diagnostics = graph_validation.diagnostics
-
     # Explicit retirements are exact and fail closed when the named accepted
     # definition is absent, stale, or protected by attempts/outcomes/locks.
     for retirement in sorted(explicit_retirements, key=lambda item: (item.reference.kind.value, str(item.reference.entity_id), str(item.reference.definition_revision_id or ""))):
@@ -471,7 +538,21 @@ def preview_changes(
         operations.append(ChangeOperation(ChangeKind.RETIRE, ref.kind.value, ref.entity_id, ref, None))
         changed_work.add(str(ref.entity_id)) if ref.kind is EntityKind.WORK_ITEM else None
         effective_refs.discard(ref)
-        effective_refs.discard(ref)
+
+    # Graph validation must observe the final membership, including explicit
+    # retirements. A prior validation of the pre-retirement proposal could
+    # otherwise approve references that become dangling in the committed plan.
+    effective_graph = _effective_graph_plan(proposal, accepted, resulting_refs, operations)
+    effective_graph = _without_retired_definitions(effective_graph, operations)
+    from .graph import validate_plan_graph
+    graph_validation = validate_plan_graph(effective_graph)
+    diagnostics = list(graph_validation.diagnostics)
+    retired_refs = tuple(
+        operation.before for operation in operations
+        if operation.kind is ChangeKind.RETIRE and operation.before is not None
+    )
+    diagnostics.extend(_retirement_diagnostics(graph_validation, snapshot.project_id, retired_refs))
+    diagnostics = tuple(sorted(diagnostics, key=lambda item: (item.path, item.code, item.message)))
 
     # A proposed revision is a separate immutable definition. In-flight attempts,
     # accepted outcomes, and scope locks are surfaced as guards, never rewritten.
@@ -518,7 +599,7 @@ def preview_changes(
     body = {
         "authority_id": str(snapshot.authority_id),
         "project_id": str(snapshot.project_id),
-        "expected_revision_id": str(snapshot.accepted_revision_id),
+        "expected_revision_id": None if snapshot.accepted_revision_id is None else str(snapshot.accepted_revision_id),
         "expected_authority_revision": snapshot.authority_revision,
         "proposed_revision_id": str(proposal.revision.plan_revision_id),
         "operations": [_operation_payload(item) for item in operations],
@@ -535,7 +616,35 @@ def preview_changes(
     return ChangeSet(
         snapshot.authority_id, snapshot.project_id, snapshot.accepted_revision_id, snapshot.authority_revision,
         proposal.revision.plan_revision_id, tuple(operations), tuple(sorted(effective_refs, key=lambda ref: (ref.kind.value, str(ref.entity_id), str(ref.definition_revision_id or "")))), affected, tuple(conflicts),
-        tuple(warnings), tuple(diagnostics), digest,
+        tuple(warnings), tuple(diagnostics), digest, effective_graph,
+    )
+
+
+def _empty_plan(template: CompiledPlan) -> CompiledPlan:
+    """Build an ephemeral empty baseline for an authority with no accepted plan."""
+    revision = PlanRevision(
+        plan_revision_id=StableId("unaccepted-plan"),
+        project_id=template.project.project_id,
+        sequence=1,
+        work_items=(),
+    )
+    return replace(
+        template,
+        package_id=StableId("empty-plan"),
+        revision=revision,
+        work_items=(),
+        requirements=(),
+        declarations=(),
+        blocking_groups=(),
+        source_manifests=(),
+        generation_metadata=None,
+        source_manifests_supplied=False,
+        generation_metadata_supplied=False,
+        supplied_sections=(),
+        verified_adoptions=(),
+        canonical_json="{}",
+        content_digest=Sha256Digest(hashlib.sha256(b"{}").hexdigest()),
+        record_field_masks={},
     )
 
 
@@ -553,12 +662,12 @@ def _preview_requirements(
     }
     for identifier, item in sorted(new.items()):
         before_item = old.get(identifier)
-        value = _requirement_value(item, effective_work_refs, proposal.project.project_id)
+        value = _requirement_value(item, effective_work_refs, proposal.project.project_id, proposal.revision.plan_revision_id)
         after_ref = item.definition.ref
         if before_item is None:
             operations.append(ChangeOperation(ChangeKind.CREATE, EntityKind.REQUIREMENT.value, StableId(identifier), None, after_ref, None, _freeze(value)))
             continue
-        old_value = _requirement_value(before_item, accepted_work_refs, accepted.project.project_id)
+        old_value = _requirement_value(before_item, accepted_work_refs, accepted.project.project_id, accepted.revision.plan_revision_id)
         mask = _masks(proposal, "requirements", identifier, set(value)) - {"id"}
         merged = _merge_patch(old_value, value, mask)
         if _canonical(merged) == _canonical(old_value):
@@ -573,18 +682,36 @@ def _preview_requirements(
             operations.append(ChangeOperation(ChangeKind.RETARGET, EntityKind.REQUIREMENT.value, StableId(identifier), before_item.definition.ref, after_ref, relation="requirement_target", related_before=before_target, related_after=after_target))
 
 
-def _preview_declarations(proposal: CompiledPlan, accepted: CompiledPlan, operations: list[ChangeOperation]) -> None:
+def _preview_declarations(
+    proposal: CompiledPlan,
+    accepted: CompiledPlan,
+    operations: list[ChangeOperation],
+    effective_work_refs: Mapping[tuple[str, str], EntityRef],
+) -> None:
     old, new = _declarations_by_key(accepted), _declarations_by_key(proposal)
+    local_work_refs = {
+        identifier: reference
+        for (kind, identifier), reference in effective_work_refs.items()
+        if kind == EntityKind.WORK_ITEM.value
+    }
+    accepted_work_refs = {
+        str(item.definition.work_item_id): item.definition.ref
+        for item in accepted.work_items
+    }
     for (kind, identifier), item in sorted(new.items()):
         previous = old.get((kind, identifier))
-        value = _declaration_value(item)
+        value = _rebind_payload_refs(_declaration_value(item), proposal.project.project_id, local_work_refs, proposal.revision.plan_revision_id)
         reference = EntityRef(proposal.project.project_id, _entity_kind_for_decl(kind), item.declaration_id)
         if previous is None:
             operations.append(ChangeOperation(ChangeKind.CREATE, kind[:-1] if kind.endswith("s") else kind, item.declaration_id, None, reference, None, _freeze(value)))
         else:
-            previous_value = _declaration_value(previous)
+            previous_value = _rebind_payload_refs(
+                _declaration_value(previous), accepted.project.project_id, accepted_work_refs,
+                accepted.revision.plan_revision_id,
+            )
             mask = _masks(proposal, kind, identifier, set(value)) - {"id"}
             merged = _merge_patch(previous_value, value, mask)
+            merged = _rebind_payload_refs(merged, proposal.project.project_id, local_work_refs, proposal.revision.plan_revision_id)
             if _canonical(previous_value) != _canonical(merged):
                 operations.append(ChangeOperation(ChangeKind.REVISE, kind[:-1] if kind.endswith("s") else kind, item.declaration_id, EntityRef(accepted.project.project_id, _entity_kind_for_decl(kind), item.declaration_id), reference, _freeze(previous_value), _freeze(merged)))
 
@@ -675,11 +802,17 @@ def _revise_owned_definition_bundles(
             continue
         if old_item is not None and new_item is not None:
             old_value = _work_value(old_item)
-            candidate = _work_value(new_item)
+            candidate = _rebind_payload_refs(
+                _work_value(new_item), proposal.project.project_id, resulting_refs,
+                proposal.revision.plan_revision_id,
+            )
             mask = _masks(proposal, "work_items", identifier, set(candidate)) - {"id"}
             work_value = _merge_patch(old_value, candidate, mask)
         elif new_item is not None:
-            work_value = _work_value(new_item)
+            work_value = _rebind_payload_refs(
+                _work_value(new_item), proposal.project.project_id, resulting_refs,
+                proposal.revision.plan_revision_id,
+            )
             old_value = None
         else:
             work_value = _work_value(old_item)
@@ -688,14 +821,29 @@ def _revise_owned_definition_bundles(
         requirements = {}
         for requirement_id, item in old_req.items():
             if str(item.definition.work_item_id) == identifier:
-                requirements[requirement_id] = _requirement_value(item, {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()}, proposal.project.project_id)
+                requirements[requirement_id] = _requirement_value(
+                    item,
+                    {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()},
+                    proposal.project.project_id,
+                    accepted.revision.plan_revision_id,
+                )
         for requirement_id, item in new_req.items():
             if str(item.definition.work_item_id) != identifier:
                 continue
-            value = _requirement_value(item, {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()}, proposal.project.project_id)
+            value = _requirement_value(
+                item,
+                {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()},
+                proposal.project.project_id,
+                proposal.revision.plan_revision_id,
+            )
             previous = old_req.get(requirement_id)
             if previous is not None:
-                prior = _requirement_value(previous, {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()}, proposal.project.project_id)
+                prior = _requirement_value(
+                    previous,
+                    {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()},
+                    proposal.project.project_id,
+                    accepted.revision.plan_revision_id,
+                )
                 value = _merge_patch(prior, value, _masks(proposal, "requirements", requirement_id, set(value)) - {"id"})
             requirements[requirement_id] = value
 
@@ -774,8 +922,6 @@ def _revision_fingerprint(value: Any, project_id: StableId, preserve_revision_li
     if isinstance(value, Mapping):
         output = {}
         for key, item in value.items():
-            if key == "revision_id" and value.get("project_id") == str(project_id) and not preserve_revision_lists:
-                continue
             output[key] = _revision_fingerprint(item, project_id, preserve_revision_lists or key == "supersedes")
         return output
     if isinstance(value, tuple):
@@ -796,6 +942,16 @@ def _entity_ref_from_payload(payload: Mapping[str, Any]) -> EntityRef:
         None if payload.get("revision_id") is None else StableId(payload["revision_id"]),
         None if payload.get("incarnation_id") is None else StableId(payload["incarnation_id"]),
     )
+
+
+def _qualified_from_payload(payload: Mapping[str, Any]) -> QualifiedReference:
+    receipt_payload = payload.get("adoption_receipt")
+    receipt = None if receipt_payload is None else AdoptionReceipt(
+        StableId(receipt_payload["receipt_id"]),
+        StableId(receipt_payload["authority_id"]),
+        Sha256Digest(receipt_payload["contract_digest"]),
+    )
+    return QualifiedReference(_entity_ref_from_payload(payload), payload["kind"], receipt)
 
 
 def _accepted_definition_refs(plan: CompiledPlan) -> set[EntityRef]:
@@ -828,20 +984,43 @@ def _effective_graph_plan(
             effective_work[identifier] = replace(candidate, definition=definition)
             continue
         mask = _masks(proposal, "work_items", identifier, set(_work_value(candidate)))
-        parent_id = _work_value(candidate).get("parent_id")
+        merged_value = _merge_patch(_work_value(old), _work_value(candidate), mask)
+        parent_id = merged_value.get("parent_id")
         parent = old.definition.parent if "parent_id" not in mask else candidate.definition.parent
         if "parent_id" in mask and parent_id is None:
             parent = None
         elif parent_id is not None and parent_id in effective_work_refs:
             parent = effective_work_refs[parent_id]
+        merged_value["parent_ref"] = None if parent is None else _ref_payload(parent)
         definition = replace(
             candidate.definition,
+            title=merged_value["title"],
+            outcome=merged_value["outcome"],
             definition_revision_id=effective_work_refs[identifier].definition_revision_id,
             parent=parent,
-            supersedes=old.definition.supersedes if "supersedes" not in mask else candidate.definition.supersedes,
-            requirement_groups=old.definition.requirement_groups if "requirement_groups" not in mask else candidate.definition.requirement_groups,
+            supersedes=tuple(_entity_ref_from_payload(item) for item in merged_value["supersedes"]),
+            requirement_groups=tuple(RequirementGroup(
+                RequirementKind[item["kind"].upper()],
+                RequirementMode(item["mode"]),
+                tuple(StableId(value) for value in item["members"]),
+                item["quorum"],
+            ) for item in merged_value["requirement_groups"]),
         )
-        effective_work[identifier] = replace(candidate, definition=definition)
+        context = WorkItemContext(
+            objective=merged_value["objective"],
+            motivation=merged_value["motivation"],
+            references=tuple(_freeze(item) for item in merged_value["references"]),
+            scope=_freeze(merged_value["scope"]),
+            acceptance=_freeze(merged_value["acceptance"]),
+            alternatives=tuple(_freeze(item) for item in merged_value["alternatives"]),
+            unknowns=tuple(merged_value["unknowns"]),
+            delegated_judgment=tuple(merged_value["delegated_judgment"]),
+            ownership=OwnershipConstraint(
+                merged_value["ownership"]["mode"],
+                tuple(_qualified_from_payload(actor) for actor in merged_value["ownership"]["actors"]),
+            ),
+        )
+        effective_work[identifier] = PlannedWorkItem(definition, context)
     for identifier, item in tuple(effective_work.items()):
         if identifier in new_work:
             continue
@@ -855,7 +1034,10 @@ def _effective_graph_plan(
         owner_ref = effective_work_refs.get(owner_id)
         revision = candidate.definition.definition_revision_id if owner_ref is None else owner_ref.definition_revision_id
         target = candidate.definition.target
-        if target is not None and target.project_id == proposal.project.project_id and target.kind is EntityKind.WORK_ITEM:
+        if (target is not None and target.project_id == proposal.project.project_id
+                and target.kind is EntityKind.WORK_ITEM
+                and (target.definition_revision_id is None
+                     or target.definition_revision_id == proposal.revision.plan_revision_id)):
             target = effective_work_refs.get(str(target.entity_id), target)
         definition = replace(candidate.definition, definition_revision_id=revision, target=target)
         qualified = candidate.target
@@ -889,21 +1071,102 @@ def _effective_graph_plan(
     candidate_sources = {_blocking_logical_source(item.source, proposal.project.project_id) for item in proposal.blocking_groups}
     if "dependencies" in supplied:
         old_groups = [item for item in old_groups if _blocking_logical_source(item.source, accepted.project.project_id) not in candidate_sources]
-        old_groups.extend(proposal.blocking_groups)
-    rebound_groups = []
-    for group in old_groups:
-        rebound_groups.append(replace(
-            group,
-            source=_rebind_qualified(group.source, proposal.project.project_id, effective_work_refs),
-            members=tuple(replace(member, target=_rebind_qualified(member.target, proposal.project.project_id, effective_work_refs)) for member in group.members),
-        ))
+        # Candidate-local refs carry the proposal's compiler revision as a
+        # placeholder. Bind only those refs to the effective exact versions;
+        # retained accepted groups keep their historical exact targets.
+        old_groups.extend(
+            replace(
+                group,
+                source=_rebind_qualified(group.source, proposal.project.project_id, effective_work_refs, proposal.revision.plan_revision_id),
+                members=tuple(replace(
+                    member,
+                    target=_rebind_qualified(member.target, proposal.project.project_id, effective_work_refs, proposal.revision.plan_revision_id),
+                ) for member in group.members),
+            )
+            for group in proposal.blocking_groups
+        )
+    rebound_groups = old_groups
+    merged_masks: dict[str, dict[str, tuple[str, ...]]] = {
+        section: {identifier: tuple(fields) for identifier, fields in records.items()}
+        for section, records in accepted.record_field_masks.items()
+    }
+    for section, records in proposal.record_field_masks.items():
+        target_records = merged_masks.setdefault(section, {})
+        for identifier, fields in records.items():
+            target_records[identifier] = tuple(sorted(set(target_records.get(identifier, ())) | set(fields)))
+
     return replace(
         proposal,
+        revision=replace(proposal.revision, work_items=tuple(effective_work[key].definition.ref for key in sorted(effective_work))),
         work_items=tuple(effective_work[key] for key in sorted(effective_work)),
         requirements=tuple(effective_reqs[key] for key in sorted(effective_reqs)),
         declarations=tuple(effective_declarations[key] for key in sorted(effective_declarations)),
         blocking_groups=tuple(rebound_groups),
+        source_manifests=(
+            proposal.source_manifests
+            if proposal.source_manifests_supplied
+            else accepted.source_manifests
+        ),
+        source_manifests_supplied=proposal.source_manifests_supplied or accepted.source_manifests_supplied,
+        generation_metadata=(
+            proposal.generation_metadata
+            if getattr(proposal, "generation_metadata_supplied", False)
+            else accepted.generation_metadata
+        ),
+        generation_metadata_supplied=proposal.generation_metadata_supplied or accepted.generation_metadata_supplied,
+        supplied_sections=tuple(sorted(set(proposal.supplied_sections) | set(accepted.supplied_sections))),
+        record_field_masks=_freeze(merged_masks),
     )
+
+
+def _without_retired_definitions(plan: CompiledPlan, operations: list[ChangeOperation]) -> CompiledPlan:
+    retired = {operation.before for operation in operations if operation.kind is ChangeKind.RETIRE and operation.before is not None}
+    if not retired:
+        return plan
+    return replace(
+        plan,
+        revision=replace(plan.revision, work_items=tuple(
+            item.definition.ref for item in plan.work_items if item.definition.ref not in retired
+        )),
+        work_items=tuple(item for item in plan.work_items if item.definition.ref not in retired),
+        requirements=tuple(item for item in plan.requirements if item.definition.ref not in retired),
+        declarations=tuple(
+            item for item in plan.declarations
+            if EntityRef(plan.project.project_id, _entity_kind_for_decl(item.kind), item.declaration_id) not in retired
+        ),
+    )
+
+
+def _retirement_diagnostics(graph_validation: Any, project_id: StableId, retired_refs: tuple[EntityRef, ...]) -> tuple[Any, ...]:
+    """Report local graph references whose exact definitions were retired."""
+    from .graph import PlanNode
+    from .package import DiagnosticSeverity, PlanDiagnostic
+
+    diagnostics = []
+    seen: set[tuple[str, str, str]] = set()
+    retired = {
+        (str(ref.project_id), ref.kind.value, str(ref.entity_id), str(ref.definition_revision_id or ""))
+        for ref in retired_refs
+    }
+    for edge in (*graph_validation.edges, *graph_validation.lineage_edges):
+        for node in (edge.source, edge.target):
+            if node.project_id != str(project_id) or node.kind == "evidence":
+                continue
+            exact = (node.project_id, node.kind, node.entity_id, node.revision_id)
+            logical = (node.project_id, node.kind, node.entity_id, "")
+            if exact not in retired and logical not in retired:
+                continue
+            marker = (node.kind, node.entity_id, edge.path)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            diagnostics.append(PlanDiagnostic(
+                "retired_definition_still_referenced",
+                f"local {node.kind} {node.entity_id} is referenced but is absent from the final plan membership",
+                edge.path,
+                DiagnosticSeverity.ERROR,
+            ))
+    return tuple(diagnostics)
 
 
 def _blocking_logical_source(reference: QualifiedReference, project_id: StableId) -> str:
@@ -915,25 +1178,35 @@ def _rebind_qualified(
     reference: QualifiedReference,
     project_id: StableId,
     work_refs: Mapping[str, EntityRef],
+    source_revision_id: StableId | None = None,
 ) -> QualifiedReference:
     ref = reference.reference
-    if ref.project_id == project_id and reference.declared_kind == EntityKind.WORK_ITEM.value:
+    if (ref.project_id == project_id and reference.declared_kind == EntityKind.WORK_ITEM.value
+            and (ref.definition_revision_id is None or ref.definition_revision_id == source_revision_id)):
         replacement = work_refs.get(str(ref.entity_id))
         if replacement is not None:
             return replace(reference, reference=replacement)
     return reference
 
 
-def _rebind_payload_refs(value: Any, project_id: StableId, work_refs: Mapping[str, EntityRef]) -> Any:
+def _rebind_payload_refs(
+    value: Any,
+    project_id: StableId,
+    work_refs: Mapping[str, EntityRef],
+    source_revision_id: StableId | None = None,
+) -> Any:
     if isinstance(value, Mapping):
-        output = {key: _rebind_payload_refs(item, project_id, work_refs) for key, item in value.items()}
-        if output.get("project_id") == str(project_id) and output.get("kind") == EntityKind.WORK_ITEM.value:
+        output = {key: _rebind_payload_refs(item, project_id, work_refs, source_revision_id) for key, item in value.items()}
+        if (output.get("project_id") == str(project_id)
+                and output.get("kind") == EntityKind.WORK_ITEM.value
+                and (output.get("revision_id") is None
+                     or output.get("revision_id") == str(source_revision_id))):
             replacement = work_refs.get(str(output.get("entity_id")))
             if replacement is not None:
                 output["revision_id"] = str(replacement.definition_revision_id)
         return output
     if isinstance(value, (tuple, list)):
-        return [_rebind_payload_refs(item, project_id, work_refs) for item in value]
+        return [_rebind_payload_refs(item, project_id, work_refs, source_revision_id) for item in value]
     return value
 
 

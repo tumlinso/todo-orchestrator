@@ -8,6 +8,7 @@ import tempfile
 import unittest
 
 from todo_orchestrator.authority import (
+    AuthorityAuthService,
     CommandDispatcher,
     EligibilityAdapter,
     EligibilityFacts,
@@ -43,6 +44,7 @@ from todo_orchestrator.model import (
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import compile_plan, parse_plan_json
+from tests.authority.plan_fixtures import commit_plan
 
 
 NOW = datetime(2026, 10, 18, 17, 0, tzinfo=timezone.utc)
@@ -435,31 +437,37 @@ class IndependentEligibilityTests(unittest.TestCase):
 
     def test_transactional_recheck_rejects_a_stale_advisory_decision(self):
         plan = make_plan()
-        target = plan.work_items[0].definition.ref
         requester = actor()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "eligibility.sqlite3"
             SQLiteAuthority.initialize(path, PROJECT)
+            dispatcher = CommandDispatcher()
+            auth = AuthorityAuthService(dispatcher, clock=lambda: NOW)
             with SQLiteAuthority.open_writer(path, PROJECT) as writer:
+                enrollment = auth.enroll_local_owner(
+                    writer, "eligibility independent owner 732", label="owner",
+                    idempotency_key=StableId("fixture-owner-enroll"), expected_revision=0,
+                )
+                owner = auth.login_local_owner(
+                    writer, "eligibility independent owner 732",
+                    actions=(StableId("todo.plan.commit"),), scope=PROJECT.ref,
+                    expires_at=NOW + timedelta(days=1),
+                    idempotency_key=StableId("fixture-owner-login"),
+                    expected_revision=enrollment.receipt.semantic_revision,
+                )
+                _, _, accepted_plan = commit_plan(
+                    writer, auth, owner.bearer_token, plan.canonical_json,
+                    key="fixture-accepted-plan",
+                )
+                current_revision = writer.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton = 1"
+                ).fetchone()[0]
+                target = accepted_plan.work_items[0].definition.ref
                 with writer.write_transaction() as connection:
                     connection.execute(
                         "INSERT INTO actors(actor_id, incarnation_id, kind, label) VALUES (?, ?, ?, ?)",
                         (str(requester.entity_id), str(requester.incarnation_id), ActorKind.AUTOMATION.value, "before"),
                     )
-                    connection.execute(
-                        "INSERT INTO plan_revisions(plan_revision_id, sequence, state, content_digest) VALUES (?, ?, ?, ?)",
-                        (str(plan.revision.plan_revision_id), 1, "accepted", plan.content_digest.hex),
-                    )
-                    for item in plan.work_items:
-                        definition = item.definition
-                        connection.execute(
-                            "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) VALUES (?, ?, ?, ?)",
-                            (str(definition.work_item_id), str(definition.definition_revision_id), definition.title, definition.outcome),
-                        )
-                        connection.execute(
-                            "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id) VALUES (?, ?)",
-                            (str(plan.revision.plan_revision_id), str(definition.work_item_id)),
-                        )
                     connection.execute(
                         "INSERT INTO capabilities(capability_id, actor_id, actor_incarnation_id, scope_kind, scope_entity_id) "
                         "VALUES (?, ?, ?, 'project', ?)",
@@ -470,24 +478,24 @@ class IndependentEligibilityTests(unittest.TestCase):
                         ("capability-1", str(ACTION)),
                     )
 
-            request = request_for(plan, requester, expected_revision=0)
+            request = request_for(accepted_plan, requester, expected_revision=current_revision)
             adapter = EligibilityAdapter(clock=lambda: NOW)
             with SQLiteAuthority.open_reader(path, PROJECT) as reader:
-                advisory = adapter.evaluate_read(reader, request, plan)
+                advisory = adapter.evaluate_read(reader, request, accepted_plan)
             self.assertEqual(advisory.status, EligibilityStatus.ALLOWED)
-            self.assertEqual(advisory.authority_revision, 0)
+            self.assertEqual(advisory.authority_revision, current_revision)
 
-            dispatcher = CommandDispatcher([ChangeActorLabelHandler()])
+            dispatcher.register(ChangeActorLabelHandler())
             with SQLiteAuthority.open_writer(path, PROJECT) as writer:
                 dispatcher.execute(
                     writer,
-                    CommandEnvelope(ChangeActorLabel("after"), StableId("bump-authority"), 0, requester),
+                    CommandEnvelope(ChangeActorLabel("after"), StableId("bump-authority"), current_revision, requester),
                 )
             with SQLiteAuthority.open_writer(path, PROJECT) as writer:
                 with writer.write_transaction() as connection:
-                    fresh = adapter.evaluate_in_transaction(writer, connection, request, plan)
+                    fresh = adapter.evaluate_in_transaction(writer, connection, request, accepted_plan)
             self.assertEqual(fresh.status, EligibilityStatus.BLOCKED)
-            self.assertEqual(fresh.authority_revision, 1)
+            self.assertEqual(fresh.authority_revision, current_revision + 1)
             self.assertIn("stale_authority_revision", {cause.code for cause in fresh.causes})
 
 

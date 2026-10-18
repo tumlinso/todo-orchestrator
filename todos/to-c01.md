@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-C01: Define runs, assignments and optional worker lanes
 
-Task revision: `60`; current project revision is in `todo-status.md`.
+Task revision: `88`; current project revision is in `todo-status.md`.
 
 ## Objective
 Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.
 
 ## State
-- Lifecycle: `in_progress`
-- Execution: `idle`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

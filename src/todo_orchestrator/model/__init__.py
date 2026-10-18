@@ -25,6 +25,17 @@ from .attempts import (
     ProcessLiveness,
     SourceSafety,
 )
+from .coordination import (
+    DispatchResult,
+    IsolationPolicy,
+    LaneSpec,
+    QueueEntry,
+    QueuePolicy,
+    RunCharter,
+    RunSchedule,
+    RunScheduleView,
+    ScheduledWork,
+)
 
 __all__ = [
     "AuthorityDelta",
@@ -46,4 +57,13 @@ __all__ = [
     "ChildActivity",
     "ProcessLiveness",
     "SourceSafety",
+    "DispatchResult",
+    "IsolationPolicy",
+    "LaneSpec",
+    "QueueEntry",
+    "QueuePolicy",
+    "RunCharter",
+    "RunSchedule",
+    "RunScheduleView",
+    "ScheduledWork",
 ]

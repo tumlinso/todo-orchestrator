@@ -55,7 +55,9 @@ from .sqlite import AuthorityError, SQLiteAuthority
 CLAIM_ACTION = StableId("todo.attempt.claim")
 HEARTBEAT_ACTION = StableId("todo.attempt.heartbeat")
 RELEASE_ACTION = StableId("todo.attempt.release")
+FINISH_ACTION = StableId("todo.attempt.finish")
 RECONCILE_ACTION = StableId("todo.attempt.reconcile_expired")
+ATTEMPT_SESSION_ACTIONS = (HEARTBEAT_ACTION, RELEASE_ACTION, FINISH_ACTION)
 _LIVE_STATES = (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED)
 _TERMINAL_STATES = (AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED)
 
@@ -435,7 +437,7 @@ class _ClaimHandler(_AttemptHandlerBase):
         if command.qualification is None:
             raise AttemptHostUnavailableError("a trusted workspace qualification is required for a new claim")
         self.service._validate_qualification(command.qualification, command.workspace_id,
-                                             command.target, command.attempt_id,
+                                             command.target, command.correlation_id,
                                              now, require_fresh=True)
         qualifications = _workspace_map(context._connection, context.project)
         qualifications[command.target] = command.qualification
@@ -545,9 +547,21 @@ class _HeartbeatHandler(_AttemptHandlerBase):
         ).rowcount
         if changed != 1:
             raise AttemptLeaseMismatchError("attempt lease changed before renewal")
+        renewed_capabilities = self.service.auth._renew_attempt_capability_expiries_in_transaction(
+            context,
+            attempt_id=attempt.attempt_id,
+            expected_scope=attempt.work_item,
+            expected_run=attempt.run,
+            expected_assignment=attempt.assignment,
+            expected_attempt=attempt.ref,
+            expected_actions=ATTEMPT_SESSION_ACTIONS,
+            expires_at=expires_at,
+            now=now,
+        )
         payload = self._event_payload(
             attempt.ref, attempt.state, previous_lease_id=str(command.expected_lease_id),
             lease_id=str(command.replacement_lease_id), lease_expires_at=_iso(expires_at),
+            renewed_attempt_capabilities=renewed_capabilities,
         )
         return CommandEffect(
             True,
@@ -603,10 +617,17 @@ class _ReleaseHandler(_AttemptHandlerBase):
         ).rowcount
         if updated != 1:
             raise AttemptLeaseMismatchError("attempt changed while applying the host observation")
+        revoked_capabilities = (
+            self.service.auth._revoke_attempt_capability_families_in_transaction(
+                context, attempt.attempt_id
+            )
+            if state is AttemptState.RELEASED else 0
+        )
         payload = self._event_payload(
             attempt.ref, state, previous_state=attempt.state.value,
             lease_id=lease_id, provider_receipt_id=str(observation.receipt.receipt_id),
             safety_observation=_observation_audit(observation),
+            revoked_attempt_capabilities=revoked_capabilities,
         )
         return CommandEffect(
             True, {"attempt_id": str(attempt.attempt_id), "state": state.value},

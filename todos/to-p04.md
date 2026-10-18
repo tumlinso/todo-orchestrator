@@ -1,16 +1,18 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-P04: Commit plan revisions and replan safely
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `81`; current project revision is in `todo-status.md`.
 
 ## Objective
 Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

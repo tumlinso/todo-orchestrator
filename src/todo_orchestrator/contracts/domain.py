@@ -292,8 +292,8 @@ class PlanRevision:
         _items(self.work_items, "work_items", EntityRef, unique=True)
         for ref in self.work_items:
             _ref(ref, EntityKind.WORK_ITEM, self.project_id, "work item")
-            if ref.definition_revision_id != self.plan_revision_id:
-                raise ValueError("plan work items must be definitions from this revision")
+        if len({ref.entity_id for ref in self.work_items}) != len(self.work_items):
+            raise ValueError("plan membership must select one definition per work item")
         if self.authored_by is not None:
             _ref(self.authored_by, EntityKind.ACTOR, self.project_id, "authored_by")
         if self.provenance is not None and not isinstance(self.provenance, SourceProvenance):

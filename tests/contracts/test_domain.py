@@ -141,11 +141,16 @@ class DomainValueTests(unittest.TestCase):
                 parent=work_ref(),
             )
 
-    def test_plan_revision_contains_only_work_definitions_from_its_revision(self):
+    def test_plan_revision_selects_exact_definitions_across_versions(self):
         revision = PlanRevision(sid("revision"), sid("project"), 1, (work_ref(),))
         self.assertEqual(revision.ref.kind, EntityKind.PLAN_REVISION)
-        with self.assertRaisesRegex(ValueError, "definitions from this revision"):
-            PlanRevision(sid("revision"), sid("project"), 1, (work_ref(revision="older"),))
+        retained = work_ref(revision="older")
+        mixed = PlanRevision(sid("revision"), sid("project"), 1, (retained, work_ref("other")))
+        self.assertEqual(mixed.work_items, (retained, work_ref("other")))
+        with self.assertRaisesRegex(ValueError, "one definition per work item"):
+            PlanRevision(sid("revision"), sid("project"), 1, (retained, work_ref()))
+        with self.assertRaises(ValueError):
+            PlanRevision(sid("revision"), sid("project"), 1, (work_ref(project="foreign"),))
         with self.assertRaisesRegex(ValueError, "positive integer"):
             PlanRevision(sid("revision"), sid("project"), True, ())
 

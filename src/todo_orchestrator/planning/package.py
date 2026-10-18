@@ -221,6 +221,8 @@ class CompiledPlan:
     blocking_groups: tuple[BlockingGroup, ...]
     source_manifests: tuple[SourceManifest, ...]
     generation_metadata: Mapping[str, Any] | None
+    source_manifests_supplied: bool
+    generation_metadata_supplied: bool
     supplied_sections: tuple[str, ...]
     verified_adoptions: tuple[VerifiedAdoption, ...]
     canonical_json: str
@@ -821,7 +823,12 @@ def _pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def parse_plan_json(source: str | bytes, *, source_name: str = "inline:json") -> ParseResult:
+def parse_plan_json(
+    source: str | bytes,
+    *,
+    source_name: str = "inline:json",
+    _allow_exact_local_refs: bool = False,
+) -> ParseResult:
     """Parse and strictly validate a v1 package without consulting any authority."""
     try:
         try:
@@ -945,7 +952,7 @@ def parse_plan_json(source: str | bytes, *, source_name: str = "inline:json") ->
             kind_name = reference["kind"]
             is_declared_here = reference["entity_id"] in declared_by_kind.get(kind_name, set())
             revisioned = kind_name in {"work_item", "requirement"}
-            if is_declared_here and revisioned and reference["revision_id"] is not None:
+            if is_declared_here and revisioned and reference["revision_id"] is not None and not _allow_exact_local_refs:
                 _fail("ambiguous_local_reference", f"{path}/revision_id", "references to definitions in this package omit revision_id; the compiler binds the new revision")
             if not is_declared_here and revisioned and reference["revision_id"] is None:
                 _fail("ambiguous_reference", f"{path}/revision_id", "references to existing definitions require an exact revision_id")
@@ -1323,6 +1330,8 @@ def compile_plan(
             blocking_groups=tuple(blocking_groups),
             source_manifests=manifests,
             generation_metadata=None if generation is None else _freeze(generation),
+            source_manifests_supplied=package.source_manifests_supplied,
+            generation_metadata_supplied=package.generation_metadata_supplied,
             supplied_sections=package.supplied_sections,
             verified_adoptions=tuple(sorted(adoption_facts, key=lambda fact: (str(fact.reference.project_id), fact.declared_kind, str(fact.reference.entity_id), str(fact.verification_id)))),
             canonical_json=canonical,
@@ -1349,9 +1358,10 @@ def compile_plan_json(
     revision_sequence: int = 1,
     based_on_revision_id: StableId | None = None,
     adoption_facts: tuple[VerifiedAdoption, ...] = (),
+    _allow_exact_local_refs: bool = False,
 ) -> CompileResult:
     """Convenience parser/compiler entry point with typed diagnostics."""
-    parsed = parse_plan_json(source, source_name=source_name)
+    parsed = parse_plan_json(source, source_name=source_name, _allow_exact_local_refs=_allow_exact_local_refs)
     if not parsed.ok:
         return CompileResult(None, parsed.diagnostics)
     assert parsed.package is not None

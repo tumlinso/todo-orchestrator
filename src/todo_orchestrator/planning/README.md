@@ -77,8 +77,26 @@ references, typed create/revise/link/unlink/supersede/retarget/retire
 operations, impacts, conflicts, and merged-graph diagnostics. Record field
 masks preserve omitted optional fields; omitted records and empty arrays do not
 retire accepted definitions. Retirement is explicit through an exact typed
-`ExplicitRetirement` input. Work-item, requirement, and outgoing dependency
-changes revise one work-definition bundle, and the owned requirements use the
-same definition revision. Active attempts, scope locks, accepted outcomes, and
-frozen interface edits are surfaced as conflicts. Preview output is review
-data only; guarded commit and authority integration are not part of this API.
+`ExplicitRetirement` input and the final graph is checked after retirement.
+Work-item, requirement, and outgoing dependency changes revise one immutable
+work-definition bundle, and the owned requirements use the same definition
+revision. Active attempts, scope locks, accepted outcomes, and frozen interface
+edits are surfaced as conflicts.
+
+`encode_accepted_snapshot` and `decode_accepted_plan` provide a canonical,
+versioned JSON snapshot codec. It preserves exact mixed definition references,
+parent bindings, adoption receipts, authored-field masks, and source manifests;
+it does not execute or load code from snapshot data. `materialize_accepted_plan`
+binds a reviewed non-no-op change set to a new sequence and predecessor.
+
+`PlanService(auth)` exposes read-only `read_snapshot(authority)`,
+`load_accepted_plan(authority, plan_revision_id=None)`, and
+`preview(authority, package_json, ...)`. Commits use
+`commit(authority, bearer_token, package_json, reviewed_digest=...,
+idempotency_key=..., expected_authority_revision=...,
+expected_plan_revision_id=..., ...)`, through the authority's authenticated
+`todo.plan.commit` action. The handler recompiles and recomputes the review
+digest inside the writer transaction before storing the complete accepted
+snapshot. Initial imports require an explicit no-current-plan precondition;
+semantic no-ops do not create a plan revision. The service stores only this
+standalone repository's Todo authority and has no Project Control integration.

@@ -47,6 +47,12 @@ from .changes import (
     ExplicitRetirement,
     preview_changes,
 )
+from .snapshot import (
+    SNAPSHOT_FORMAT, SNAPSHOT_SCHEMA_VERSION, accepted_plan_payload,
+    decode_accepted_plan, definition_bundle_payloads, encode_accepted_plan,
+    encode_accepted_snapshot, materialize_accepted_plan,
+)
+from .service import PlanCommitError, PlanService
 
 __all__ = [
     "AdoptionReceipt", "BlockerRelation", "BlockingEdge", "BlockingGroup", "CompileResult",
@@ -58,4 +64,9 @@ __all__ = [
     "evaluate_results", "validate_plan_graph",
     "AcceptedSnapshot", "AffectedWork", "ChangeConflict", "ChangeKind", "ChangeOperation",
     "ChangeSet", "ExplicitRetirement", "preview_changes",
+    "SNAPSHOT_FORMAT", "SNAPSHOT_SCHEMA_VERSION", "accepted_plan_payload",
+    "decode_accepted_plan", "definition_bundle_payloads", "encode_accepted_plan",
+    "materialize_accepted_plan",
+    "encode_accepted_snapshot",
+    "PlanCommitError", "PlanService",
 ]

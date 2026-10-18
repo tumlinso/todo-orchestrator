@@ -1,6 +1,8 @@
 from dataclasses import dataclass
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -21,6 +23,7 @@ from todo_orchestrator.authority import (
 )
 from todo_orchestrator.contracts import ActorKind, EntityKind, EntityRef, Project, StableId
 from todo_orchestrator.model import CommandEffect
+from tests.authority.plan_fixtures import commit_plan
 
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=timezone.utc)
@@ -127,20 +130,61 @@ class AuthorityAuthTests(unittest.TestCase):
             return revision, counts, tuple(tuple(row) for row in revoked)
 
     def test_plan_scope_authorizes_its_definitions_but_not_another_revision(self):
-        plan_scope = EntityRef(PROJECT.project_id, EntityKind.PLAN_REVISION, StableId("plan-one"))
-        issued = self.issue_owner(scope=plan_scope)
+        commit_owner = self.issue_owner(actions=(StableId("todo.plan.commit"),), key="plan-commit-owner")
+        package = {
+            "format": "todo-orchestrator.plan", "schema_version": 1,
+            "package_id": "auth-plan-scope", "project": {
+                "project_id": str(PROJECT.project_id), "authority_id": str(PROJECT.authority_id),
+            },
+            "work_items": [{
+                "id": work_id, "title": title, "objective": "Do the work",
+                "outcome": "The work is complete",
+                "scope": {"paths": [], "concepts": []},
+                "acceptance": {"assertions": ["complete"], "required_evidence": [],
+                               "allowed_dispositions": ["completed"]},
+            } for work_id, title in (("work-one", "Work one"), ("work-two", "Work two"))],
+        }
         with self.open_writer() as authority:
-            result = self.auth.execute(authority, issued.bearer_token,
-                                       NoOpCommand("same plan", WORK_SCOPE),
-                                       idempotency_key=StableId("same-plan"))
-        self.assertEqual(result.receipt.result["accepted"], "same plan")
+            _, _, original = commit_plan(
+                authority, self.auth, commit_owner.bearer_token, json.dumps(package), key="scope-plan-initial",
+            )
+        previous_work = {item.definition.work_item_id: item.definition.ref for item in original.work_items}
+        revised_package = deepcopy(package)
+        revised_package["work_items"][0]["title"] = "Work one with a new definition"
+        with self.open_writer() as authority:
+            _, _, accepted = commit_plan(
+                authority, self.auth, commit_owner.bearer_token, json.dumps(revised_package),
+                key="scope-plan-selective-replan",
+            )
+        plan_scope = EntityRef(PROJECT.project_id, EntityKind.PLAN_REVISION,
+                               accepted.revision.plan_revision_id)
+        issued = self.issue_owner(scope=plan_scope)
+        accepted_refs = {item.definition.work_item_id: item.definition.ref for item in accepted.work_items}
+        self.assertNotEqual(accepted_refs[StableId("work-one")], previous_work[StableId("work-one")])
+        self.assertEqual(accepted_refs[StableId("work-two")], previous_work[StableId("work-two")])
+        for work_id in (StableId("work-one"), StableId("work-two")):
+            command_text = str(work_id)
+            with self.open_writer() as authority:
+                result = self.auth.execute(
+                    authority, issued.bearer_token, NoOpCommand(command_text, accepted_refs[work_id]),
+                    idempotency_key=StableId("current-plan-" + command_text),
+                )
+            self.assertEqual(result.receipt.result["accepted"], command_text)
         before = self.snapshot()
-        other = EntityRef(PROJECT.project_id, EntityKind.WORK_ITEM, WORK_SCOPE.entity_id,
-                          definition_revision_id=StableId("other-plan"))
+        old_definition = previous_work[StableId("work-one")]
+        unrelated = EntityRef(PROJECT.project_id, EntityKind.WORK_ITEM, old_definition.entity_id,
+                          definition_revision_id=StableId("other-definition"))
         with self.open_writer() as authority:
             with self.assertRaises(CapabilityDeniedError):
-                self.auth.execute(authority, issued.bearer_token, NoOpCommand("other", other),
-                                  idempotency_key=StableId("other-plan"))
+                self.auth.execute(
+                    authority, issued.bearer_token, NoOpCommand("old", old_definition),
+                    idempotency_key=StableId("old-plan-definition"),
+                )
+            with self.assertRaises(CapabilityDeniedError):
+                self.auth.execute(
+                    authority, issued.bearer_token, NoOpCommand("other", unrelated),
+                    idempotency_key=StableId("unrelated-definition"),
+                )
         self.assertEqual(self.snapshot(), before)
 
     def test_owner_enrollment_and_bearer_storage_keep_credentials_and_tokens_secret(self):

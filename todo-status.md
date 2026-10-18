@@ -3,7 +3,7 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # Todo Status v2 Projection
 
-Project revision: `76`
+Project revision: `90`
 
 ## Workstreams
 - `TO-A01` | status: done | execution: closed | next: Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.
@@ -15,8 +15,8 @@ Project revision: `76`
 - `TO-F02` | status: done | execution: closed | next: Specify PlanRevision, WorkItem, Requirement, Run, Assignment, Attempt, Actor, Authorization, Evidence, Outcome and ExternalOperation, including references and lifecycle boundaries. Separate declarations from execution records and separate current applicability from historical proof.
 - `TO-F03` | status: done | execution: closed | next: Ensure distribution todo-orchestrator, ergonomic Python module/CLI/skill entry points, versioned contracts, tests, no hard dependency on Project Control, and no reliance on a sibling source directory. Work with the new repository scaffold rather than overwriting it.
 - `TO-F04` | status: done | execution: closed | next: Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.
-- `TO-C01` | status: in_progress | execution: idle | next: Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.
-- `TO-C02` | status: planned | execution: ready | next: Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.
+- `TO-C01` | status: done | execution: closed | next: Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.
+- `TO-C02` | status: in_progress | execution: claimed | next: Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.
 - `TO-C03` | status: planned | execution: ready | next: Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
 - `TO-C04` | status: planned | execution: ready | next: Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.
 - `TO-C05` | status: planned | execution: ready | next: Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.
@@ -25,7 +25,7 @@ Project revision: `76`
 - `TO-P01` | status: done | execution: closed | next: Implement a documented, expressive plan input that supports authored objectives, structured work, scope, decisions, acceptance, alternatives, provenance and explicit unknowns. Compile deterministically to the canonical domain model, independent of running workers.
 - `TO-P02` | status: done | execution: closed | next: Unify tasks, checkpoints, interfaces, decisions, barriers, rendezvous and result requirements under one typed dependency engine. Verify whole-graph cycles and explain unsatisfied, unavailable, and unresolved states.
 - `TO-P03` | status: done | execution: closed | next: Diff compiled declarations against accepted definitions without simulating arbitrary writes on a copied database. Produce precise additions, updates, retirements, impacts and conflicts, preserving historical intent and omitted fields.
-- `TO-P04` | status: planned | execution: ready | next: Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.
+- `TO-P04` | status: done | execution: closed | next: Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.
 - `TO-Q01` | status: planned | execution: ready | next: Build disposable fixtures from the old Todo implementation for plans, claim contention, delegation, gates, integration, dirty recovery, and semantics. Classify intentional behavior changes.
 - `TO-Q02` | status: planned | execution: ready | next: Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.
 - `TO-Q03` | status: planned | execution: ready | next: Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.
@@ -42,7 +42,7 @@ Project revision: `76`
 - `TO-COORDINATION` | status: planned | execution: ready | next: Coordinate concurrent human or automated workers without adopting an agent runtime.
 - `TO-FOUNDATION` | status: done | execution: closed | next: Define the standalone product, baseline semantics, and trust boundaries before changing source.
 - `TO-INTEGRATION` | status: planned | execution: ready | next: Expose independently usable Python, CLI, and skill interfaces with trusted provider contracts.
-- `TO-PLANNING` | status: planned | execution: ready | next: Make structured plan compilation, dependency validation, and safe change-set application first-class.
+- `TO-PLANNING` | status: done | execution: closed | next: Make structured plan compilation, dependency validation, and safe change-set application first-class.
 - `TO-QUALIFICATION` | status: planned | execution: ready | next: Prove standalone safety, compatibility, packaging, recovery, and release readiness.
 - `TO-RECOVERY` | status: planned | execution: ready | next: Reconcile interruptions and preserve work, evidence, and authoritative provenance.
 - `TO-VERIFICATION` | status: planned | execution: ready | next: Verify outputs against precise source/input identities and use external providers for effects.

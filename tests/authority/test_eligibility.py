@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 import json
 import sqlite3
@@ -8,11 +9,15 @@ import unittest
 from pathlib import Path
 
 from todo_orchestrator.authority import (
+    AuthorityAuthService,
+    CommandDispatcher,
     EligibilityAdapter,
     EligibilityAdapterError,
     EligibilityFacts,
+    InvalidAuthorityError,
     SQLiteAuthority,
     evaluate_eligibility,
+    load_plan_revision_snapshot,
 )
 from todo_orchestrator.contracts import (
     Attempt,
@@ -42,6 +47,7 @@ from todo_orchestrator.planning import (
     compile_plan,
     parse_plan_json,
 )
+from tests.authority.plan_fixtures import commit_plan
 
 
 NOW = datetime(2031, 4, 5, 6, 7, 8, tzinfo=timezone.utc)
@@ -164,6 +170,15 @@ class EligibilityPolicyTests(unittest.TestCase):
         decision = evaluate_eligibility(self.request, base_facts(self.project, self.plan))
         self.assertEqual(decision.status, EligibilityStatus.ALLOWED)
         self.assertEqual(decision.authority_revision, 0)
+
+        old_definition = EntityRef(
+            self.project.project_id, EntityKind.WORK_ITEM, self.request.target.entity_id,
+            sid("work-a-old-definition"),
+        )
+        wrong_version = EligibilityRequest(old_definition, self.actor, sid("work:execute"), 0)
+        decision = evaluate_eligibility(wrong_version, base_facts(self.project, self.plan))
+        self.assertEqual(decision.status, EligibilityStatus.BLOCKED)
+        self.assertIn("target_revision_mismatch", {cause.code for cause in decision.causes})
 
         stale = EligibilityRequest(self.request.target, self.actor, sid("work:execute"), 1)
         decision = evaluate_eligibility(stale, base_facts(self.project, self.plan))
@@ -456,27 +471,31 @@ class EligibilityAdapterTests(unittest.TestCase):
         self.root = tempfile.TemporaryDirectory()
         self.path = Path(self.root.name) / "authority.sqlite3"
         self.project = Project(sid("project-adapter"), sid("authority-adapter"))
-        self.plan = compiled_plan(self.project, items=[{"id": "work-a", "paths": []}])
         SQLiteAuthority.initialize(self.path, self.project)
         self.actor = ref(self.project, EntityKind.ACTOR, "operator", incarnation=sid("inc-1"))
-        self.target = self.plan.work_items[0].definition.ref
+        self.document = plan_document(items=[{"id": "work-a", "paths": []}])
+        self.document["project"] = {
+            "project_id": str(self.project.project_id),
+            "authority_id": str(self.project.authority_id),
+        }
+        self.package_json = json.dumps(self.document)
         with SQLiteAuthority.open_writer(self.path, self.project) as authority:
+            auth = AuthorityAuthService(CommandDispatcher(), clock=lambda: NOW)
+            enrollment = auth.enroll_local_owner(
+                authority, "eligibility fixture owner 732", label="owner",
+                idempotency_key=sid("owner-enroll"), expected_revision=0,
+            )
+            owner = auth.login_local_owner(
+                authority, "eligibility fixture owner 732",
+                actions=(sid("todo.plan.commit"),), expires_at=NOW + timedelta(days=1),
+                idempotency_key=sid("owner-login"), expected_revision=enrollment.receipt.semantic_revision,
+            )
+            _, _, self.plan = commit_plan(authority, auth, owner.bearer_token, self.package_json)
+            self.target = self.plan.work_items[0].definition.ref
             with authority.write_transaction() as connection:
                 connection.execute(
                     "INSERT INTO actors(actor_id, incarnation_id, kind, label) VALUES (?, ?, ?, ?)",
                     (str(self.actor.entity_id), str(self.actor.incarnation_id), "service", "fixture"),
-                )
-                connection.execute(
-                    "INSERT INTO plan_revisions(plan_revision_id, sequence, state, content_digest) VALUES (?, ?, ?, ?)",
-                    (str(self.plan.revision.plan_revision_id), 1, "accepted", self.plan.content_digest.hex),
-                )
-                connection.execute(
-                    "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) VALUES (?, ?, ?, ?)",
-                    (str(self.target.entity_id), str(self.target.definition_revision_id), "work", "done"),
-                )
-                connection.execute(
-                    "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id) VALUES (?, ?)",
-                    (str(self.plan.revision.plan_revision_id), str(self.target.entity_id)),
                 )
                 connection.execute(
                     "INSERT INTO capabilities(capability_id, actor_id, actor_incarnation_id, scope_kind, scope_entity_id) "
@@ -487,7 +506,10 @@ class EligibilityAdapterTests(unittest.TestCase):
                     "INSERT INTO capability_actions(capability_id, action_ordinal, action) VALUES (?, ?, ?)",
                     ("cap-1", 0, "work:execute"),
                 )
-        self.request = EligibilityRequest(self.target, self.actor, sid("work:execute"), 0)
+            revision = authority.connection.execute(
+                "SELECT semantic_revision FROM authority_meta WHERE singleton = 1"
+            ).fetchone()[0]
+        self.request = EligibilityRequest(self.target, self.actor, sid("work:execute"), revision)
 
     def tearDown(self):
         self.root.cleanup()
@@ -506,12 +528,52 @@ class EligibilityAdapterTests(unittest.TestCase):
         self.assertEqual(decision.status, EligibilityStatus.BLOCKED)
         self.assertIn("capability_expired", {cause.code for cause in decision.causes})
 
+    def test_read_adapter_rejects_typed_scope_forgery_with_original_digest(self):
+        item = self.plan.work_items[0]
+        forged_scope = dict(item.context.scope)
+        forged_scope["paths"] = ({"path": "private/other", "access": "write"},)
+        forged_item = replace(item, context=replace(item.context, scope=forged_scope))
+        forged_plan = replace(
+            self.plan,
+            work_items=(forged_item, *self.plan.work_items[1:]),
+        )
+        with SQLiteAuthority.open_reader(self.path, self.project) as reader:
+            decision = EligibilityAdapter(clock=lambda: NOW).evaluate_read(
+                reader, self.request, forged_plan,
+            )
+        self.assertEqual(decision.status, EligibilityStatus.BLOCKED)
+        self.assertIn("plan_not_authoritative", {cause.code for cause in decision.causes})
+
+    def test_reopened_snapshot_loader_rejects_corrupted_canonical_content(self):
+        import todo_orchestrator.authority.sqlite as authority_module
+
+        revision_id = self.plan.revision.plan_revision_id
+        with SQLiteAuthority.open_writer(self.path, self.project) as writer:
+            with writer.write_transaction() as connection:
+                connection.execute("DROP TRIGGER plan_revision_snapshots_no_update")
+                connection.execute(
+                    "UPDATE plan_revision_snapshots SET canonical_json = canonical_json || ' ' "
+                    "WHERE plan_revision_id = ?",
+                    (str(revision_id),),
+                )
+                connection.execute(next(
+                    statement for statement in authority_module._SCHEMA_STATEMENTS
+                    if statement.startswith("CREATE TRIGGER plan_revision_snapshots_no_update")
+                ))
+        with SQLiteAuthority.open_reader(self.path, self.project) as reader:
+            with reader.read_transaction() as connection:
+                with self.assertRaises(InvalidAuthorityError):
+                    load_plan_revision_snapshot(connection, self.project, revision_id)
+
     def test_transactional_adapter_requires_writer_lock_and_rechecks_revision(self):
         adapter = EligibilityAdapter(clock=lambda: NOW)
         with SQLiteAuthority.open_writer(self.path, self.project) as writer:
             with self.assertRaises(EligibilityAdapterError):
                 with writer.write_transaction() as connection:
-                    connection.execute("UPDATE authority_meta SET semantic_revision = 1 WHERE singleton = 1")
+                    connection.execute(
+                        "UPDATE authority_meta SET semantic_revision = ? WHERE singleton = 1",
+                        (self.request.expected_revision + 1,),
+                    )
                     self.assertTrue(writer.write_transaction_active)
                     decision = adapter.evaluate_in_transaction(writer, connection, self.request, self.plan)
                     self.assertEqual(decision.status, EligibilityStatus.BLOCKED)

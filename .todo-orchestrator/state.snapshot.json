@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T18:09:30Z",
+  "generated_at": "2026-10-18T18:48:04Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 76,
+  "project_revision": 90,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 76,
+    "project_revision": 90,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -797,6 +797,146 @@
         "revision": 76,
         "seq": 76,
         "timestamp": "2026-10-18T18:09:30Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-PLANNING",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-PLANNING\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-P04\"}",
+        "revision": 77,
+        "seq": 77,
+        "timestamp": "2026-10-18T18:10:07Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "3dedc7fd-dbb8-4359-b105-ed146887ba5b",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 78,
+        "seq": 78,
+        "timestamp": "2026-10-18T18:11:21Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-P04-guarded-plan-commit",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-P04-guarded-plan-commit\"}",
+        "revision": 79,
+        "seq": 79,
+        "timestamp": "2026-10-18T18:30:49Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-P04-guarded-plan-commit",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"a88abb74-0e8a-4b80-b8a8-b5e791329782\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 80,
+        "seq": 80,
+        "timestamp": "2026-10-18T18:30:52Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-P04",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 81, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 81,
+        "seq": 81,
+        "timestamp": "2026-10-18T18:30:52Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-PLANNING",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-PLANNING\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-PLANNING\"}",
+        "revision": 82,
+        "seq": 82,
+        "timestamp": "2026-10-18T18:30:57Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-PLANNING",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 83, \"disposition\": \"validated\", \"reached_checkpoints\": []}",
+        "revision": 83,
+        "seq": 83,
+        "timestamp": "2026-10-18T18:31:24Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-C01\"}",
+        "revision": 84,
+        "seq": 84,
+        "timestamp": "2026-10-18T18:31:40Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "a8a729d0-05c2-403f-93d1-92d6bf6977fe",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 85,
+        "seq": 85,
+        "timestamp": "2026-10-18T18:32:18Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C01-scheduling",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-C01-scheduling\"}",
+        "revision": 86,
+        "seq": 86,
+        "timestamp": "2026-10-18T18:46:04Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C01-scheduling",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"c3e55c88-d9d1-4a79-b9db-1352c8400401\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 87,
+        "seq": 87,
+        "timestamp": "2026-10-18T18:46:09Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C01",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 88, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 88,
+        "seq": 88,
+        "timestamp": "2026-10-18T18:46:09Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-C02\"}",
+        "revision": 89,
+        "seq": 89,
+        "timestamp": "2026-10-18T18:46:19Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "288e8013-f5c8-4bce-a2f2-07f428b81d90",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 90,
+        "seq": 90,
+        "timestamp": "2026-10-18T18:48:04Z"
       }
     ],
     "evidence": [
@@ -934,6 +1074,19 @@
         "checkpoint_id": null,
         "claim_id": null,
         "content_hash": null,
+        "created_at": "2026-10-18T18:30:52Z",
+        "gate_id": "TO-P04-guarded-plan-commit",
+        "id": "a88abb74-0e8a-4b80-b8a8-b5e791329782",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"bc420eb62f6d6a71ea00a15f142234803e8a6d09456d7f5ef148d16e8df6d1dd\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/domain-model.md\", \"docs/architecture/plan-revisions.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/scopes.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/planning/service.py\", \"src/todo_orchestrator/planning/snapshot.py\", \"tests/authority/plan_fixtures.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_attempts_independent.py\", \"tests/authority/test_auth.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_domain.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_commit_independent.py\", \"tests/planning/test_service.py\", \"tests/planning/test_snapshot.py\", \"todo-status.md\", \"todos.md\", \"todos/to-p04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/planning\", \"sha256\": \"missing\"}, {\"path\": \"tests/planning\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 79}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/a88abb74-0e8a-4b80-b8a8-b5e791329782",
+        "revision": 80,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
         "created_at": "2026-10-18T17:18:10Z",
         "gate_id": "TO-A03-shared-admission-policy",
         "id": "bd2a1597-4488-41fe-9a65-b72826033598",
@@ -941,6 +1094,19 @@
         "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"5e1b5caed156e61fdeb5af5a41efa0452b8bb27d9c03d759ea6f5fc28f62237f\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/eligibility.py\", \"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/graph.py\", \"src/todo_orchestrator/planning/package.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/planning/__init__.py\", \"tests/planning/test_package.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a03.md\", \"todos/to-p01.md\", \"todos/to-p02.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/authority\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/model\", \"sha256\": \"missing\"}, {\"path\": \"tests/authority\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 53}",
         "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/bd2a1597-4488-41fe-9a65-b72826033598",
         "revision": 54,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T18:46:09Z",
+        "gate_id": "TO-C01-scheduling",
+        "id": "c3e55c88-d9d1-4a79-b9db-1352c8400401",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"de52d446b43703bf49ff7dfa7167b578ec8568b341d80d4e5c904062f0839671\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/domain-model.md\", \"docs/architecture/plan-revisions.md\", \"docs/architecture/runs-and-assignments.md\", \"docs/product/scheduling-reference.md\", \"planning/standalone-v1/planning-acceptance.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/scopes.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/coordination/store.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/coordination.py\", \"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/planning/service.py\", \"src/todo_orchestrator/planning/snapshot.py\", \"tests/authority/plan_fixtures.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_attempts_independent.py\", \"tests/authority/test_auth.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_domain.py\", \"tests/coordination/__init__.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_commit_independent.py\", \"tests/planning/test_service.py\", \"tests/planning/test_snapshot.py\", \"todo-status.md\", \"todos.md\", \"todos/to-c01.md\", \"todos/to-p04.md\", \"todos/to-planning.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 86}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/c3e55c88-d9d1-4a79-b9db-1352c8400401",
+        "revision": 87,
         "status": "passed"
       },
       {
@@ -1048,6 +1214,32 @@
         "task_id": "TO-A05",
         "type": "command",
         "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
+        "id": "TO-C01-scheduling",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "last_run_at": "2026-10-18T18:46:09Z",
+        "required": 1,
+        "revision": 87,
+        "status": "passed",
+        "task_id": "TO-C01",
+        "type": "command",
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
+        "id": "TO-C02-atomic-dispatch",
+        "input_fingerprint": null,
+        "last_run_at": null,
+        "required": 1,
+        "revision": 90,
+        "status": "pending",
+        "task_id": "TO-C02",
+        "type": "command",
+        "valid": 0
       },
       {
         "checkpoint_id": null,
@@ -1165,9 +1357,42 @@
         "task_id": "TO-P03",
         "type": "command",
         "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/planning\", \"tests/planning\"]}",
+        "id": "TO-P04-guarded-plan-commit",
+        "input_fingerprint": "189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1",
+        "last_run_at": "2026-10-18T18:30:52Z",
+        "required": 1,
+        "revision": 80,
+        "status": "passed",
+        "task_id": "TO-P04",
+        "type": "command",
+        "valid": 1
       }
     ],
     "handoffs": [
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T18:30:52Z",
+        "id": "06fb719c-80c4-4909-a788-5e7d0e775b3f",
+        "kind": "complete",
+        "note": "Implemented PlanService authenticated commit with same-writer recompilation/review digest validation, optimistic authority+accepted-plan preconditions, exact idempotent replay/no-op semantics, immutable canonical accepted snapshots and normalized bundles, mixed membership and trusted eligibility/auth checks. Initial/reopen/no-op, stale/tampered/revoked replay no-churn, preserved parent/prerequisite/outcome history, guarded active/completed work, explicit retirement, exact historical target binding, split/merge lineage and A\u2192B\u2192A newrevision validated. Root integrated source suite177 passed; one final added split/merge case passed in focused6 service tests; planning requiredgate covers complete final50. Reference4, original fingerprints, compileall,diffcheck passed. Newengine schema7 explicitly rejects older versions; no production/legacy/PC service changes.",
+        "payload_json": "{\"authority_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"changed_owned_paths\": [\"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/planning/service.py\", \"src/todo_orchestrator/planning/snapshot.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_commit_independent.py\", \"tests/planning/test_service.py\", \"tests/planning/test_snapshot.py\"], \"checkpoints\": [], \"completion_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"completion_gates\": [{\"evidence_id\": \"a88abb74-0e8a-4b80-b8a8-b5e791329782\", \"evidence_revision\": 80, \"id\": \"TO-P04-guarded-plan-commit\", \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\"}], \"completion_revision\": 81, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-P04-guarded-plan-commit\", \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"last_run_at\": \"2026-10-18T18:30:52Z\", \"revision\": 80, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json          |  59 +-\\n README.md                                       |   2 +-\\n docs/architecture/domain-model.md               |   2 +-\\n src/todo_orchestrator/authority/README.md       |  29 +-\\n src/todo_orchestrator/authority/__init__.py     |  10 +\\n src/todo_orchestrator/authority/auth.py         |  32 +-\\n src/todo_orchestrator/authority/eligibility.py  |  88 ++-\\n src/todo_orchestrator/authority/scopes.py       |  41 +-\\n src/todo_orchestrator/authority/sqlite.py       | 721 +++++++++++++++++++++++-\\n src/todo_orchestrator/contracts/domain.py       |   4 +-\\n src/todo_orchestrator/planning/README.md        |  28 +-\\n src/todo_orchestrator/planning/__init__.py      |  11 +\\n src/todo_orchestrator/planning/changes.py       | 381 +++++++++++--\\n src/todo_orchestrator/planning/package.py       |  16 +-\\n tests/authority/test_attempts.py                |  26 +-\\n tests/authority/test_attempts_independent.py    |  46 +-\\n tests/authority/test_auth.py                    |  64 ++-\\n tests/authority/test_eligibility.py             |  94 ++-\\n tests/authority/test_eligibility_independent.py |  52 +-\\n tests/authority/test_sqlite.py                  |  47 +-\\n tests/contracts/test_domain.py                  |  11 +-\\n tests/planning/test_changes.py                  |  30 +\\n todo-status.md                                  |   4 +-\\n todos.md                                        |   4 +-\\n todos/to-p04.md                                 |   8 +-\\n 25 files changed, 1568 insertions(+), 242 deletions(-)\", \"git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented PlanService authenticated commit with same-writer recompilation/review digest validation, optimistic authority+accepted-plan preconditions, exact idempotent replay/no-op semantics, immutable canonical accepted snapshots and normalized bundles, mixed membership and trusted eligibility/auth checks. Initial/reopen/no-op, stale/tampered/revoked replay no-churn, preserved parent/prerequisite/outcome history, guarded active/completed work, explicit retirement, exact historical target binding, split/merge lineage and A\\u2192B\\u2192A newrevision validated. Root integrated source suite177 passed; one final added split/merge case passed in focused6 service tests; planning requiredgate covers complete final50. Reference4, original fingerprints, compileall,diffcheck passed. Newengine schema7 explicitly rejects older versions; no production/legacy/PC service changes.\", \"producer_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-P04\"}",
+        "revision": 81,
+        "task_id": "TO-P04"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T18:31:24Z",
+        "id": "10f575d0-b4dd-493e-a4cf-fdb77df22216",
+        "kind": "complete",
+        "note": "Reviewed child P01-P04 current completion and delivered code/tests. Final P04 requiredgate50planning tests passed; fullsource177 plus final split/merge servicecase6 passed; reference4, baselinefingerprints,compileall,diffcheck pass. Explicit acceptance evidence and scoped limits recorded planning/standalone-v1/planning-acceptance.md, including trusted foreignadoptionfacts, active/accepted editsrefused, schema7only, CLI/coordination/verification/recovery/Git endtoend stillfuture tasks. No PC integration orcutover. Planning workstream acceptance validated; overall epic remains active.",
+        "payload_json": "{\"authority_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"changed_owned_paths\": [], \"checkpoints\": [], \"completion_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"completion_gates\": [], \"completion_revision\": 83, \"finalized_checkpoints\": [], \"gates\": [], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json          | 159 +++++-\\n README.md                                       |   2 +-\\n docs/architecture/domain-model.md               |   2 +-\\n src/todo_orchestrator/authority/README.md       |  29 +-\\n src/todo_orchestrator/authority/__init__.py     |  10 +\\n src/todo_orchestrator/authority/auth.py         |  32 +-\\n src/todo_orchestrator/authority/eligibility.py  |  88 ++-\\n src/todo_orchestrator/authority/scopes.py       |  41 +-\\n src/todo_orchestrator/authority/sqlite.py       | 721 +++++++++++++++++++++++-\\n src/todo_orchestrator/contracts/domain.py       |   4 +-\\n src/todo_orchestrator/planning/README.md        |  28 +-\\n src/todo_orchestrator/planning/__init__.py      |  11 +\\n src/todo_orchestrator/planning/changes.py       | 381 +++++++++++--\\n src/todo_orchestrator/planning/package.py       |  16 +-\\n tests/authority/test_attempts.py                |  26 +-\\n tests/authority/test_attempts_independent.py    |  46 +-\\n tests/authority/test_auth.py                    |  64 ++-\\n tests/authority/test_eligibility.py             |  94 ++-\\n tests/authority/test_eligibility_independent.py |  52 +-\\n tests/authority/test_sqlite.py                  |  47 +-\\n tests/contracts/test_domain.py                  |  11 +-\\n tests/planning/test_changes.py                  |  30 +\\n todo-status.md                                  |   6 +-\\n todos.md                                        |   6 +-\\n todos/to-p04.md                                 |  10 +-\\n todos/to-planning.md                            |   8 +-\\n 26 files changed, 1664 insertions(+), 260 deletions(-)\", \"git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Reviewed child P01-P04 current completion and delivered code/tests. Final P04 requiredgate50planning tests passed; fullsource177 plus final split/merge servicecase6 passed; reference4, baselinefingerprints,compileall,diffcheck pass. Explicit acceptance evidence and scoped limits recorded planning/standalone-v1/planning-acceptance.md, including trusted foreignadoptionfacts, active/accepted editsrefused, schema7only, CLI/coordination/verification/recovery/Git endtoend stillfuture tasks. No PC integration orcutover. Planning workstream acceptance validated; overall epic remains active.\", \"producer_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-PLANNING\"}",
+        "revision": 83,
+        "task_id": "TO-PLANNING"
+      },
       {
         "claim_id": null,
         "created_at": "2026-10-18T16:53:35Z",
@@ -1217,6 +1442,16 @@
         "payload_json": "{\"authority_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"changed_owned_paths\": [\"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/graph.py\", \"src/todo_orchestrator/planning/package.py\", \"tests/planning/__init__.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_changes_independent.py\", \"tests/planning/test_package.py\"], \"checkpoints\": [], \"completion_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"completion_gates\": [{\"evidence_id\": \"c9eda85b-141d-4069-8d77-763eb4dc1ec8\", \"evidence_revision\": 75, \"id\": \"TO-P03-deterministic-change-sets\", \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"24af2ed73089cec187ae82f753485a5d00549e6c\"}], \"completion_revision\": 76, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-P03-deterministic-change-sets\", \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"last_run_at\": \"2026-10-18T18:09:29Z\", \"revision\": 75, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 790 ++++++++++++++++++++++++----\\n README.md                                   |   5 +-\\n docs/architecture/domain-model.md           |   2 +-\\n src/todo_orchestrator/authority/README.md   |  87 ++-\\n src/todo_orchestrator/authority/__init__.py |  72 +++\\n src/todo_orchestrator/authority/commands.py |  58 +-\\n src/todo_orchestrator/authority/sqlite.py   |  97 +++-\\n src/todo_orchestrator/contracts/domain.py   |  10 +-\\n src/todo_orchestrator/model/__init__.py     |  28 +\\n tests/authority/test_commands.py            |  78 +++\\n tests/authority/test_sqlite.py              |  43 +-\\n tests/contracts/test_domain.py              |  10 +\\n todo-status.md                              |  18 +-\\n todos.md                                    |  18 +-\\n todos/to-a03.md                             |  10 +-\\n todos/to-a04.md                             |  10 +-\\n todos/to-a05.md                             |  10 +-\\n todos/to-authority.md                       |  10 +-\\n todos/to-c01.md                             |   8 +-\\n todos/to-p01.md                             |  10 +-\\n todos/to-p02.md                             |  10 +-\\n todos/to-p03.md                             |   8 +-\\n 22 files changed, 1196 insertions(+), 196 deletions(-)\", \"git_head\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented pure deterministic change previews bound to accepted plan and semantic authority revision; typed immutable operations, explicit retirement, omitted field preservation, effective definition identity, merged-graph validation, impacts/conflicts. 36 planning tests pass including five independent adversarial cases; full source suite 157 passed before five additive independent tests, reference 4 and original source fingerprints pass. Guarded persistence/application remains TO-P04.\", \"producer_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-P03\"}",
         "revision": 76,
         "task_id": "TO-P03"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T18:46:09Z",
+        "id": "46cb05b7-8be3-4392-9f3d-ee82e2317652",
+        "kind": "complete",
+        "note": "Implemented authenticated durable accepted-plan run scheduling, optional defaultserial lane, deterministic exact assignments/queuepositions, optionalserial/parallel lanes, assignee/role grantaction/isolation policies andboundedtypedruncharters. Sharedeligibility enforces exactassignment, predecessoracceptedoutcomes,live/unresolvedoccupancy,rolegrant,qualifiedworkspacefacts; historicalclosedrunsdon'tforceassignment. Independent5integrationcases andlocal7cases passed; fullintegratedsource190passed, reference4+originalfingerprints+compileall+diffcheckpass. Allfixturesdisposable/fakehost; realGit isolation, dispatch/resume/finalization arelaterdeliverables, notclaimed.",
+        "payload_json": "{\"authority_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"changed_owned_paths\": [\"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/coordination/store.py\", \"tests/coordination/__init__.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\"], \"checkpoints\": [], \"completion_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"completion_gates\": [{\"evidence_id\": \"c3e55c88-d9d1-4a79-b9db-1352c8400401\", \"evidence_revision\": 87, \"id\": \"TO-C01-scheduling\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\"}], \"completion_revision\": 88, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-C01-scheduling\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"last_run_at\": \"2026-10-18T18:46:09Z\", \"revision\": 87, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json          | 240 ++++++--\\n README.md                                       |   2 +-\\n docs/architecture/domain-model.md               |   2 +-\\n src/todo_orchestrator/authority/README.md       |  40 +-\\n src/todo_orchestrator/authority/__init__.py     |  10 +\\n src/todo_orchestrator/authority/auth.py         |  32 +-\\n src/todo_orchestrator/authority/eligibility.py  | 210 ++++++-\\n src/todo_orchestrator/authority/scopes.py       |  41 +-\\n src/todo_orchestrator/authority/sqlite.py       | 777 +++++++++++++++++++++++-\\n src/todo_orchestrator/contracts/domain.py       |   4 +-\\n src/todo_orchestrator/model/__init__.py         |  18 +\\n src/todo_orchestrator/planning/README.md        |  28 +-\\n src/todo_orchestrator/planning/__init__.py      |  11 +\\n src/todo_orchestrator/planning/changes.py       | 381 ++++++++++--\\n src/todo_orchestrator/planning/package.py       |  16 +-\\n tests/authority/test_attempts.py                |  33 +-\\n tests/authority/test_attempts_independent.py    |  46 +-\\n tests/authority/test_auth.py                    |  64 +-\\n tests/authority/test_eligibility.py             |  94 ++-\\n tests/authority/test_eligibility_independent.py |  52 +-\\n tests/authority/test_sqlite.py                  |  49 +-\\n tests/contracts/test_domain.py                  |  11 +-\\n tests/planning/test_changes.py                  |  30 +\\n todo-status.md                                  |   8 +-\\n todos.md                                        |   6 +-\\n todos/to-c01.md                                 |   4 +-\\n todos/to-p04.md                                 |  10 +-\\n todos/to-planning.md                            |  10 +-\\n 28 files changed, 1942 insertions(+), 287 deletions(-)\", \"git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented authenticated durable accepted-plan run scheduling, optional defaultserial lane, deterministic exact assignments/queuepositions, optionalserial/parallel lanes, assignee/role grantaction/isolation policies andboundedtypedruncharters. Sharedeligibility enforces exactassignment, predecessoracceptedoutcomes,live/unresolvedoccupancy,rolegrant,qualifiedworkspacefacts; historicalclosedrunsdon'tforceassignment. Independent5integrationcases andlocal7cases passed; fullintegratedsource190passed, reference4+originalfingerprints+compileall+diffcheckpass. Allfixturesdisposable/fakehost; realGit isolation, dispatch/resume/finalization arelaterdeliverables, notclaimed.\", \"producer_commit\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-C01\"}",
+        "revision": 88,
+        "task_id": "TO-C01"
       },
       {
         "claim_id": null,
@@ -1891,6 +2126,19 @@
         "validation_git_head": "24af2ed73089cec187ae82f753485a5d00549e6c"
       },
       {
+        "completion_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_revision": 88,
+        "evidence_id": "c3e55c88-d9d1-4a79-b9db-1352c8400401",
+        "evidence_revision": 87,
+        "gate_id": "TO-C01-scheduling",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "provenance_json": "{\"claim_id\": \"a8a729d0-05c2-403f-93d1-92d6bf6977fe\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"de52d446b43703bf49ff7dfa7167b578ec8568b341d80d4e5c904062f0839671\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/domain-model.md\", \"docs/architecture/plan-revisions.md\", \"docs/architecture/runs-and-assignments.md\", \"docs/product/scheduling-reference.md\", \"planning/standalone-v1/planning-acceptance.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/scopes.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/coordination/store.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/coordination.py\", \"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/planning/service.py\", \"src/todo_orchestrator/planning/snapshot.py\", \"tests/authority/plan_fixtures.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_attempts_independent.py\", \"tests/authority/test_auth.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_domain.py\", \"tests/coordination/__init__.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_commit_independent.py\", \"tests/planning/test_service.py\", \"tests/planning/test_snapshot.py\", \"todo-status.md\", \"todos.md\", \"todos/to-c01.md\", \"todos/to-p04.md\", \"todos/to-planning.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 86}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/c3e55c88-d9d1-4a79-b9db-1352c8400401\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-C01",
+        "valid": 1,
+        "validation_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad"
+      },
+      {
         "completion_git_head": "9100f82384ab3099057b272ca5504a64e651aad0",
         "completion_revision": 9,
         "evidence_id": "22ce4689-7401-4350-9a2a-a62cb57d88b7",
@@ -2006,6 +2254,19 @@
         "task_id": "TO-P03",
         "valid": 1,
         "validation_git_head": "24af2ed73089cec187ae82f753485a5d00549e6c"
+      },
+      {
+        "completion_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_revision": 81,
+        "evidence_id": "a88abb74-0e8a-4b80-b8a8-b5e791329782",
+        "evidence_revision": 80,
+        "gate_id": "TO-P04-guarded-plan-commit",
+        "input_fingerprint": "189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1",
+        "provenance_json": "{\"claim_id\": \"3dedc7fd-dbb8-4359-b105-ed146887ba5b\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"bc420eb62f6d6a71ea00a15f142234803e8a6d09456d7f5ef148d16e8df6d1dd\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/domain-model.md\", \"docs/architecture/plan-revisions.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/scopes.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/planning/README.md\", \"src/todo_orchestrator/planning/__init__.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/planning/service.py\", \"src/todo_orchestrator/planning/snapshot.py\", \"tests/authority/plan_fixtures.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_attempts_independent.py\", \"tests/authority/test_auth.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_domain.py\", \"tests/planning/test_changes.py\", \"tests/planning/test_commit_independent.py\", \"tests/planning/test_service.py\", \"tests/planning/test_snapshot.py\", \"todo-status.md\", \"todos.md\", \"todos/to-p04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/planning\", \"sha256\": \"missing\"}, {\"path\": \"tests/planning\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"d5c56de90a933f787323d19a612be8a340e6c7ad\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 79}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/a88abb74-0e8a-4b80-b8a8-b5e791329782\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-P04",
+        "valid": 1,
+        "validation_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad"
       }
     ],
     "task_dependencies": [
@@ -2879,10 +3140,10 @@
         "version": 3
       },
       {
-        "attention_reason": "This worker is authorized only for the parent-owned TO-A04 task; next_task returned unrelated TO-C01, so I am releasing the accidental claim without making changes.",
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "attention_reason": null,
+        "completion_commit": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_revision": 88,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-C01",
         "kind": "task",
@@ -2894,14 +3155,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-COORDINATION",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 60,
-        "status": "in_progress",
+        "revision": 88,
+        "status": "done",
         "tags_json": "[]",
         "title": "Define runs, assignments and optional worker lanes",
-        "updated_at": "2026-10-18T17:31:27Z",
-        "version": 5
+        "updated_at": "2026-10-18T18:46:09Z",
+        "version": 7
       },
       {
         "attention_reason": null,
@@ -2921,12 +3182,12 @@
         "priority": 40,
         "result": null,
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 89,
+        "status": "in_progress",
         "tags_json": "[]",
         "title": "Implement atomic dispatch, resumption and release",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T18:46:19Z",
+        "version": 2
       },
       {
         "attention_reason": null,
@@ -3305,9 +3566,9 @@
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_revision": 81,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-P04",
         "kind": "task",
@@ -3319,20 +3580,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-PLANNING",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 81,
+        "status": "done",
         "tags_json": "[]",
         "title": "Commit plan revisions and replan safely",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T18:30:52Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_git_head": "d5c56de90a933f787323d19a612be8a340e6c7ad",
+        "completion_revision": 83,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-PLANNING",
         "kind": "workstream",
@@ -3344,14 +3605,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-ROOT",
         "priority": 15,
-        "result": null,
+        "result": "validated",
         "result_policy_json": "{\"allowed_dispositions\": [\"validated\", \"no_change_required\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 83,
+        "status": "done",
         "tags_json": "[]",
         "title": "Machine planning and controlled revision",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T18:31:24Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -4669,23 +4930,23 @@
         "task_id": "TO-AUTHORITY"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T18:31:40Z",
+        "completed_at": "2026-10-18T18:46:09Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 0,
-        "revision": 61,
-        "state": "queued",
+        "revision": 88,
+        "state": "completed",
         "task_id": "TO-C01"
       },
       {
-        "activated_at": null,
+        "activated_at": "2026-10-18T18:46:19Z",
         "completed_at": null,
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 1,
-        "revision": 2,
-        "state": "queued",
+        "revision": 89,
+        "state": "active",
         "task_id": "TO-C02"
       },
       {
@@ -4849,23 +5110,23 @@
         "task_id": "TO-P03"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T18:10:07Z",
+        "completed_at": "2026-10-18T18:30:52Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-PLANNING",
         "position": 3,
-        "revision": 2,
-        "state": "queued",
+        "revision": 81,
+        "state": "completed",
         "task_id": "TO-P04"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T18:30:57Z",
+        "completed_at": "2026-10-18T18:31:24Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-PLANNING",
         "position": 4,
-        "revision": 2,
-        "state": "queued",
+        "revision": 83,
+        "state": "completed",
         "task_id": "TO-PLANNING"
       },
       {
@@ -5037,11 +5298,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-COORDINATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 61,
+        "revision": 89,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "ready",
-        "updated_at": "2026-10-18T17:31:27Z",
+        "state": "active",
+        "updated_at": "2026-10-18T18:46:19Z",
         "workspace_mode": "exclusive"
       },
       {
@@ -5073,11 +5334,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-PLANNING",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 76,
+        "revision": 83,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "ready",
-        "updated_at": "2026-10-18T18:09:30Z",
+        "state": "closed",
+        "updated_at": "2026-10-18T18:31:24Z",
         "workspace_mode": "exclusive"
       },
       {

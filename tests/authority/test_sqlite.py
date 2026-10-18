@@ -1,5 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
+import hashlib
+import json
 from pathlib import Path
 import sqlite3
 import tempfile
@@ -29,6 +31,23 @@ def project(project_id: str = "project-1", authority_id: str = "authority-1") ->
     return Project(StableId(project_id), StableId(authority_id))
 
 
+def work_bundle(work_id: str, revision_id: str, title: str, outcome: str) -> tuple[str, str]:
+    value = {
+        "format": "todo-orchestrator.work-bundle",
+        "schema_version": 1,
+        "work_item_id": work_id,
+        "definition_revision_id": revision_id,
+        "work": {
+            "id": work_id, "title": title, "outcome": outcome,
+            "parent_id": None, "parent_ref": None, "supersedes": [], "requirement_groups": [],
+        },
+        "requirements": {},
+        "outgoing_blockers": [],
+    }
+    canonical = json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+    return canonical, hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class SQLiteAuthorityTests(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
@@ -44,7 +63,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
     def open_writer(self, *, project_value: Project | None = None, busy_timeout: float = 5) -> SQLiteAuthority:
         return SQLiteAuthority.open_writer(self.path, project_value or self.project, busy_timeout=busy_timeout)
 
-    def test_initialization_records_identity_and_schema_v6_in_normalized_tables(self):
+    def test_initialization_records_identity_and_schema_v8_in_normalized_tables(self):
         with self.open_reader() as authority:
             connection = authority.connection
             self.assertEqual(connection.execute("PRAGMA application_id").fetchone()[0], APPLICATION_ID)
@@ -81,12 +100,15 @@ class SQLiteAuthorityTests(unittest.TestCase):
                     ("plan-1", 1, "accepted", "plan.json", "a" * 64, "fixture", "reviewer", "incarnation-1"),
                 )
                 connection.execute(
-                    "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) VALUES (?, ?, ?, ?)",
-                    ("work-1", "plan-1", "Inspect behavior", "Record the result"),
+                    "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome, canonical_json, content_digest) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    ("work-1", "plan-1", "Inspect behavior", "Record the result",
+                     *work_bundle("work-1", "plan-1", "Inspect behavior", "Record the result")),
                 )
                 connection.execute(
-                    "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id) VALUES (?, ?)",
-                    ("plan-1", "work-1"),
+                    "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id, definition_revision_id) "
+                    "VALUES (?, ?, ?)",
+                    ("plan-1", "work-1", "plan-1"),
                 )
                 connection.execute(
                     "INSERT INTO attempts(attempt_id, work_item_id, definition_revision_id, actor_id, "
@@ -121,9 +143,10 @@ class SQLiteAuthorityTests(unittest.TestCase):
                     ("plan-1", 1, "accepted"),
                 )
                 connection.execute(
-                    "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) "
-                    "VALUES (?, ?, ?, ?)",
-                    ("work-1", "plan-1", "Wait on qualified work", "Preserve the complete target ref"),
+                    "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome, canonical_json, content_digest) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    ("work-1", "plan-1", "Wait on qualified work", "Preserve the complete target ref",
+                     *work_bundle("work-1", "plan-1", "Wait on qualified work", "Preserve the complete target ref")),
                 )
                 for requirement_id, target_project_id in (
                     ("requirement-a", "project-a"),
@@ -376,7 +399,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v6"
+                InvalidAuthorityError, "frozen schema-v8"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -392,7 +415,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v6"
+                InvalidAuthorityError, "frozen schema-v8"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -408,7 +431,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v6"
+                InvalidAuthorityError, "frozen schema-v8"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -435,7 +458,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v6"
+                InvalidAuthorityError, "frozen schema-v8"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -485,7 +508,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             self.assertEqual(unsupported.read_bytes(), original)
 
     def test_earlier_schema_versions_are_refused_without_automatic_migration_or_mutation(self):
-        for version in (1, 2, 3, 4, 5):
+        for version in (1, 2, 3, 4, 5, 6, 7):
             earlier = self.root / f"earlier-v{version}.sqlite3"
             SQLiteAuthority.initialize(earlier, self.project)
             with closing(sqlite3.connect(earlier)) as connection:

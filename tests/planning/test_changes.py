@@ -78,6 +78,16 @@ class PlanChangePreviewTests(unittest.TestCase):
             }[item.kind], item.declaration_id) for item in plan.declarations),
         })
 
+    def test_initial_import_has_explicit_no_plan_precondition(self):
+        proposal = compiled(package_document())
+        initial = AcceptedSnapshot(PROJECT.authority_id, PROJECT.project_id, 0, None)
+        changes = preview_changes(proposal, initial)
+        self.assertIsNone(changes.expected_revision_id)
+        self.assertEqual(changes.expected_authority_revision, 0)
+        self.assertIn(ChangeKind.CREATE, {operation.kind for operation in changes.operations})
+        self.assertTrue(all(operation.before is None for operation in changes.operations if operation.kind is ChangeKind.CREATE))
+        self.assertFalse(changes.conflicts)
+
     def test_authority_revision_is_a_digest_precondition(self):
         plan = compiled(package_document())
         seven = preview_changes(plan, snapshot(plan, revision=7))
@@ -106,6 +116,10 @@ class PlanChangePreviewTests(unittest.TestCase):
         self.assertEqual(revisions[0].before_value["ownership"], revisions[0].after_value["ownership"])
         self.assertEqual(revisions[0].before_value["requirement_groups"], revisions[0].after_value["requirement_groups"])
         self.assertEqual(revisions[0].before_value["scope"], revisions[0].after_value["scope"])
+        effective_build = next(item for item in changes.effective_plan.work_items if item.definition.work_item_id == StableId("build"))
+        self.assertEqual(effective_build.context.motivation, accepted.work_items[0].context.motivation)
+        self.assertEqual(effective_build.context.references, accepted.work_items[0].context.references)
+        self.assertEqual(effective_build.context.ownership, accepted.work_items[0].context.ownership)
         retained = set(changes.effective_definitions)
         self.assertIn(accepted.work_items[1].definition.ref, retained)
         self.assertIn(EntityRef(PROJECT.project_id, EntityKind.INTERFACE, StableId("package-api")), retained)
@@ -179,6 +193,22 @@ class PlanChangePreviewTests(unittest.TestCase):
         self.assertTrue(any(op.kind is ChangeKind.RETIRE and op.before == work for op in changes.operations))
         self.assertIn("accepted_outcome_preserved", {conflict.code for conflict in changes.conflicts})
         self.assertNotIn(work, changes.effective_definitions)
+
+    def test_retirement_revalidates_final_graph_membership(self):
+        plan = compiled(package_document())
+        work = next(item.definition.ref for item in plan.work_items if item.definition.work_item_id == StableId("build"))
+        changes = preview_changes(plan, snapshot(plan), explicit_retirements=(ExplicitRetirement(work),))
+        self.assertIn("retired_definition_still_referenced", {item.code for item in changes.diagnostics})
+
+    def test_changed_source_manifest_is_a_reviewed_semantic_operation(self):
+        original = package_document()
+        accepted = compiled(original)
+        revised = copy.deepcopy(original)
+        revised["source_manifests"][0]["sha256"] = "c" * 64
+        changes = preview_changes(compiled(revised), snapshot(accepted))
+        operation = next(item for item in changes.operations if item.entity_kind == "plan_metadata")
+        self.assertEqual(operation.relation, "source_manifests")
+        self.assertNotEqual(operation.before_value, operation.after_value)
 
     def test_active_work_revisions_and_weakened_gates_are_blocked_per_definition(self):
         document = package_document()

@@ -1,4 +1,4 @@
-# SQLite authority v6
+# SQLite authority v8
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v6 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v6
+Schema v8 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v8
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -35,7 +35,20 @@ supplied plan. Both are immutable provenance, not proof of host trust. A
 partial unique index permits at most one admitted,
 active, or reported attempt for each exact work-item definition.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v6
+An accepted plan has one immutable canonical snapshot bound by SHA-256 to its
+plan row. The snapshot stores the complete effective authored plan, including
+declarations, dependencies, provenance, adoption facts, and exact mixed
+definition references. `work_items` is the immutable version registry keyed by
+`(work_item_id, definition_revision_id)` and stores each complete canonical
+definition bundle. `plan_revision_work_items` selects the exact version for
+each work item, so a later plan can retain unchanged definitions while adding
+newly revised ones. Requirements are owned by their work-definition version;
+the normalized rows are checked against the canonical bundle on snapshot load.
+Reusing an exact definition reference requires identical bundle bytes, digest,
+and normalized projections. Snapshot, membership, and definition corruption
+fails closed; the reader does not repair or infer missing authority state.
+
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v8
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -61,10 +74,23 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v6 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v5 or any other unsupported version
+Schema v8 is the only implemented version. `migrate()` is an explicit current
+version no-op and rejects schema v1 through v7 or any other unsupported version
 without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v4 migration is provided.
+be recreated; no v1-v7 migration is provided. A future migration must preserve
+definition identity and full accepted-snapshot meaning; it cannot infer mixed
+membership from matching revision IDs.
+
+Schema v8 adds immutable run-schedule snapshots, lane policies, and queue
+positions attached to immutable assignments. A schedule can omit lane
+hierarchy, in which case one serial `default` lane is persisted. Role
+constraints are required action IDs on the same capability that grants a
+claim; actor labels do not satisfy them. `shared_scopes` always uses the common
+source-scope admission rules, and `qualified_workspaces` adds a requirement for
+distinct provider-qualified workspaces with matching common base and
+destination. Lane and queue policy never bypass capability, assignment, or
+shared admission checks. Direct assignment-free claims remain available for
+work that is not scheduled in a run.
 For a future supported migration, first validate the source identity/version
 read-only, create a non-overwriting adjacent backup with SQLite's online backup
 API, and apply the versioned DDL in one transaction with the version marker

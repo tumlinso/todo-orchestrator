@@ -31,13 +31,14 @@ from todo_orchestrator.model import (
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import compile_plan, parse_plan_json
+from tests.authority.plan_fixtures import commit_plan
 
 
 NOW = datetime(2031, 4, 5, 6, 7, 8, tzinfo=timezone.utc)
 PROJECT = Project(StableId("attempt-project"), StableId("attempt-authority"))
 ATTEMPT_ACTIONS = tuple(StableId(value) for value in (
     "todo.attempt.claim", "todo.attempt.heartbeat", "todo.attempt.release",
-    "todo.attempt.reconcile_expired",
+    "todo.attempt.reconcile_expired", "todo.plan.commit",
 ))
 OWNER_PASSWORD = "attempt fixture owner phrase 927"
 
@@ -165,24 +166,11 @@ class AttemptAuthorityTests(unittest.TestCase):
 
     def _seed_plan(self):
         with self.open_writer() as authority:
-            with authority.write_transaction() as connection:
-                connection.execute(
-                    "INSERT INTO plan_revisions(plan_revision_id, sequence, state, content_digest) "
-                    "VALUES (?, 1, 'accepted', ?)",
-                    (str(self.plan.revision.plan_revision_id), self.plan.content_digest.hex),
-                )
-                for item in self.plan.work_items:
-                    definition = item.definition
-                    connection.execute(
-                        "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) "
-                        "VALUES (?, ?, ?, ?)",
-                        (str(definition.work_item_id), str(definition.definition_revision_id),
-                         definition.title, definition.outcome),
-                    )
-                    connection.execute(
-                        "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id) VALUES (?, ?)",
-                        (str(self.plan.revision.plan_revision_id), str(definition.work_item_id)),
-                    )
+            _, _, self.plan = commit_plan(
+                authority, self.auth, self.issued.bearer_token, self.plan.canonical_json,
+                key="accepted-attempt-plan",
+            )
+            self.target = self.plan.work_items[0].definition.ref
 
     @property
     def current_revision(self):
@@ -375,13 +363,6 @@ class AttemptAuthorityTests(unittest.TestCase):
                 run=run, assignment=assignment, expires_at=NOW + timedelta(hours=1),
                 idempotency_key=StableId("bound-token"), expected_revision=self.current_revision,
             )
-            with authority.write_transaction() as connection:
-                connection.execute(
-                    "UPDATE assignments SET assignee_actor_id = ?, assignee_incarnation_id = ? "
-                    "WHERE assignment_id = ?",
-                    (str(bound.capability.actor.entity_id), str(bound.capability.actor.incarnation_id),
-                     str(assignment.entity_id)),
-                )
             claim = self.service.claim(
                 authority, bound.bearer_token, self.target, self.plan,
                 idempotency_key=StableId("bound-claim"), expected_revision=bound.receipt.semantic_revision,

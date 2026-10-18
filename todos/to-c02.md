@@ -1,14 +1,16 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-C02: Implement atomic dispatch, resumption and release
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `89`; current project revision is in `todo-status.md`.
 
 ## Objective
 Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `in_progress`
+- Execution: `claimed`
 - Parallel policy: `serial`
 - Result: `-`
 

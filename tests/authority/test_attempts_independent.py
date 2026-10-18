@@ -49,6 +49,7 @@ from todo_orchestrator.model import (
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import compile_plan, parse_plan_json
+from tests.authority.plan_fixtures import commit_plan
 
 
 NOW = datetime(2026, 10, 18, 17, 0, tzinfo=timezone.utc)
@@ -60,6 +61,7 @@ REPOSITORY_ID = StableId("attempts-fixture-repository")
 PROVIDER = ProviderIdentity(StableId("attempts-fixture-host"), "1")
 ATTEMPT_ACTIONS = (
     WORK_ACTION,
+    StableId("todo.plan.commit"),
     CLAIM_ACTION,
     HEARTBEAT_ACTION,
     RELEASE_ACTION,
@@ -264,6 +266,7 @@ class IndependentAttemptAuthorityTests(unittest.TestCase):
         self.clock = MutableClock()
         self.dispatcher = CommandDispatcher([])
         self.auth = AuthorityAuthService(self.dispatcher, clock=self.clock)
+        self._seed_count = 0
         with self.open_writer() as authority:
             self.auth.enroll_local_owner(
                 authority, OWNER_PASSWORD, label="fixture owner",
@@ -278,26 +281,23 @@ class IndependentAttemptAuthorityTests(unittest.TestCase):
         return SQLiteAuthority.open_writer(path or self.path, project or self.project)
 
     def _seed_plan(self, plan=None, *, sequence: int = 1) -> None:
-        plan = self.plan if plan is None else plan
+        proposal = self.plan if plan is None else plan
         with self.open_writer() as authority:
-            with authority.write_transaction() as connection:
-                connection.execute(
-                    "INSERT INTO plan_revisions(plan_revision_id, sequence, state, content_digest) "
-                    "VALUES (?, ?, 'accepted', ?)",
-                    (str(plan.revision.plan_revision_id), sequence, plan.content_digest.hex),
+            self._seed_count += 1
+            if not hasattr(self, "_fixture_owner"):
+                self._fixture_owner = self.auth.login_local_owner(
+                    authority, OWNER_PASSWORD,
+                    actions=ATTEMPT_ACTIONS,
+                    scope=self.project.ref,
+                    expires_at=NOW + timedelta(days=1),
+                    idempotency_key=StableId("attempt-plan-owner"),
+                    expected_revision=self.revision(),
                 )
-                for item in plan.work_items:
-                    definition = item.definition
-                    connection.execute(
-                        "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome) "
-                        "VALUES (?, ?, ?, ?)",
-                        (str(definition.work_item_id), str(definition.definition_revision_id),
-                         definition.title, definition.outcome),
-                    )
-                    connection.execute(
-                        "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id) VALUES (?, ?)",
-                        (str(plan.revision.plan_revision_id), str(definition.work_item_id)),
-                    )
+            _, _, accepted = commit_plan(
+                authority, self.auth, self._fixture_owner.bearer_token,
+                proposal.canonical_json, key=f"attempt-plan-{self._seed_count}",
+            )
+            self.plan = accepted
 
     def revision(self) -> int:
         with self.open_reader() as authority:
@@ -452,10 +452,12 @@ class IndependentAttemptAuthorityTests(unittest.TestCase):
         self.claim(service, token.bearer_token, "work-a", "workspace-original", "persisted-scope-original")
         original_work_ref = self.target("work-a")
 
-        # Reopen the same file through the normal authority API with a newly
-        # accepted plan that omits the active work item entirely.
-        revised_plan = make_plan(self.project, work_item_ids=("work-b", "work-c", "work-d"))
-        self._seed_plan(revised_plan, sequence=2)
+        # Commit a partial plan that omits the active work item from its input.
+        # The accepted snapshot retains that exact omitted definition, while
+        # admission must still use the attempt's persisted scope snapshot.
+        revised_proposal = make_plan(self.project, work_item_ids=("work-b", "work-c", "work-d"))
+        self._seed_plan(revised_proposal, sequence=2)
+        revised_plan = self.plan
         overlap_target = self.target("work-b", revised_plan)
         disjoint_context = next(
             item.context for item in revised_plan.work_items

@@ -42,6 +42,7 @@ from todo_orchestrator.model.eligibility import (
     EligibilityStatus,
     WorkspaceQualification,
 )
+from todo_orchestrator.model.coordination import IsolationPolicy, QueueEntry, QueuePolicy
 from todo_orchestrator.planning import (
     BlockingEdge,
     BlockingGroup,
@@ -54,9 +55,11 @@ from todo_orchestrator.planning import (
     evaluate_results,
 )
 from todo_orchestrator.planning.package import WorkItemContext
+from todo_orchestrator.planning.snapshot import accepted_plan_payload, decode_accepted_plan
 
-from .sqlite import AuthorityError, ReadOnlyAuthorityError, SQLiteAuthority
-from .scopes import scope_covers
+from .sqlite import AuthorityError, InvalidAuthorityError, ReadOnlyAuthorityError, SQLiteAuthority, load_plan_revision_snapshot
+from .scopes import plan_scope_membership, scope_covers
+from todo_orchestrator.coordination.store import load_all_queue_entries
 
 
 class EligibilityAdapterError(AuthorityError):
@@ -84,10 +87,12 @@ class EligibilityFacts:
     assignments: Mapping[EntityRef, Assignment]
     attempts: tuple[Attempt, ...]
     outcomes: Mapping[EntityRef, Outcome]
+    queue_entries: Mapping[EntityRef, QueueEntry] = field(default_factory=dict)
     blocker_observations: Mapping[EntityRef, ConditionResult] = field(default_factory=dict)
     check_observations: Mapping[StableId, ConditionResult] = field(default_factory=dict)
     decision_observations: Mapping[str, DecisionObservation] = field(default_factory=dict)
     scope_contexts: Mapping[EntityRef, WorkItemContext] = field(default_factory=dict)
+    plan_memberships: Mapping[EntityRef, frozenset[EntityRef]] = field(default_factory=dict)
     workspace_qualifications: Mapping[EntityRef, WorkspaceQualification] = field(default_factory=dict)
     approved_participants: Mapping[EntityRef, frozenset[EntityRef]] = field(default_factory=dict)
     attempt_scope_snapshots: Mapping[EntityRef, AttemptScopeSnapshot] = field(default_factory=dict)
@@ -123,11 +128,13 @@ class EligibilityFacts:
         for mapping_name, mapping, key_type, value_type in (
             ("runs", self.runs, EntityRef, Run),
             ("assignments", self.assignments, EntityRef, Assignment),
+            ("queue_entries", self.queue_entries, EntityRef, QueueEntry),
             ("outcomes", self.outcomes, EntityRef, Outcome),
             ("blocker_observations", self.blocker_observations, EntityRef, ConditionResult),
             ("check_observations", self.check_observations, StableId, ConditionResult),
             ("decision_observations", self.decision_observations, str, DecisionObservation),
             ("scope_contexts", self.scope_contexts, EntityRef, WorkItemContext),
+            ("plan_memberships", self.plan_memberships, EntityRef, frozenset),
             ("workspace_qualifications", self.workspace_qualifications, EntityRef, WorkspaceQualification),
             ("approved_participants", self.approved_participants, EntityRef, frozenset),
             ("attempt_scope_snapshots", self.attempt_scope_snapshots, EntityRef, AttemptScopeSnapshot),
@@ -146,8 +153,24 @@ class EligibilityFacts:
             raise ValueError("run references must belong to the project")
         if any(key.project_id != self.project.project_id for key in self.assignments):
             raise ValueError("assignment references must belong to the project")
+        if any(
+            key.kind is not EntityKind.ASSIGNMENT or key.project_id != self.project.project_id
+            or value.assignment.ref != key or self.assignments.get(key) != value.assignment
+            for key, value in self.queue_entries.items()
+        ):
+            raise ValueError("queue entries must match persisted project-local assignments")
         if any(key.project_id != self.project.project_id for key in self.workspace_qualifications):
             raise ValueError("workspace qualification keys must belong to the project")
+        if any(
+            key.kind is not EntityKind.PLAN_REVISION or key.project_id != self.project.project_id
+            or any(
+                not isinstance(ref, EntityRef) or ref.project_id != self.project.project_id
+                or ref.kind not in {EntityKind.WORK_ITEM, EntityKind.REQUIREMENT}
+                for ref in members
+            )
+            for key, members in self.plan_memberships.items()
+        ):
+            raise ValueError("plan memberships must map project-local plan revisions to exact work/requirement refs")
         if any(
             key.kind is not EntityKind.WORK_ITEM or key.project_id != self.project.project_id
             or any(
@@ -333,8 +356,12 @@ def _requirement_result(requirement, facts: EligibilityFacts) -> ConditionResult
     )
 
 
-def _scope_contains(grant: EntityRef, requested: EntityRef, target: EntityRef) -> bool:
-    return scope_covers(grant, target) and scope_covers(grant, requested)
+def _scope_contains(grant: EntityRef, requested: EntityRef, target: EntityRef, facts: EligibilityFacts) -> bool:
+    membership = facts.plan_memberships.get(grant)
+    return (
+        scope_covers(grant, target, plan_membership=membership)
+        and scope_covers(grant, requested, plan_membership=membership)
+    )
 
 
 def _capability_matches(capability: Capability, request: EligibilityRequest, facts: EligibilityFacts) -> tuple[bool, str | None]:
@@ -344,11 +371,15 @@ def _capability_matches(capability: Capability, request: EligibilityRequest, fac
         return False, "capability_actor_mismatch"
     if request.action not in capability.actions:
         return False, "capability_action_missing"
+    queue_entry = None if request.assignment is None else facts.queue_entries.get(request.assignment)
+    if queue_entry is not None and queue_entry.required_role is not None:
+        if queue_entry.required_role not in capability.actions:
+            return False, "lane_role_action_missing"
     if capability.expires_at is not None and capability.expires_at <= facts.evaluated_at:
         return False, "capability_expired"
-    if not _scope_contains(capability.scope, request.target, request.target):
+    if not _scope_contains(capability.scope, request.target, request.target, facts):
         return False, "capability_scope_exceeded"
-    if request.scope is not None and not _scope_contains(capability.scope, request.scope, request.target):
+    if request.scope is not None and not _scope_contains(capability.scope, request.scope, request.target, facts):
         return False, "capability_scope_exceeded"
     for name in ("run", "assignment", "attempt"):
         bound = getattr(capability, name)
@@ -522,6 +553,92 @@ def _evaluate_conflicts(request: EligibilityRequest, facts: EligibilityFacts) ->
     return blocked, unknown
 
 
+def _evaluate_queue_policy(
+    request: EligibilityRequest, facts: EligibilityFacts, entry: QueueEntry
+) -> tuple[list[EligibilityCause], list[EligibilityCause]]:
+    """Apply durable queue and isolation constraints to shared admission facts."""
+    blocked: list[EligibilityCause] = []
+    unknown: list[EligibilityCause] = []
+    siblings = tuple(
+        candidate for candidate in facts.queue_entries.values()
+        if candidate.assignment.run == entry.assignment.run
+        and candidate.lane_id == entry.lane_id
+        and candidate.assignment.ref != entry.assignment.ref
+    )
+
+    if entry.queue_policy is QueuePolicy.SERIAL:
+        for sibling in siblings:
+            for attempt in facts.attempts:
+                if attempt.assignment != sibling.assignment.ref and attempt.work_item != sibling.assignment.work_item:
+                    continue
+                if attempt.state in {AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED}:
+                    continue
+                live = (
+                    attempt.state in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED}
+                    and attempt.lease is not None
+                    and attempt.lease.expires_at > facts.evaluated_at
+                )
+                cause = EligibilityCause(
+                    "serial_lane_occupied" if live else "serial_lane_reconciliation_required",
+                    "another lane assignment still has a live attempt" if live else
+                    "another lane assignment has unresolved attempt ownership",
+                    sibling.assignment.work_item,
+                    (attempt.ref,),
+                )
+                (blocked if live else unknown).append(cause)
+
+        for sibling in siblings:
+            if sibling.queue_position >= entry.queue_position:
+                continue
+            outcome = facts.outcomes.get(sibling.assignment.work_item)
+            prior_work = _work_item(facts.plan, sibling.assignment.work_item)
+            allowed = () if prior_work is None else prior_work.context.acceptance.get("allowed_dispositions", ())
+            if outcome is None or outcome.disposition.value not in allowed:
+                blocked.append(EligibilityCause(
+                    "serial_queue_predecessor_incomplete",
+                    "a prior serial queue item has no accepted outcome allowed by its authored acceptance policy",
+                    sibling.assignment.work_item,
+                    (entry.assignment.ref,),
+                ))
+
+    if entry.isolation_policy is IsolationPolicy.QUALIFIED_WORKSPACES:
+        requested_workspace_ref = request.attempt or request.target
+        candidate_workspace = facts.workspace_qualifications.get(requested_workspace_ref)
+        if (
+            candidate_workspace is None
+            or candidate_workspace.common_base.project_id != facts.project.project_id
+            or candidate_workspace.destination.project_id != facts.project.project_id
+        ):
+            unknown.append(EligibilityCause(
+                "lane_candidate_workspace_unqualified",
+                "this lane requires a provider-qualified candidate workspace with a project-local common base and destination",
+                request.target,
+                (entry.assignment.ref,),
+            ))
+        for sibling in siblings:
+            for attempt in facts.attempts:
+                if attempt.assignment != sibling.assignment.ref and attempt.work_item != sibling.assignment.work_item:
+                    continue
+                if attempt.state in {AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED}:
+                    continue
+                active_workspace = facts.workspace_qualifications.get(attempt.ref)
+                if _independent_workspaces(candidate_workspace, active_workspace, facts.project.project_id):
+                    continue
+                live = (
+                    attempt.state in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED}
+                    and attempt.lease is not None
+                    and attempt.lease.expires_at > facts.evaluated_at
+                )
+                cause = EligibilityCause(
+                    "lane_workspace_isolation_conflict" if live else "lane_workspace_isolation_unknown",
+                    "lane sibling lacks a distinct qualified workspace with matching common base and destination",
+                    sibling.assignment.work_item,
+                    (attempt.ref,),
+                )
+                (blocked if live else unknown).append(cause)
+    return blocked, unknown
+
+
 def evaluate_eligibility(request: EligibilityRequest, facts: EligibilityFacts) -> EligibilityDecision:
     """Evaluate eligibility from exactly the supplied immutable facts."""
     if not isinstance(request, EligibilityRequest) or not isinstance(facts, EligibilityFacts):
@@ -550,7 +667,7 @@ def evaluate_eligibility(request: EligibilityRequest, facts: EligibilityFacts) -
             "plan_revision_not_accepted", "the compiled plan revision is not accepted",
             request.target,
         ))
-    if request.target.definition_revision_id != facts.plan.revision.plan_revision_id:
+    if request.target not in facts.plan.revision.work_items:
         blocked.append(EligibilityCause(
             "target_revision_mismatch", "target work item is not from the supplied compiled plan revision",
             request.target,
@@ -650,6 +767,25 @@ def evaluate_eligibility(request: EligibilityRequest, facts: EligibilityFacts) -
             blocked.append(EligibilityCause("run_not_open", f"run state is {run.state.value}", effective_run))
         elif run.plan_revision != facts.plan.revision.ref:
             blocked.append(EligibilityCause("run_plan_mismatch", "run belongs to another plan revision", effective_run, (facts.plan.revision.ref,)))
+
+    scheduled_for_target = tuple(
+        value for value in facts.queue_entries.values()
+        if value.assignment.work_item == request.target
+        and (scheduled_run := facts.runs.get(value.assignment.run)) is not None
+        and scheduled_run.state is RunState.OPEN
+    )
+    queue_entry = None if request.assignment is None else facts.queue_entries.get(request.assignment)
+    if scheduled_for_target and queue_entry is None:
+        blocked.append(EligibilityCause(
+            "scheduled_assignment_required",
+            "this work item belongs to a persisted run queue and must be claimed through its exact assignment",
+            request.target,
+            tuple(sorted((value.assignment.ref for value in scheduled_for_target), key=_ref_key)),
+        ))
+    if queue_entry is not None:
+        queue_blocked, queue_unknown = _evaluate_queue_policy(request, facts, queue_entry)
+        blocked.extend(queue_blocked)
+        unknown.extend(queue_unknown)
 
     if request.attempt is not None:
         current_attempt = next((attempt for attempt in facts.attempts if attempt.ref == request.attempt), None)
@@ -765,22 +901,34 @@ def _load_facts(
         "SELECT state, content_digest FROM plan_revisions WHERE plan_revision_id = ?",
         (str(plan.revision.plan_revision_id),),
     ).fetchone()
-    plan_items = tuple(
-        StableId(row[0])
-        for row in connection.execute(
-            "SELECT work_item_id FROM plan_revision_work_items WHERE plan_revision_id = ? ORDER BY work_item_id",
-            (str(plan.revision.plan_revision_id),),
-        ).fetchall()
-    )
-    plan_matches = bool(
-        plan_row is not None
-        and plan_row["content_digest"] == plan.content_digest.hex
-        and set(plan_items) == {ref.entity_id for ref in plan.revision.work_items}
-        and connection.execute(
-            "SELECT 1 FROM work_items WHERE work_item_id = ? AND definition_revision_id = ?",
-            (str(request.target.entity_id), str(request.target.definition_revision_id)),
-        ).fetchone() is not None
-    )
+    stored_plan = None
+    stored_members: frozenset[EntityRef] = frozenset()
+    if plan_row is not None:
+        try:
+            snapshot = load_plan_revision_snapshot(connection, authority.project, plan.revision.plan_revision_id)
+            if snapshot.sequence is None:
+                raise InvalidAuthorityError("stored plan sequence is missing")
+            body = json.loads(snapshot.canonical_json)
+            stored_plan = decode_accepted_plan(snapshot.canonical_json, authority.project, sequence=snapshot.sequence)
+            stored_members = frozenset(
+                EntityRef(project_id, EntityKind.WORK_ITEM, item.work_item_id, item.definition_revision_id)
+                for item in snapshot.work_items
+            )
+            # Re-serialize actual typed fields. This catches a caller that
+            # replaced a scope, gate, or ownership field but retained the
+            # original canonical_json and digest attributes.
+            plan_matches = bool(
+                body["effective_plan"] == accepted_plan_payload(plan)
+                and plan.revision.plan_revision_id == stored_plan.revision.plan_revision_id
+                and plan.revision.sequence == stored_plan.revision.sequence
+                and plan.revision.based_on_revision_id == stored_plan.revision.based_on_revision_id
+                and set(plan.revision.work_items) == set(stored_plan.revision.work_items)
+                and request.target in stored_members
+            )
+        except (InvalidAuthorityError, TypeError, ValueError, KeyError):
+            plan_matches = False
+    else:
+        plan_matches = False
     accepted = plan_row is not None and plan_row["state"] == PlanRevisionState.ACCEPTED.value
 
     registered = frozenset(
@@ -819,6 +967,18 @@ def _load_facts(
         if bool(row["revoked"]):
             revoked.add(cap_id)
 
+    plan_memberships: dict[EntityRef, frozenset[EntityRef]] = {}
+    plan_scope_refs = {item.scope for item in capabilities if item.scope.kind is EntityKind.PLAN_REVISION}
+    if stored_plan is not None:
+        plan_scope_refs.add(stored_plan.revision.ref)
+    for plan_scope in plan_scope_refs:
+        try:
+            plan_memberships[plan_scope] = plan_scope_membership(connection, authority.project, plan_scope)
+        except InvalidAuthorityError:
+            # A corrupt historical plan grant cannot cover any target; it does
+            # not make unrelated project-scoped authority facts unreadable.
+            continue
+
     runs = {}
     for row in connection.execute("SELECT * FROM runs").fetchall():
         run = Run(
@@ -842,6 +1002,8 @@ def _load_facts(
             None if row["run_id"] is None else _entity_ref(project_id, "run", row["run_id"]),
         )
         assignments[assignment.ref] = assignment
+
+    queue_entries = load_all_queue_entries(connection, authority.project)
 
     attempt_caps: dict[str, list[StableId]] = {}
     for row in connection.execute("SELECT attempt_id, capability_id FROM attempt_capabilities").fetchall():
@@ -894,10 +1056,12 @@ def _load_facts(
         assignments=assignments,
         attempts=tuple(attempts),
         outcomes=outcomes,
+        queue_entries=queue_entries,
         blocker_observations=blocker_observations,
         check_observations=check_observations,
         decision_observations=decision_observations,
         scope_contexts=scope_contexts,
+        plan_memberships=plan_memberships,
         workspace_qualifications=workspace_qualifications,
         approved_participants=approved_participants,
         attempt_scope_snapshots=attempt_scope_snapshots,

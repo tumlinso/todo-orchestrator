@@ -25,8 +25,8 @@ from todo_orchestrator.contracts import (
 from todo_orchestrator.model import CommandEffect, CommandEnvelope, CommandResult
 
 from .commands import CommandDispatcher, MutationContext
-from .scopes import scope_covers as _scope_covers
-from .sqlite import AuthorityError, SQLiteAuthority
+from .scopes import plan_scope_membership, scope_covers as _scope_covers
+from .sqlite import AuthorityError, InvalidAuthorityError, SQLiteAuthority
 
 
 LOCAL_OWNER_SCRYPT_N = 1 << 14
@@ -45,6 +45,17 @@ class AuthenticationFailedError(AuthorizationError):
 
 class CapabilityDeniedError(AuthorizationError):
     """A valid capability does not grant the requested action, scope, or context."""
+
+
+def _verified_scope_membership(
+    connection: sqlite3.Connection,
+    project: Project,
+    scope: EntityRef,
+) -> frozenset[EntityRef]:
+    try:
+        return plan_scope_membership(connection, project, scope)
+    except InvalidAuthorityError as exc:
+        raise CapabilityDeniedError("plan-scoped capability does not name a valid accepted snapshot") from exc
 
 
 class OwnerAlreadyEnrolledError(AuthorizationError):
@@ -376,7 +387,8 @@ def _context_covers(grant: tuple[EntityRef | None, ...], target: tuple[EntityRef
 def _strictly_narrower(parent: sqlite3.Row, parent_scope: EntityRef,
                        parent_actions: tuple[StableId, ...], child_scope: EntityRef,
                        child_actions: tuple[StableId, ...], child_context: tuple[EntityRef | None, ...],
-                       child_expiry: datetime) -> bool:
+                       child_expiry: datetime,
+                       scope_membership: frozenset[EntityRef] | None = None) -> bool:
     parent_context_ids = (parent["run_id"], parent["assignment_id"], parent["attempt_id"])
     child_context_ids = tuple(str(item.entity_id) if item is not None else None for item in child_context)
     parent_expiry = datetime.fromisoformat(parent["expires_at"]) if parent["expires_at"] else None
@@ -386,7 +398,7 @@ def _strictly_narrower(parent: sqlite3.Row, parent_scope: EntityRef,
     expiry_subset = parent_expiry is None or (child_expiry <= parent_expiry)
     strict_expiry = parent_expiry is None or child_expiry < parent_expiry
     action_subset = set(child_actions) <= set(parent_actions)
-    scope_subset = _scope_covers(parent_scope, child_scope)
+    scope_subset = _scope_covers(parent_scope, child_scope, plan_membership=scope_membership)
     strict_scope = parent_scope != child_scope
     return (
         context_subset and expiry_subset and action_subset and scope_subset
@@ -489,8 +501,12 @@ class _DelegateCapabilityHandler:
         child_context = (command.run, command.assignment, command.attempt)
         if command.child_actor_id == StableId(parent["actor_id"]):
             raise CapabilityDeniedError("a capability cannot be delegated to its owning actor")
+        parent_membership = (
+            _verified_scope_membership(connection, context.project, parent_scope)
+            if parent_scope.kind is EntityKind.PLAN_REVISION else None
+        )
         if not _strictly_narrower(parent, parent_scope, parent_actions, command.scope,
-                                  command.actions, child_context, command.expires_at):
+                                  command.actions, child_context, command.expires_at, parent_membership):
             raise CapabilityDeniedError("child capability must be a strict subset of its parent")
         prior_kind = connection.execute("SELECT kind FROM actors WHERE actor_id = ? LIMIT 1",
                                         (str(command.child_actor_id),)).fetchone()
@@ -710,7 +726,11 @@ class AuthorityAuthService:
         if row["expires_at"] is not None and datetime.fromisoformat(row["expires_at"]) <= self._now():
             raise AuthenticationFailedError("bearer token has expired")
         scope = _scope_from_row(project, row)
-        if not _scope_covers(scope, requirement.scope):
+        membership = (
+            _verified_scope_membership(connection, project, scope)
+            if scope.kind is EntityKind.PLAN_REVISION else None
+        )
+        if not _scope_covers(scope, requirement.scope, plan_membership=membership):
             raise CapabilityDeniedError("capability does not cover the requested scope")
         run, assignment, attempt = _context_from_row(project, row)
         if not _context_covers((run, assignment, attempt),
@@ -719,6 +739,181 @@ class AuthorityAuthService:
         if requirement.action not in _stored_actions(connection, StableId(row["capability_id"])):
             raise CapabilityDeniedError("capability does not grant the requested action")
         return StableId(row["capability_id"])
+
+    def _derive_scoped_capability_in_transaction(
+        self,
+        context: MutationContext,
+        *,
+        bearer_digest: str,
+        requirement: AuthorizationRequirement,
+        capability_id: StableId,
+        token_digest: str,
+        scope: EntityRef,
+        actions: tuple[StableId, ...],
+        run: EntityRef | None,
+        assignment: EntityRef | None,
+        attempt: EntityRef,
+        expires_at: datetime,
+    ) -> Capability:
+        """Issue a strict actor-local child grant inside a trusted command.
+
+        The presented bearer is revalidated against the exact selected work and
+        context under the command's writer transaction. This internal seam is
+        for engine handlers that must atomically commit a claim and its bounded
+        follow-on authority; it cannot widen actors, actions, scopes, contexts,
+        or lifetime.
+        """
+        if not isinstance(context, MutationContext) or context.project != context.authority.project:
+            raise TypeError("context must be an active mutation context")
+        parent_id = self._authorize_capability(
+            context._connection, context.project, bearer_digest, context.actor, requirement
+        )
+        parent = _stored_capability(context._connection, parent_id)
+        if parent is None or parent["revoked"]:
+            raise CapabilityDeniedError("presented parent capability is unavailable")
+        parent_scope = _scope_from_row(context.project, parent)
+        parent_actions = _stored_actions(context._connection, parent_id)
+        parent_membership = (
+            _verified_scope_membership(context._connection, context.project, parent_scope)
+            if parent_scope.kind is EntityKind.PLAN_REVISION else None
+        )
+        now = self._now()
+        parent_expiry = None if parent["expires_at"] is None else datetime.fromisoformat(parent["expires_at"])
+        bounded_expiry = min(expires_at, parent_expiry) if parent_expiry is not None else expires_at
+        if bounded_expiry <= now:
+            raise CapabilityDeniedError("derived capability would already be expired")
+        _validate_grant(context.project, scope, actions, run, assignment, attempt, bounded_expiry, now)
+        child_context = (run, assignment, attempt)
+        if (
+            attempt.kind is not EntityKind.ATTEMPT
+            or context.actor.project_id != context.project.project_id
+            or parent["actor_id"] != str(context.actor.entity_id)
+            or parent["actor_incarnation_id"] != str(context.actor.incarnation_id)
+            or not _strictly_narrower(
+                parent, parent_scope, parent_actions, scope, actions, child_context,
+                bounded_expiry, parent_membership,
+            )
+        ):
+            raise CapabilityDeniedError("derived capability must be a strict subset of the presented grant")
+        _insert_capability(
+            context, capability_id=capability_id, actor_id=context.actor.entity_id,
+            incarnation_id=context.actor.incarnation_id, parent_id=parent_id, scope=scope,
+            actions=actions, run=run, assignment=assignment, attempt=attempt,
+            expires_at=bounded_expiry, token_digest=token_digest,
+        )
+        return _capability_from_values(
+            context.project, capability_id, context.actor, scope, actions, run,
+            assignment, attempt, bounded_expiry, parent_id,
+        )
+
+    @staticmethod
+    def _renew_attempt_capability_expiries_in_transaction(
+        context: MutationContext,
+        *,
+        attempt_id: StableId,
+        expected_scope: EntityRef,
+        expected_run: EntityRef | None,
+        expected_assignment: EntityRef | None,
+        expected_attempt: EntityRef,
+        expected_actions: tuple[StableId, ...],
+        expires_at: datetime,
+        now: datetime,
+    ) -> int:
+        """Extend only the exact live attempt grant, bounded by its full lineage."""
+        if (
+            not isinstance(context, MutationContext) or not isinstance(attempt_id, StableId)
+            or not isinstance(expected_scope, EntityRef) or not isinstance(expected_attempt, EntityRef)
+            or expected_attempt.kind is not EntityKind.ATTEMPT
+            or not isinstance(expected_actions, tuple)
+            or any(not isinstance(action, StableId) for action in expected_actions)
+        ):
+            raise TypeError("active context and exact typed attempt grant identity are required")
+        expires_at = _aware(expires_at, "attempt grant expiry")
+        now = _aware(now, "current time")
+        rows = context._connection.execute(
+            "SELECT c.* "
+            "FROM attempt_capabilities AS link JOIN capabilities AS c USING (capability_id) "
+            "WHERE link.attempt_id = ? AND c.actor_id = ? AND c.actor_incarnation_id = ? "
+            "AND c.attempt_id = ? AND c.scope_kind = ? AND c.scope_entity_id = ? "
+            "AND c.scope_definition_revision_id = ? AND c.scope_incarnation_id IS NULL "
+            "AND c.run_id IS ? AND c.assignment_id IS ? "
+            "AND c.revoked = 0 AND c.expires_at IS NOT NULL ORDER BY c.capability_id",
+            (str(attempt_id), str(context.actor.entity_id), str(context.actor.incarnation_id),
+             str(expected_attempt.entity_id), expected_scope.kind.value, str(expected_scope.entity_id),
+             str(expected_scope.definition_revision_id) if expected_scope.definition_revision_id else None,
+             str(expected_run.entity_id) if expected_run else None,
+             str(expected_assignment.entity_id) if expected_assignment else None),
+        ).fetchall()
+        changed = 0
+        for row in rows:
+            current = datetime.fromisoformat(row["expires_at"])
+            if current <= now:
+                continue
+            if _stored_actions(context._connection, StableId(row["capability_id"])) != expected_actions:
+                continue
+            lineage_ids = [StableId(row["capability_id"])]
+            parent_id = row["parent_capability_id"]
+            # Renewal must be able to move the child beyond its old expiry;
+            # only ancestor grants bound the new expiry. The child itself is
+            # checked above for current liveness.
+            lineage_expiry = expires_at
+            lineage_valid = True
+            direct_parent = True
+            while parent_id is not None:
+                parent = _stored_capability(context._connection, StableId(parent_id))
+                if (
+                    parent is None or parent["revoked"]
+                    or (direct_parent and (
+                        parent["actor_id"] != str(context.actor.entity_id)
+                        or parent["actor_incarnation_id"] != str(context.actor.incarnation_id)
+                    ))
+                ):
+                    lineage_valid = False
+                    break
+                if parent["expires_at"] is not None:
+                    parent_expiry = datetime.fromisoformat(parent["expires_at"])
+                    if parent_expiry <= now:
+                        lineage_valid = False
+                        break
+                    lineage_expiry = min(lineage_expiry, parent_expiry)
+                lineage_ids.append(StableId(parent_id))
+                parent_id = parent["parent_capability_id"]
+                direct_parent = False
+                if len(lineage_ids) > 64:
+                    lineage_valid = False
+                    break
+            if not lineage_valid:
+                continue
+            bounded = min(expires_at, lineage_expiry)
+            if bounded <= current:
+                continue
+            changed += context.execute(
+                "UPDATE capabilities SET expires_at = ? WHERE capability_id = ? "
+                "AND expires_at = ? AND revoked = 0",
+                (_iso(bounded), row["capability_id"], row["expires_at"]),
+            ).rowcount
+        return changed
+
+    @staticmethod
+    def _revoke_attempt_capability_families_in_transaction(
+        context: MutationContext, attempt_id: StableId
+    ) -> int:
+        """Revoke only grants issued for this attempt and their descendants."""
+        if not isinstance(context, MutationContext) or not isinstance(attempt_id, StableId):
+            raise TypeError("an active mutation context and StableId attempt_id are required")
+        before = context._connection.total_changes
+        context.execute(
+            "WITH RECURSIVE roots(capability_id) AS ("
+            " SELECT capability_id FROM attempt_capabilities WHERE attempt_id = ?"
+            "), descendants(capability_id) AS ("
+            " SELECT capability_id FROM roots UNION SELECT child.capability_id"
+            " FROM capabilities AS child JOIN descendants AS parent"
+            " ON child.parent_capability_id = parent.capability_id"
+            ") UPDATE capabilities SET revoked = 1 WHERE revoked = 0"
+            " AND capability_id IN (SELECT capability_id FROM descendants)",
+            (str(attempt_id),),
+        )
+        return context._connection.total_changes - before
 
     def execute(self, authority: SQLiteAuthority, bearer_token: str, command: object, *,
                 idempotency_key: StableId, expected_revision: int | None = None) -> CommandResult:

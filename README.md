@@ -2,7 +2,7 @@
 
 Todo Orchestrator is being prepared as a standalone, independently usable workflow engine. The redesign will draw on the existing implementation while progressively copying and adapting functionality and preserving the original implementation throughout.
 
-Development has begun from the preserved bootstrap package. The Python library includes immutable domain and provider contracts, a SQLite authority with atomic commands and receipts, capability authentication, eligibility checks, attempt leases, and pure plan compilation and change previews. Guarded plan application, the complete workflow, and evidence-backed completion remain under development.
+Development has begun from the preserved bootstrap package. The Python library includes immutable domain and provider contracts, a SQLite authority with atomic commands and receipts, capability authentication, eligibility checks, attempt leases, pure plan compilation and change previews, and guarded plan commits with durable accepted history. The complete workflow and evidence-backed completion remain under development.
 
 - Repository: [tumlinso/todo-orchestrator](https://github.com/tumlinso/todo-orchestrator)
 - Project Control workspace and repository ID: `todo-orchestrator`.

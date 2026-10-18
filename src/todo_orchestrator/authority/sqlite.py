@@ -12,18 +12,20 @@ from __future__ import annotations
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
 import sqlite3
 import tempfile
-from typing import Iterator
+from typing import Any, Iterator, Mapping
 
-from todo_orchestrator.contracts import Project
+from todo_orchestrator.contracts import EntityKind, Project, StableId
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 8
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -72,6 +74,91 @@ class MigrationResult:
     to_version: int
 
 
+@dataclass(frozen=True)
+class DefinitionVersionRecord:
+    """One immutable, complete work-definition bundle keyed by exact version."""
+
+    definition_revision_id: StableId
+    entity_id: StableId
+    canonical_json: str
+    content_digest: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.definition_revision_id, StableId) or not isinstance(self.entity_id, StableId):
+            raise TypeError("definition version identity fields must be StableId values")
+        _validate_canonical_digest(self.canonical_json, self.content_digest, "work definition")
+
+
+@dataclass(frozen=True)
+class PlanWorkMembership:
+    """An exact work-definition version selected by an accepted plan revision."""
+
+    work_item_id: StableId
+    definition_revision_id: StableId
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.work_item_id, StableId) or not isinstance(self.definition_revision_id, StableId):
+            raise TypeError("plan work membership fields must be StableId values")
+
+
+@dataclass(frozen=True)
+class PlanRevisionSnapshotRecord:
+    """Canonical full accepted snapshot plus its exact mixed definition membership."""
+
+    plan_revision_id: StableId
+    canonical_json: str
+    snapshot_digest: str
+    definitions: tuple[DefinitionVersionRecord, ...]
+    work_items: tuple[PlanWorkMembership, ...]
+    sequence: int | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.plan_revision_id, StableId):
+            raise TypeError("plan_revision_id must be a StableId")
+        _validate_canonical_digest(self.canonical_json, self.snapshot_digest, "accepted plan snapshot")
+        if not isinstance(self.definitions, tuple) or any(
+            not isinstance(item, DefinitionVersionRecord) for item in self.definitions
+        ):
+            raise TypeError("definitions must be a tuple of DefinitionVersionRecord values")
+        if not isinstance(self.work_items, tuple) or any(
+            not isinstance(item, PlanWorkMembership) for item in self.work_items
+        ):
+            raise TypeError("work_items must be a tuple of PlanWorkMembership values")
+        if self.sequence is not None and (type(self.sequence) is not int or self.sequence < 1):
+            raise ValueError("sequence must be a positive integer when loaded from an authority")
+        definition_keys = {(item.entity_id, item.definition_revision_id) for item in self.definitions}
+        membership_keys = {(item.work_item_id, item.definition_revision_id) for item in self.work_items}
+        if len(definition_keys) != len(self.definitions) or len(membership_keys) != len(self.work_items):
+            raise ValueError("definition versions and plan work membership must be unique")
+        if len({item.work_item_id for item in self.work_items}) != len(self.work_items):
+            raise ValueError("a plan snapshot selects only one definition version per work item")
+        if definition_keys != membership_keys:
+            raise ValueError("snapshot definitions must exactly match its work-item membership")
+
+
+def _canonical_json_object(encoded: str, name: str) -> dict[str, Any]:
+    if not isinstance(encoded, str):
+        raise TypeError(f"{name} canonical_json must be a string")
+    try:
+        value = json.loads(encoded, parse_constant=lambda value: (_ for _ in ()).throw(ValueError(value)))
+        canonical = json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"))
+        encoded.encode("utf-8")
+    except (TypeError, ValueError, UnicodeError) as exc:
+        raise ValueError(f"{name} is not canonical UTF-8 JSON: {exc}") from exc
+    if not isinstance(value, dict) or canonical != encoded:
+        raise ValueError(f"{name} must be a canonical JSON object")
+    return value
+
+
+def _validate_canonical_digest(encoded: str, digest: str, name: str) -> None:
+    _canonical_json_object(encoded, name)
+    if not isinstance(digest, str) or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise ValueError(f"{name} content_digest must be lowercase SHA-256 hex")
+    actual = hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+    if actual != digest:
+        raise ValueError(f"{name} digest does not match its canonical JSON")
+
+
 _SCHEMA_STATEMENTS = (
     """CREATE TABLE authority_meta (
         singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
@@ -96,6 +183,14 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (authored_by_actor_id, authored_by_incarnation_id)
             REFERENCES actors(actor_id, incarnation_id)
     )""",
+    """CREATE TABLE plan_revision_snapshots (
+        plan_revision_id TEXT PRIMARY KEY,
+        canonical_json TEXT NOT NULL,
+        snapshot_digest TEXT NOT NULL CHECK (
+            length(snapshot_digest) = 64 AND snapshot_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id)
+    )""",
     """CREATE TABLE work_items (
         work_item_id TEXT NOT NULL,
         definition_revision_id TEXT NOT NULL,
@@ -103,20 +198,24 @@ _SCHEMA_STATEMENTS = (
         outcome TEXT NOT NULL,
         parent_work_item_id TEXT,
         parent_definition_revision_id TEXT,
+        canonical_json TEXT NOT NULL,
+        content_digest TEXT NOT NULL CHECK (
+            length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*'
+        ),
         PRIMARY KEY (work_item_id, definition_revision_id),
         CHECK ((parent_work_item_id IS NULL) = (parent_definition_revision_id IS NULL)),
         CHECK (parent_work_item_id IS NULL OR parent_work_item_id <> work_item_id
                OR parent_definition_revision_id <> definition_revision_id),
-        FOREIGN KEY (definition_revision_id) REFERENCES plan_revisions(plan_revision_id),
         FOREIGN KEY (parent_work_item_id, parent_definition_revision_id)
             REFERENCES work_items(work_item_id, definition_revision_id)
     )""",
     """CREATE TABLE plan_revision_work_items (
         plan_revision_id TEXT NOT NULL,
         work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
         PRIMARY KEY (plan_revision_id, work_item_id),
         FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id),
-        FOREIGN KEY (work_item_id, plan_revision_id)
+        FOREIGN KEY (work_item_id, definition_revision_id)
             REFERENCES work_items(work_item_id, definition_revision_id)
     )""",
     """CREATE TABLE work_item_supersessions (
@@ -185,6 +284,48 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (work_item_id, definition_revision_id, requirement_id)
             REFERENCES requirements(work_item_id, definition_revision_id, requirement_id)
     )""",
+    """CREATE TRIGGER plan_revision_snapshots_no_update
+        BEFORE UPDATE ON plan_revision_snapshots
+        BEGIN SELECT RAISE(ABORT, 'accepted plan snapshots are append-only'); END""",
+    """CREATE TRIGGER plan_revision_snapshots_no_delete
+        BEFORE DELETE ON plan_revision_snapshots
+        BEGIN SELECT RAISE(ABORT, 'accepted plan snapshots are append-only'); END""",
+    """CREATE TRIGGER work_items_no_update
+        BEFORE UPDATE ON work_items
+        BEGIN SELECT RAISE(ABORT, 'work-item definition versions are append-only'); END""",
+    """CREATE TRIGGER work_items_no_delete
+        BEFORE DELETE ON work_items
+        BEGIN SELECT RAISE(ABORT, 'work-item definition versions are append-only'); END""",
+    """CREATE TRIGGER plan_revision_work_items_no_update
+        BEFORE UPDATE ON plan_revision_work_items
+        BEGIN SELECT RAISE(ABORT, 'accepted plan membership is append-only'); END""",
+    """CREATE TRIGGER plan_revision_work_items_no_delete
+        BEFORE DELETE ON plan_revision_work_items
+        BEGIN SELECT RAISE(ABORT, 'accepted plan membership is append-only'); END""",
+    """CREATE TRIGGER work_item_supersessions_no_update
+        BEFORE UPDATE ON work_item_supersessions
+        BEGIN SELECT RAISE(ABORT, 'work-item supersessions are append-only'); END""",
+    """CREATE TRIGGER work_item_supersessions_no_delete
+        BEFORE DELETE ON work_item_supersessions
+        BEGIN SELECT RAISE(ABORT, 'work-item supersessions are append-only'); END""",
+    """CREATE TRIGGER requirements_no_update
+        BEFORE UPDATE ON requirements
+        BEGIN SELECT RAISE(ABORT, 'requirement definitions are append-only'); END""",
+    """CREATE TRIGGER requirements_no_delete
+        BEFORE DELETE ON requirements
+        BEGIN SELECT RAISE(ABORT, 'requirement definitions are append-only'); END""",
+    """CREATE TRIGGER requirement_groups_no_update
+        BEFORE UPDATE ON requirement_groups
+        BEGIN SELECT RAISE(ABORT, 'requirement groups are append-only'); END""",
+    """CREATE TRIGGER requirement_groups_no_delete
+        BEFORE DELETE ON requirement_groups
+        BEGIN SELECT RAISE(ABORT, 'requirement groups are append-only'); END""",
+    """CREATE TRIGGER requirement_group_members_no_update
+        BEFORE UPDATE ON requirement_group_members
+        BEGIN SELECT RAISE(ABORT, 'requirement group members are append-only'); END""",
+    """CREATE TRIGGER requirement_group_members_no_delete
+        BEFORE DELETE ON requirement_group_members
+        BEGIN SELECT RAISE(ABORT, 'requirement group members are append-only'); END""",
     """CREATE TABLE actors (
         actor_id TEXT NOT NULL,
         incarnation_id TEXT NOT NULL,
@@ -211,11 +352,40 @@ _SCHEMA_STATEMENTS = (
         assignee_incarnation_id TEXT,
         run_id TEXT,
         CHECK ((assignee_actor_id IS NULL) = (assignee_incarnation_id IS NULL)),
+        UNIQUE (assignment_id, run_id),
         FOREIGN KEY (work_item_id, definition_revision_id)
             REFERENCES work_items(work_item_id, definition_revision_id),
         FOREIGN KEY (assignee_actor_id, assignee_incarnation_id)
             REFERENCES actors(actor_id, incarnation_id),
         FOREIGN KEY (run_id) REFERENCES runs(run_id)
+    )""",
+    """CREATE TABLE run_schedules (
+        run_id TEXT PRIMARY KEY,
+        schedule_json TEXT NOT NULL,
+        schedule_digest TEXT NOT NULL CHECK (
+            length(schedule_digest) = 64 AND schedule_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id)
+    )""",
+    """CREATE TABLE run_lanes (
+        run_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL,
+        lane_ordinal INTEGER NOT NULL CHECK (lane_ordinal >= 0),
+        queue_policy TEXT NOT NULL CHECK (queue_policy IN ('serial', 'parallel')),
+        required_role TEXT,
+        isolation_policy TEXT NOT NULL CHECK (isolation_policy IN ('shared_scopes', 'qualified_workspaces')),
+        PRIMARY KEY (run_id, lane_id),
+        UNIQUE (run_id, lane_ordinal),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id)
+    )""",
+    """CREATE TABLE run_queue (
+        assignment_id TEXT PRIMARY KEY,
+        run_id TEXT NOT NULL,
+        lane_id TEXT NOT NULL,
+        queue_position INTEGER NOT NULL CHECK (queue_position >= 0),
+        UNIQUE (run_id, lane_id, queue_position),
+        FOREIGN KEY (assignment_id, run_id) REFERENCES assignments(assignment_id, run_id),
+        FOREIGN KEY (run_id, lane_id) REFERENCES run_lanes(run_id, lane_id)
     )""",
     """CREATE TABLE attempts (
         attempt_id TEXT PRIMARY KEY,
@@ -472,6 +642,30 @@ _SCHEMA_STATEMENTS = (
     """CREATE TRIGGER command_idempotency_no_delete
         BEFORE DELETE ON command_idempotency
         BEGIN SELECT RAISE(ABORT, 'command idempotency records are append-only'); END""",
+    """CREATE TRIGGER run_schedules_no_update
+        BEFORE UPDATE ON run_schedules
+        BEGIN SELECT RAISE(ABORT, 'run schedules are append-only'); END""",
+    """CREATE TRIGGER run_schedules_no_delete
+        BEFORE DELETE ON run_schedules
+        BEGIN SELECT RAISE(ABORT, 'run schedules are append-only'); END""",
+    """CREATE TRIGGER run_lanes_no_update
+        BEFORE UPDATE ON run_lanes
+        BEGIN SELECT RAISE(ABORT, 'run lane policies are append-only'); END""",
+    """CREATE TRIGGER run_lanes_no_delete
+        BEFORE DELETE ON run_lanes
+        BEGIN SELECT RAISE(ABORT, 'run lane policies are append-only'); END""",
+    """CREATE TRIGGER assignments_no_update
+        BEFORE UPDATE ON assignments
+        BEGIN SELECT RAISE(ABORT, 'assignments are append-only'); END""",
+    """CREATE TRIGGER assignments_no_delete
+        BEFORE DELETE ON assignments
+        BEGIN SELECT RAISE(ABORT, 'assignments are append-only'); END""",
+    """CREATE TRIGGER run_queue_no_update
+        BEFORE UPDATE ON run_queue
+        BEGIN SELECT RAISE(ABORT, 'run queue entries are append-only'); END""",
+    """CREATE TRIGGER run_queue_no_delete
+        BEFORE DELETE ON run_queue
+        BEGIN SELECT RAISE(ABORT, 'run queue entries are append-only'); END""",
 )
 
 
@@ -484,7 +678,7 @@ def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...
     return tuple(tuple(row) for row in rows)
 
 
-def _compile_schema_v6_signature() -> tuple[tuple[object, ...], ...]:
+def _compile_schema_v8_signature() -> tuple[tuple[object, ...], ...]:
     connection = sqlite3.connect(":memory:")
     try:
         for statement in _SCHEMA_STATEMENTS:
@@ -494,14 +688,15 @@ def _compile_schema_v6_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v6 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v8 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
-_SCHEMA_V6_SIGNATURE = _compile_schema_v6_signature()
+_SCHEMA_V8_SIGNATURE = _compile_schema_v8_signature()
 
 _REQUIRED_TABLES = frozenset({
-    "authority_meta", "plan_revisions", "work_items", "plan_revision_work_items",
+    "authority_meta", "plan_revisions", "plan_revision_snapshots", "work_items", "plan_revision_work_items",
     "work_item_supersessions", "requirements", "requirement_groups", "requirement_group_members",
-    "actors", "runs", "assignments", "attempts", "capabilities", "capability_tokens",
+    "actors", "runs", "assignments", "run_schedules", "run_lanes", "run_queue",
+    "attempts", "capabilities", "capability_tokens",
     "local_owner_credentials", "capability_actions",
     "attempt_capabilities", "attempt_workspace_qualifications", "attempt_scope_snapshots",
     "artifacts", "evidence", "evidence_inputs", "evidence_artifacts",
@@ -514,6 +709,555 @@ def _project_identity(project: Project) -> tuple[str, str]:
     if not isinstance(project, Project):
         raise TypeError("project must be a contracts.Project")
     return str(project.project_id), str(project.authority_id)
+
+
+def _snapshot_envelope(record: PlanRevisionSnapshotRecord) -> dict[str, Any]:
+    value = _canonical_json_object(record.canonical_json, "accepted plan snapshot")
+    expected = {
+        "format", "schema_version", "authority_id", "project_id", "semantic_revision",
+        "plan_revision_id", "based_on_revision_id", "effective_plan",
+    }
+    if set(value) != expected:
+        raise ValueError("accepted plan snapshot has unsupported or missing envelope fields")
+    if value["format"] != "todo-orchestrator.accepted-snapshot" or value["schema_version"] != 1:
+        raise ValueError("accepted plan snapshot format or schema version is unsupported")
+    if not isinstance(value["effective_plan"], dict):
+        raise ValueError("accepted plan snapshot effective_plan must be an object")
+    for key in ("authority_id", "project_id", "plan_revision_id"):
+        if not isinstance(value[key], str):
+            raise ValueError(f"accepted plan snapshot {key} must be a string")
+        StableId(value[key])
+    if value["plan_revision_id"] != str(record.plan_revision_id):
+        raise ValueError("accepted plan snapshot identity does not match its record")
+    based_on = value["based_on_revision_id"]
+    if based_on is not None:
+        if not isinstance(based_on, str):
+            raise ValueError("accepted plan snapshot based_on_revision_id must be a string or null")
+        StableId(based_on)
+        if based_on == value["plan_revision_id"]:
+            raise ValueError("accepted plan snapshot cannot be based on itself")
+    if type(value["semantic_revision"]) is not int or value["semantic_revision"] < 1:
+        raise ValueError("accepted plan snapshot semantic_revision must be a positive integer")
+    return value
+
+
+def _qualified_ref(value: Any, name: str) -> tuple[str, str, str, str | None, str | None]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{name} must be a qualified reference object")
+    allowed = {"project_id", "kind", "entity_id", "revision_id", "incarnation_id", "adoption_receipt"}
+    required = {"project_id", "kind", "entity_id", "revision_id", "incarnation_id"}
+    if not required <= set(value) or set(value) - allowed:
+        raise ValueError(f"{name} has unsupported or missing qualified-reference fields")
+    project_id = value["project_id"]
+    kind_value = value["kind"]
+    entity_id = value["entity_id"]
+    revision_id = value["revision_id"]
+    incarnation_id = value["incarnation_id"]
+    if not all(isinstance(item, str) for item in (project_id, kind_value, entity_id)):
+        raise ValueError(f"{name} project_id, kind, and entity_id must be strings")
+    StableId(project_id)
+    StableId(entity_id)
+    try:
+        kind = EntityKind(kind_value)
+    except ValueError as exc:
+        raise ValueError(f"{name} has an unknown entity kind") from exc
+    if revision_id is not None:
+        if not isinstance(revision_id, str):
+            raise ValueError(f"{name} revision_id must be a string or null")
+        StableId(revision_id)
+    if incarnation_id is not None:
+        if not isinstance(incarnation_id, str):
+            raise ValueError(f"{name} incarnation_id must be a string or null")
+        StableId(incarnation_id)
+    if (kind in {EntityKind.WORK_ITEM, EntityKind.REQUIREMENT}) != (revision_id is not None):
+        raise ValueError(f"{name} has an invalid definition-revision qualification")
+    if (kind is EntityKind.ACTOR) != (incarnation_id is not None):
+        raise ValueError(f"{name} has an invalid actor-incarnation qualification")
+    return project_id, kind.value, entity_id, revision_id, incarnation_id
+
+
+def _bundle_projection(record: DefinitionVersionRecord, local_project_id: str) -> dict[str, Any]:
+    bundle = _canonical_json_object(record.canonical_json, "work definition bundle")
+    if bundle.get("format") != "todo-orchestrator.work-bundle" or bundle.get("schema_version") != 1:
+        raise ValueError("work definition bundle format or schema version is unsupported")
+    if bundle.get("work_item_id") != str(record.entity_id) or bundle.get("definition_revision_id") != str(record.definition_revision_id):
+        raise ValueError("work definition bundle identity does not match its version record")
+    work = bundle.get("work")
+    requirements = bundle.get("requirements")
+    blockers = bundle.get("outgoing_blockers")
+    if not isinstance(work, dict) or not isinstance(requirements, dict) or not isinstance(blockers, list):
+        raise ValueError("work definition bundle must contain work, requirements, and outgoing_blockers")
+    if work.get("id") != str(record.entity_id) or not isinstance(work.get("title"), str) or not isinstance(work.get("outcome"), str):
+        raise ValueError("work definition bundle has invalid normalized title or outcome")
+
+    parent = work.get("parent_ref")
+    parent_id = None
+    parent_revision = None
+    if parent is not None:
+        parent_project, parent_kind, parent_id, parent_revision, _ = _qualified_ref(parent, "work.parent_ref")
+        if parent_project != local_project_id or parent_kind != EntityKind.WORK_ITEM.value or parent_revision is None:
+            raise ValueError("work.parent_ref must identify a versioned work item")
+        if work.get("parent_id") != parent_id:
+            raise ValueError("work.parent_id and work.parent_ref disagree")
+    elif work.get("parent_id") is not None:
+        raise ValueError("work.parent_id requires the exact work.parent_ref")
+
+    supersedes = work.get("supersedes")
+    groups = work.get("requirement_groups")
+    if not isinstance(supersedes, list) or not isinstance(groups, list):
+        raise ValueError("work definition bundle supersedes and requirement_groups must be arrays")
+    superseded_refs = []
+    for index, ref in enumerate(supersedes):
+        ref_project_id, kind, entity_id, revision_id, incarnation_id = _qualified_ref(ref, f"work.supersedes[{index}]")
+        if ref_project_id != local_project_id or kind != EntityKind.WORK_ITEM.value or revision_id is None or incarnation_id is not None:
+            raise ValueError("work.supersedes entries must be versioned work-item references")
+        superseded_refs.append((ref_project_id, entity_id, revision_id))
+
+    normalized_requirements = []
+    seen_requirement_ids = set()
+    for key, requirement in sorted(requirements.items()):
+        if not isinstance(key, str) or not isinstance(requirement, dict):
+            raise ValueError("work definition requirements must map ids to objects")
+        requirement_id = requirement.get("id")
+        if requirement_id != key or requirement.get("work_item_id") != str(record.entity_id):
+            raise ValueError("requirement identity or owner does not match its work bundle")
+        StableId(requirement_id)
+        if requirement_id in seen_requirement_ids:
+            raise ValueError("work definition bundle repeats a requirement id")
+        seen_requirement_ids.add(requirement_id)
+        kind = requirement.get("kind")
+        description = requirement.get("description")
+        target = requirement.get("target")
+        check_key = requirement.get("check_key")
+        if not isinstance(description, str):
+            raise ValueError("requirement description must be a string")
+        if kind == "prerequisite":
+            if not isinstance(target, dict) or check_key is not None:
+                raise ValueError("prerequisite requirement must have a target and no check_key")
+            target_project, target_kind, target_id, target_revision, target_incarnation = _qualified_ref(
+                target, f"requirement {requirement_id} target"
+            )
+            if target_kind not in {"work_item", "checkpoint", "interface", "barrier", "decision"}:
+                raise ValueError("prerequisite target kind is unsupported")
+            if target_kind == "work_item" and target_revision is None:
+                raise ValueError("work-item prerequisite target must include its exact definition revision")
+            if target_kind != "work_item" and target_revision is not None:
+                raise ValueError("non-work prerequisite target cannot include a definition revision")
+            if target_incarnation is not None:
+                raise ValueError("prerequisite targets cannot be actor incarnations")
+        elif kind == "check":
+            if target is not None or not isinstance(check_key, str):
+                raise ValueError("check requirement must have a check_key and no target")
+            StableId(check_key)
+            target_project = target_kind = target_id = target_revision = None
+        else:
+            raise ValueError("requirement kind must be prerequisite or check")
+        normalized_requirements.append({
+            "id": requirement_id,
+            "kind": kind,
+            "description": description,
+            "target_project_id": target_project,
+            "target_kind": target_kind,
+            "target_entity_id": target_id,
+            "target_definition_revision_id": target_revision,
+            "check_key": check_key,
+        })
+
+    normalized_groups = []
+    grouped_ids = set()
+    for ordinal, group in enumerate(groups):
+        if not isinstance(group, dict) or not isinstance(group.get("members"), list):
+            raise ValueError("requirement groups must contain a member list")
+        kind = group.get("kind")
+        mode = group.get("mode")
+        quorum = group.get("quorum")
+        members = group["members"]
+        if kind not in {"prerequisite", "check"} or mode not in {"all", "any", "quorum"}:
+            raise ValueError("requirement group kind or mode is unsupported")
+        if not members or any(not isinstance(item, str) for item in members) or len(set(members)) != len(members):
+            raise ValueError("requirement group members must be non-empty unique requirement ids")
+        if mode == "quorum":
+            if type(quorum) is not int or not 1 <= quorum <= len(members):
+                raise ValueError("requirement quorum is outside the group size")
+        elif quorum is not None:
+            raise ValueError("non-quorum requirement group cannot store a quorum")
+        for member in members:
+            req = next((item for item in normalized_requirements if item["id"] == member), None)
+            if req is None or req["kind"] != kind or member in grouped_ids:
+                raise ValueError("requirement group member is missing, wrong-kind, or repeated")
+            grouped_ids.add(member)
+        normalized_groups.append({"ordinal": ordinal, "kind": kind, "mode": mode,
+                                  "quorum": quorum, "members": tuple(members)})
+
+    return {
+        "work": work,
+        "title": work["title"],
+        "outcome": work["outcome"],
+        "parent_work_item_id": parent_id,
+        "parent_definition_revision_id": parent_revision,
+        "supersedes": tuple(superseded_refs),
+        "requirements": tuple(normalized_requirements),
+        "groups": tuple(normalized_groups),
+    }
+
+
+def _snapshot_membership(value: Mapping[str, Any]) -> dict[str, str]:
+    effective = value["effective_plan"]
+    refs = effective.get("definition_refs")
+    if not isinstance(refs, dict) or not isinstance(refs.get("work_items"), dict):
+        raise ValueError("accepted snapshot effective_plan must contain definition_refs.work_items")
+    result = refs["work_items"]
+    if any(not isinstance(key, str) or not isinstance(item, str) for key, item in result.items()):
+        raise ValueError("accepted snapshot work definition refs must map work-item ids to revision ids")
+    for key, item in result.items():
+        StableId(key)
+        StableId(item)
+    return dict(result)
+
+
+def _validate_snapshot_record(
+    record: PlanRevisionSnapshotRecord,
+    project: Project,
+    *,
+    sequence: int = 1,
+) -> tuple[dict[str, Any], dict[tuple[str, str], dict[str, Any]]]:
+    envelope = _snapshot_envelope(record)
+    project_id, authority_id = _project_identity(project)
+    if envelope["project_id"] != project_id or envelope["authority_id"] != authority_id:
+        raise ValueError("accepted snapshot project or authority identity does not match")
+    refs = _snapshot_membership(envelope)
+    expected_refs = {str(item.work_item_id): str(item.definition_revision_id) for item in record.work_items}
+    if refs != expected_refs:
+        raise ValueError("accepted snapshot definition_refs do not match typed membership records")
+    projections = {}
+    for definition in record.definitions:
+        key = (str(definition.entity_id), str(definition.definition_revision_id))
+        projections[key] = _bundle_projection(definition, project_id)
+    if set(projections) != {(str(item.work_item_id), str(item.definition_revision_id)) for item in record.work_items}:
+        raise ValueError("accepted snapshot bundles do not exactly match its selected work versions")
+    requirements = envelope["effective_plan"].get("definition_refs", {}).get("requirements")
+    if requirements is not None:
+        if not isinstance(requirements, dict):
+            raise ValueError("accepted snapshot requirement definition refs must be an object")
+        expected_requirements = {
+            item["id"]: key[1]
+            for key, projection in projections.items()
+            for item in projection["requirements"]
+        }
+        if requirements != expected_requirements:
+            raise ValueError("accepted snapshot requirement refs do not match their owning work versions")
+
+    # Reconstruct the accepted typed plan and re-derive every work bundle from
+    # its actual authored fields. This binds the full snapshot (scope, gates,
+    # ownership, adoption facts, and declarations included) to the version
+    # registry instead of trusting caller-provided digest metadata alone.
+    from todo_orchestrator.planning.snapshot import (
+        accepted_plan_payload,
+        decode_accepted_plan,
+        definition_bundle_payloads,
+    )
+    decoded = decode_accepted_plan(record.canonical_json, project, sequence=sequence)
+    if accepted_plan_payload(decoded) != envelope["effective_plan"]:
+        raise ValueError("accepted snapshot effective plan does not round-trip through its typed codec")
+    decoded_bundles = {
+        (item["entity_id"], item["definition_revision_id"]): (item["canonical_json"], item["content_digest"])
+        for item in definition_bundle_payloads(decoded)
+    }
+    supplied_bundles = {
+        (str(item.entity_id), str(item.definition_revision_id)): (item.canonical_json, item.content_digest)
+        for item in record.definitions
+    }
+    if decoded_bundles != supplied_bundles:
+        raise ValueError("accepted snapshot work bundles do not match its complete typed plan")
+    return envelope, projections
+
+
+def _verify_definition_projection(
+    connection: sqlite3.Connection,
+    record: DefinitionVersionRecord,
+    projection: Mapping[str, Any],
+) -> None:
+    key = (str(record.entity_id), str(record.definition_revision_id))
+    row = connection.execute(
+        "SELECT title, outcome, parent_work_item_id, parent_definition_revision_id, canonical_json, content_digest "
+        "FROM work_items WHERE work_item_id = ? AND definition_revision_id = ?", key,
+    ).fetchone()
+    if row is None or tuple(row) != (
+        projection["title"], projection["outcome"], projection["parent_work_item_id"],
+        projection["parent_definition_revision_id"], record.canonical_json, record.content_digest,
+    ):
+        raise InvalidAuthorityError("stored work definition version does not match its canonical bundle")
+
+    requirements = connection.execute(
+        "SELECT requirement_id, kind, description, target_project_id, target_kind, target_entity_id, "
+        "target_definition_revision_id, check_key FROM requirements "
+        "WHERE work_item_id = ? AND definition_revision_id = ? ORDER BY requirement_id", key,
+    ).fetchall()
+    expected_requirements = tuple(
+        (item["id"], item["kind"], item["description"], item["target_project_id"], item["target_kind"],
+         item["target_entity_id"], item["target_definition_revision_id"], item["check_key"])
+        for item in projection["requirements"]
+    )
+    if tuple(tuple(row) for row in requirements) != expected_requirements:
+        raise InvalidAuthorityError("stored normalized requirements do not match their canonical work bundle")
+
+    groups = connection.execute(
+        "SELECT group_ordinal, kind, mode, quorum FROM requirement_groups "
+        "WHERE work_item_id = ? AND definition_revision_id = ? ORDER BY group_ordinal", key,
+    ).fetchall()
+    expected_groups = tuple(
+        (group["ordinal"], group["kind"], group["mode"], group["quorum"])
+        for group in projection["groups"]
+    )
+    if tuple(tuple(row) for row in groups) != expected_groups:
+        raise InvalidAuthorityError("stored requirement groups do not match their canonical work bundle")
+    members = connection.execute(
+        "SELECT group_ordinal, member_ordinal, requirement_id FROM requirement_group_members "
+        "WHERE work_item_id = ? AND definition_revision_id = ? ORDER BY group_ordinal, member_ordinal", key,
+    ).fetchall()
+    expected_members = tuple(
+        (group["ordinal"], member_ordinal, requirement_id)
+        for group in projection["groups"]
+        for member_ordinal, requirement_id in enumerate(group["members"])
+    )
+    if tuple(tuple(row) for row in members) != expected_members:
+        raise InvalidAuthorityError("stored requirement group members do not match their canonical work bundle")
+
+    supersessions = connection.execute(
+        "SELECT superseded_work_item_id, superseded_definition_revision_id FROM work_item_supersessions "
+        "WHERE work_item_id = ? AND definition_revision_id = ? "
+        "ORDER BY superseded_work_item_id, superseded_definition_revision_id", key,
+    ).fetchall()
+    expected_supersessions = tuple(sorted(
+        ((item[1], item[2]) for item in projection["supersedes"]),
+    ))
+    if tuple(tuple(row) for row in supersessions) != expected_supersessions:
+        raise InvalidAuthorityError("stored work-item supersessions do not match their canonical work bundle")
+
+
+def load_plan_revision_snapshot(
+    connection: sqlite3.Connection,
+    project: Project,
+    revision_id: StableId | str,
+) -> PlanRevisionSnapshotRecord:
+    """Load and cross-validate an accepted snapshot, membership, and version registry.
+
+    Call this inside a consistent reader transaction or an existing writer
+    transaction. It never creates, migrates, repairs, or silently normalizes
+    authority data.
+    """
+
+    if not isinstance(project, Project):
+        raise TypeError("project must be a contracts.Project")
+    revision_text = str(revision_id)
+    try:
+        StableId(revision_text)
+        row = connection.execute(
+            "SELECT plan_revision_id, sequence, based_on_revision_id, state, content_digest "
+            "FROM plan_revisions WHERE plan_revision_id = ?", (revision_text,),
+        ).fetchone()
+        snapshot = connection.execute(
+            "SELECT canonical_json, snapshot_digest FROM plan_revision_snapshots WHERE plan_revision_id = ?",
+            (revision_text,),
+        ).fetchone()
+        if row is None or snapshot is None or row["state"] != "accepted":
+            raise InvalidAuthorityError("accepted plan revision or its immutable snapshot is missing")
+        stored_json = snapshot["canonical_json"]
+        stored_digest = snapshot["snapshot_digest"]
+        _validate_canonical_digest(stored_json, stored_digest, "stored accepted plan snapshot")
+        if row["content_digest"] != stored_digest:
+            raise InvalidAuthorityError("accepted plan row digest does not match its immutable snapshot")
+        envelope = _canonical_json_object(stored_json, "stored accepted plan snapshot")
+        if envelope.get("plan_revision_id") != revision_text:
+            raise InvalidAuthorityError("accepted plan snapshot revision identity is inconsistent")
+        if envelope.get("based_on_revision_id") != row["based_on_revision_id"]:
+            raise InvalidAuthorityError("accepted plan snapshot parent revision is inconsistent")
+        if (envelope.get("project_id") != str(project.project_id)
+                or envelope.get("authority_id") != str(project.authority_id)):
+            raise InvalidAuthorityError("accepted plan snapshot project or authority identity does not match")
+        memberships = connection.execute(
+            "SELECT work_item_id, definition_revision_id FROM plan_revision_work_items "
+            "WHERE plan_revision_id = ? ORDER BY work_item_id", (revision_text,),
+        ).fetchall()
+        membership_pairs = tuple((item["work_item_id"], item["definition_revision_id"]) for item in memberships)
+        snapshot_refs = _snapshot_membership(envelope)
+        if snapshot_refs != {work_id: def_id for work_id, def_id in membership_pairs}:
+            raise InvalidAuthorityError("stored plan membership does not match the accepted snapshot refs")
+
+        definitions = []
+        projections = []
+        for work_id, definition_revision_id in membership_pairs:
+            version = connection.execute(
+                "SELECT canonical_json, content_digest FROM work_items "
+                "WHERE work_item_id = ? AND definition_revision_id = ?",
+                (work_id, definition_revision_id),
+            ).fetchone()
+            if version is None:
+                raise InvalidAuthorityError("accepted plan selects a missing work definition version")
+            definition = DefinitionVersionRecord(
+                StableId(definition_revision_id), StableId(work_id), version["canonical_json"], version["content_digest"]
+            )
+            definitions.append(definition)
+            projections.append(_bundle_projection(definition, str(project.project_id)))
+        record = PlanRevisionSnapshotRecord(
+            StableId(revision_text), stored_json, stored_digest,
+            tuple(definitions), tuple(PlanWorkMembership(StableId(work_id), StableId(definition_revision_id))
+                                      for work_id, definition_revision_id in membership_pairs),
+            sequence=row["sequence"],
+        )
+        _validate_snapshot_record(record, project, sequence=row["sequence"])
+        for definition, projection in zip(record.definitions, projections):
+            _verify_definition_projection(connection, definition, projection)
+        return record
+    except InvalidAuthorityError:
+        raise
+    except (sqlite3.Error, TypeError, ValueError, KeyError) as exc:
+        raise InvalidAuthorityError(f"accepted plan snapshot is invalid: {exc}") from exc
+
+
+def _insert_definition_projections(context: Any, record: DefinitionVersionRecord, projection: Mapping[str, Any]) -> None:
+    work_id = str(record.entity_id)
+    revision_id = str(record.definition_revision_id)
+    for item in projection["supersedes"]:
+        context.execute(
+            "INSERT INTO work_item_supersessions(work_item_id, definition_revision_id, "
+            "superseded_work_item_id, superseded_definition_revision_id) VALUES (?, ?, ?, ?)",
+            (work_id, revision_id, item[1], item[2]),
+        )
+    for item in projection["requirements"]:
+        context.execute(
+            "INSERT INTO requirements(requirement_id, definition_revision_id, work_item_id, kind, description, "
+            "target_project_id, target_kind, target_entity_id, target_definition_revision_id, check_key) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (item["id"], revision_id, work_id, item["kind"], item["description"],
+             item["target_project_id"], item["target_kind"], item["target_entity_id"],
+             item["target_definition_revision_id"], item["check_key"]),
+        )
+    for group in projection["groups"]:
+        context.execute(
+            "INSERT INTO requirement_groups(work_item_id, definition_revision_id, group_ordinal, kind, mode, quorum) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (work_id, revision_id, group["ordinal"], group["kind"], group["mode"], group["quorum"]),
+        )
+        for member_ordinal, requirement_id in enumerate(group["members"]):
+            context.execute(
+                "INSERT INTO requirement_group_members(work_item_id, definition_revision_id, group_ordinal, "
+                "member_ordinal, requirement_id) VALUES (?, ?, ?, ?, ?)",
+                (work_id, revision_id, group["ordinal"], member_ordinal, requirement_id),
+            )
+
+
+def store_plan_revision_snapshot(
+    context: Any,
+    record: PlanRevisionSnapshotRecord,
+    *,
+    based_on_revision_id: StableId | str | None = None,
+) -> PlanRevisionSnapshotRecord:
+    """Atomically persist one accepted canonical snapshot and its exact versions.
+
+    This helper is valid only inside the dispatcher's active writer transaction.
+    Exact work versions may be reused across plans only when their complete
+    canonical bundle and every normalized projection match byte-for-byte.
+    """
+
+    authority = getattr(context, "authority", None)
+    if not isinstance(record, PlanRevisionSnapshotRecord) or authority is None:
+        raise TypeError("store_plan_revision_snapshot requires a MutationContext and typed snapshot record")
+    if not getattr(authority, "write_transaction_active", False):
+        raise AuthorityError("accepted plan snapshots must be stored inside an active writer transaction")
+    if getattr(context, "project", None) != authority.project:
+        raise AuthorityError("mutation context and authority project identities differ")
+    envelope, projections = _validate_snapshot_record(record, authority.project)
+    if record.sequence is not None:
+        raise ValueError("sequence is allocated by the authority and cannot be supplied by the caller")
+    expected_parent = envelope["based_on_revision_id"]
+    if based_on_revision_id is not None and str(based_on_revision_id) != expected_parent:
+        raise ValueError("based_on_revision_id does not match the canonical snapshot envelope")
+    if envelope["semantic_revision"] != context.starting_revision + 1:
+        raise AuthorityError("accepted snapshot semantic revision must be the command's next revision")
+    connection = authority.connection
+    meta = connection.execute("SELECT semantic_revision FROM authority_meta WHERE singleton = 1").fetchone()
+    if meta is None or meta[0] != context.starting_revision:
+        raise AuthorityError("mutation context does not match current authority revision")
+    latest = connection.execute(
+        "SELECT plan_revision_id FROM plan_revisions WHERE state = 'accepted' ORDER BY sequence DESC LIMIT 1"
+    ).fetchone()
+    latest_id = None if latest is None else latest["plan_revision_id"]
+    if latest_id != expected_parent:
+        raise AuthorityError("accepted snapshot parent is not the current accepted plan revision")
+    if expected_parent is not None:
+        load_plan_revision_snapshot(connection, authority.project, expected_parent)
+
+    sequence_row = connection.execute("SELECT COALESCE(MAX(sequence), 0) + 1 FROM plan_revisions").fetchone()
+    sequence = sequence_row[0]
+    actor_id = str(context.actor.entity_id)
+    incarnation_id = str(context.actor.incarnation_id)
+    context.execute(
+        "INSERT INTO plan_revisions(plan_revision_id, sequence, based_on_revision_id, state, source, "
+        "content_digest, producer, authored_by_actor_id, authored_by_incarnation_id) "
+        "VALUES (?, ?, ?, 'accepted', NULL, ?, NULL, ?, ?)",
+        (str(record.plan_revision_id), sequence, expected_parent, record.snapshot_digest, actor_id, incarnation_id),
+    )
+
+    pending = {(str(item.entity_id), str(item.definition_revision_id)): item for item in record.definitions}
+    new_versions: set[tuple[str, str]] = set()
+    while pending:
+        progressed = False
+        for key in tuple(sorted(pending)):
+            item = pending[key]
+            projection = projections[key]
+            existing = connection.execute(
+                "SELECT title, outcome, parent_work_item_id, parent_definition_revision_id, canonical_json, content_digest "
+                "FROM work_items WHERE work_item_id = ? AND definition_revision_id = ?", key,
+            ).fetchone()
+            if existing is not None:
+                _verify_definition_projection(connection, item, projection)
+                del pending[key]
+                progressed = True
+                continue
+            parent_key = None
+            if projection["parent_work_item_id"] is not None:
+                parent_key = (projection["parent_work_item_id"], projection["parent_definition_revision_id"])
+                parent_exists = connection.execute(
+                    "SELECT 1 FROM work_items WHERE work_item_id = ? AND definition_revision_id = ?", parent_key,
+                ).fetchone() is not None
+                if not parent_exists and parent_key in pending:
+                    continue
+                if not parent_exists:
+                    raise AuthorityError("work definition references a missing exact parent version")
+            context.execute(
+                "INSERT INTO work_items(work_item_id, definition_revision_id, title, outcome, parent_work_item_id, "
+                "parent_definition_revision_id, canonical_json, content_digest) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (key[0], key[1], projection["title"], projection["outcome"],
+                 projection["parent_work_item_id"], projection["parent_definition_revision_id"],
+                 item.canonical_json, item.content_digest),
+            )
+            new_versions.add(key)
+            del pending[key]
+            progressed = True
+        if not progressed:
+            raise AuthorityError("work definition parent references contain a cycle")
+
+    for membership in record.work_items:
+        context.execute(
+            "INSERT INTO plan_revision_work_items(plan_revision_id, work_item_id, definition_revision_id) "
+            "VALUES (?, ?, ?)",
+            (str(record.plan_revision_id), str(membership.work_item_id), str(membership.definition_revision_id)),
+        )
+
+    for item in record.definitions:
+        key = (str(item.entity_id), str(item.definition_revision_id))
+        projection = projections[key]
+        if key in new_versions:
+            _insert_definition_projections(context, item, projection)
+        else:
+            _verify_definition_projection(connection, item, projection)
+
+    context.execute(
+        "INSERT INTO plan_revision_snapshots(plan_revision_id, canonical_json, snapshot_digest) VALUES (?, ?, ?)",
+        (str(record.plan_revision_id), record.canonical_json, record.snapshot_digest),
+    )
+    return load_plan_revision_snapshot(connection, authority.project, record.plan_revision_id)
 
 
 def _path(path: str | os.PathLike[str]) -> Path:
@@ -597,8 +1341,8 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
         raise InvalidAuthorityError("authority semantic revision is invalid")
 
     try:
-        if _schema_signature(connection) != _SCHEMA_V6_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v6 definition")
+        if _schema_signature(connection) != _SCHEMA_V8_SIGNATURE:
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v8 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -662,7 +1406,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v6 authority without replacing an existing path.
+        """Create a new schema-v8 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -814,7 +1558,7 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v6 is the only supported version. A current v6 authority is a
+        Schema v8 is the only supported version. A current v8 authority is a
         no-op. Older versions and every other unsupported version are rejected
         without opening the file writable; this method never guesses a
         conversion or restores a backup.
@@ -889,6 +1633,9 @@ class SQLiteAuthority:
 __all__ = [
     "APPLICATION_ID",
     "SCHEMA_VERSION",
+    "DefinitionVersionRecord",
+    "PlanRevisionSnapshotRecord",
+    "PlanWorkMembership",
     "DEFAULT_BUSY_TIMEOUT_SECONDS",
     "MAX_BUSY_TIMEOUT_SECONDS",
     "AuthorityAlreadyExistsError",
@@ -901,4 +1648,6 @@ __all__ = [
     "SQLiteAuthority",
     "UnsupportedAuthorityPlatformError",
     "UnsupportedSchemaVersionError",
+    "load_plan_revision_snapshot",
+    "store_plan_revision_snapshot",
 ]
