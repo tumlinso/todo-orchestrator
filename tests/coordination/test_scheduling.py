@@ -1,6 +1,7 @@
 """Integration checks for persisted run queues and shared claim admission."""
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -42,6 +43,7 @@ from todo_orchestrator.model import (
     QualifiedDestination,
     QualifiedSourceRevision,
     SourceSafety,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from todo_orchestrator.model.eligibility import EligibilityRequest, EligibilityStatus
@@ -74,6 +76,7 @@ class FakeHost:
     def __init__(self):
         self.calls = 0
         self.now = lambda: NOW
+        self.workspace_isolations = {}
 
     def qualify_workspace(self, workspace_id, target, correlation_id):
         self.calls += 1
@@ -86,7 +89,7 @@ class FakeHost:
         return WorkspaceQualification(
             workspace_id, StableId("coord-repo"), base,
             QualifiedDestination(PROJECT.project_id, StableId("coord-repo"), StableId("main")),
-            receipt,
+            receipt, self.workspace_isolations.get(workspace_id),
         )
 
     def inspect_attempt(self, attempt, workspace):
@@ -121,6 +124,18 @@ def package_document(work_ids=("alpha",), *, shared_scope=False):
         "project": {"project_id": str(PROJECT.project_id), "authority_id": str(PROJECT.authority_id)},
         "work_items": work_items,
     }, sort_keys=True)
+
+
+def synthetic_workspace_isolation(workspace_id):
+    encoded = str(workspace_id).encode("utf-8")
+
+    def identity(label):
+        return Sha256Digest(hashlib.sha256(label.encode("ascii") + b"\0" + encoded).hexdigest())
+
+    return WorkspaceIsolation(
+        Sha256Digest("d" * 64), identity("root"), identity("index"),
+        StableId("refs/heads/synthetic/" + str(workspace_id)), identity("admin"),
+    )
 
 
 class SchedulingTests(unittest.TestCase):
@@ -334,6 +349,10 @@ class SchedulingTests(unittest.TestCase):
         self.assertEqual(granted.receipt.result["state"], AttemptState.ADMITTED.value)
 
     def test_parallel_lane_labels_do_not_override_overlapping_scope_admission(self):
+        self.host.workspace_isolations.update({
+            StableId(workspace): synthetic_workspace_isolation(workspace)
+            for workspace in ("shared-workspace", "separate-workspace")
+        })
         plan = self.accept_plan(("alpha", "beta"), shared_scope=True)
         charter = RunCharter("Deliver both work items", ("Do not edit generated state",), ("Both results are accepted",))
         schedule = RunSchedule(

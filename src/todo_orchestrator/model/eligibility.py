@@ -134,6 +134,7 @@ class WorkspaceIsolation:
     workspace_root: Sha256Digest
     index_file: Sha256Digest
     head_ref: StableId
+    worktree_admin: Sha256Digest | None = None
 
     def __post_init__(self) -> None:
         if not all(isinstance(value, Sha256Digest) for value in (
@@ -142,6 +143,8 @@ class WorkspaceIsolation:
             raise TypeError("workspace isolation identities must be Sha256Digest values")
         if not isinstance(self.head_ref, StableId):
             raise TypeError("head_ref must be a StableId")
+        if self.worktree_admin is not None and not isinstance(self.worktree_admin, Sha256Digest):
+            raise TypeError("worktree_admin must be a Sha256Digest when supplied")
 
 
 @dataclass(frozen=True)

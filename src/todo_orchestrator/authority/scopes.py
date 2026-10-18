@@ -27,6 +27,26 @@ def plan_scope_membership(
         for requirement_id in bundle["requirements"]:
             members.add(EntityRef(project.project_id, EntityKind.REQUIREMENT,
                                   StableId(requirement_id), definition.definition_revision_id))
+    # Plans scope their exact immutable declarations alongside work and
+    # requirement definitions. This makes a plan-scoped capability useful for
+    # the declaration commands without granting it project-wide reach.
+    effective = json.loads(snapshot.canonical_json)["effective_plan"]
+    # The accepted-snapshot envelope keeps declarations in the authored
+    # package under ``effective_plan.package``. Keep compatibility with the
+    # earlier in-development flat envelope while reading only validated
+    # accepted snapshots.
+    authored = effective.get("package", effective)
+    declaration_kinds = {
+        "checkpoints": EntityKind.CHECKPOINT,
+        "interfaces": EntityKind.INTERFACE,
+        "decisions": EntityKind.DECISION,
+        "barriers": EntityKind.BARRIER,
+        "rendezvous": EntityKind.BARRIER,
+        "invariants": EntityKind.INVARIANT,
+    }
+    for section, kind in declaration_kinds.items():
+        for declaration in authored.get(section, ()):
+            members.add(EntityRef(project.project_id, kind, StableId(declaration["id"])))
     return frozenset(members)
 
 
@@ -44,7 +64,9 @@ def scope_covers(
     if grant == target:
         return True
     if grant.kind is EntityKind.PLAN_REVISION and target.kind in {
-        EntityKind.WORK_ITEM, EntityKind.REQUIREMENT,
+        EntityKind.WORK_ITEM, EntityKind.REQUIREMENT, EntityKind.CHECKPOINT,
+        EntityKind.INTERFACE, EntityKind.DECISION, EntityKind.BARRIER,
+        EntityKind.INVARIANT,
     }:
         return plan_membership is not None and target in plan_membership
     return False

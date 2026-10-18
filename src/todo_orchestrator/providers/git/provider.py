@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
+import secrets
 import shutil
 import subprocess
 import tempfile
@@ -98,9 +99,9 @@ class GitRepositoryConfig:
     journal_root: Path
     base_ref: StableId
     integration_ref: StableId
-    excluded_paths: tuple[str, ...] = (".todo-orchestrator",)
+    excluded_paths: tuple[str, ...] = ()
     provider_id: StableId = StableId("todo.git.local")
-    version: str = "git-cli-1"
+    version: str = "git-cli-3"
     command_timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
@@ -241,6 +242,14 @@ class GitRepositoryProvider:
             raise GitProviderError(f"Git ref is missing or does not resolve to a commit: {ref}")
         return value
 
+    def _zero_oid(self) -> str:
+        object_format = os.fsdecode(self._git(["rev-parse", "--show-object-format"]).strip())
+        if object_format == "sha1":
+            return "0" * 40
+        if object_format == "sha256":
+            return "0" * 64
+        raise GitProviderError(f"unsupported Git object format: {object_format}")
+
     def _workspace_token(self, workspace_id: StableId) -> str:
         return hashlib.sha256(str(workspace_id).encode("utf-8")).hexdigest()
 
@@ -255,6 +264,10 @@ class GitRepositoryProvider:
 
     def _operation_record_path(self, operation_id: StableId) -> Path:
         return self.config.journal_root / "operations" / (hashlib.sha256(str(operation_id).encode()).hexdigest() + ".json")
+
+    @staticmethod
+    def _conflict_tree_ref(operation_id: StableId) -> str:
+        return f"refs/todo-orchestrator/conflict-trees/{hashlib.sha256(str(operation_id).encode()).hexdigest()}"
 
     @contextmanager
     def _locked(self):
@@ -388,6 +401,30 @@ class GitRepositoryProvider:
         walk(root)
         return tuple(sorted(entries, key=lambda entry: entry.path))
 
+    def _index_manifest(self, root: Path) -> tuple[_ManifestEntry, ...]:
+        """Read the staged tree, including staged blobs absent from the worktree."""
+        output = self._git(["ls-files", "--stage", "-z"], cwd=root)
+        result: list[_ManifestEntry] = []
+        excluded = self.config.excluded_paths
+        for item in output.split(b"\0"):
+            if not item:
+                continue
+            try:
+                metadata, name = item.split(b"\t", 1)
+                mode, oid, stage = metadata.decode("ascii").split(" ")
+            except (ValueError, UnicodeError) as exc:
+                raise GitProviderError("Git returned an invalid index entry") from exc
+            if not mode or not oid or stage not in {"0", "1", "2", "3"}:
+                raise GitProviderError("Git returned an invalid index entry")
+            if self._excluded(PurePosixPath(os.fsdecode(name)).as_posix(), excluded):
+                continue
+            blob = self._git(["cat-file", "blob", oid])
+            # Stage zero matches the committed-tree format. Preserve conflict
+            # stages in the manifest so distinct unmerged indexes stay distinct.
+            indexed_mode = mode if stage == "0" else f"{mode}:{stage}"
+            result.append(_ManifestEntry(name, indexed_mode, hashlib.sha256(blob).hexdigest()))
+        return tuple(sorted(result, key=lambda entry: (entry.path, entry.mode, entry.digest)))
+
     @staticmethod
     def _excluded(path: str, exclusions: tuple[str, ...]) -> bool:
         return any(part == ".git" for part in PurePosixPath(path).parts) or any(
@@ -405,8 +442,34 @@ class GitRepositoryProvider:
             digest.update(bytes.fromhex(entry.digest))
         return Sha256Digest(digest.hexdigest())
 
+    def _source_identity_digest(self, content_digest: Sha256Digest) -> Sha256Digest:
+        """Bind selected content to the trusted source-selection policy."""
+        digest = hashlib.sha256(b"todo-orchestrator-git-source-identity-v3\0")
+        exclusions = tuple(sorted(self.config.excluded_paths))
+        digest.update(len(exclusions).to_bytes(8, "big"))
+        for exclusion in exclusions:
+            encoded = exclusion.encode("utf-8")
+            digest.update(len(encoded).to_bytes(8, "big"))
+            digest.update(encoded)
+        digest.update(bytes.fromhex(content_digest.hex))
+        return Sha256Digest(digest.hexdigest())
+
+    def _source_digest(self, files: tuple[_ManifestEntry, ...],
+                       index: tuple[_ManifestEntry, ...]) -> Sha256Digest:
+        file_digest = self._manifest_digest(files)
+        if files == index:
+            # A clean tree and its qualified revision share one policy-bound identity.
+            content_digest = file_digest
+        else:
+            index_digest = self._manifest_digest(index)
+            digest = hashlib.sha256(b"todo-orchestrator-git-dirty-source-content-v1\0")
+            digest.update(bytes.fromhex(file_digest.hex))
+            digest.update(bytes.fromhex(index_digest.hex))
+            content_digest = Sha256Digest(digest.hexdigest())
+        return self._source_identity_digest(content_digest)
+
     def _tree_digest(self, commit: str) -> Sha256Digest:
-        return self._manifest_digest(self._commit_manifest(commit))
+        return self._source_identity_digest(self._manifest_digest(self._commit_manifest(commit)))
 
     def qualified_revision(self, ref: StableId | None = None) -> QualifiedSourceRevision:
         """Return an immutable local commit identity and its source-tree digest."""
@@ -426,12 +489,16 @@ class GitRepositoryProvider:
             raise TypeError("workspace_id must be a StableId")
         return self._workspace_path(workspace_id)
 
-    def _path_state(self, root: Path, head: str) -> tuple[tuple[_ManifestEntry, ...], SourceSafety]:
+    def _path_state(self, root: Path, head: str) -> tuple[
+        tuple[_ManifestEntry, ...], tuple[_ManifestEntry, ...], SourceSafety,
+    ]:
         current = self._filesystem_manifest(root)
+        index = self._index_manifest(root)
         baseline = self._commit_manifest(head)
-        return current, SourceSafety.CLEAN if current == baseline else SourceSafety.DIRTY
+        safety = SourceSafety.CLEAN if current == baseline and index == baseline else SourceSafety.DIRTY
+        return current, index, safety
 
-    def _assert_worktree(self, path: Path) -> tuple[Path, str, Path]:
+    def _assert_worktree(self, path: Path, expected_branch: StableId) -> tuple[Path, str, Path]:
         if not path.is_dir():
             raise GitProviderError("qualified workspace path is missing")
         root = Path(os.fsdecode(self._git(["rev-parse", "--show-toplevel"], cwd=path).strip())).resolve(strict=True)
@@ -440,6 +507,9 @@ class GitRepositoryProvider:
         common = self._common_git_dir(path)
         if common != self._assert_repository():
             raise GitProviderError("workspace is not a linked worktree of the configured repository")
+        head_ref = self._git(["symbolic-ref", "--quiet", "HEAD"], cwd=path, check=False).strip()
+        if os.fsdecode(head_ref) != str(expected_branch):
+            raise GitProviderError("workspace is not checking out its recorded branch ref")
         head = os.fsdecode(self._git(["rev-parse", "--verify", "HEAD^{commit}"], cwd=path).strip())
         git_dir = self._git_dir(path)
         index_path = Path(os.fsdecode(self._git(["rev-parse", "--path-format=absolute", "--git-path", "index"], cwd=path).strip()))
@@ -450,13 +520,39 @@ class GitRepositoryProvider:
             raise GitProviderError("worktree has no independent Git index file")
         return common, head, index_path
 
+    def _checked_out_ref(self, path: Path) -> StableId | None:
+        raw = self._git(["symbolic-ref", "--quiet", "--short", "HEAD"], cwd=path, check=False).strip()
+        if not raw:
+            return None
+        short = os.fsdecode(raw)
+        return StableId(short if short.startswith("refs/") else f"refs/heads/{short}")
+
+    def _ref_is_checked_out(self, ref: StableId) -> bool:
+        listing = os.fsdecode(self._git(["worktree", "list", "--porcelain"]))
+        for line in listing.splitlines():
+            if line.startswith("branch ") and line.removeprefix("branch ") == ref.value:
+                return True
+        return False
+
     def _isolation(self, workspace_id: StableId, path: Path, branch: StableId) -> WorkspaceIsolation:
-        common, _head, index_path = self._assert_worktree(path)
+        common, _head, index_path = self._assert_worktree(path, branch)
         root_identity = hashlib.sha256(os.fsencode(path.resolve(strict=True))).hexdigest()
         index_identity = hashlib.sha256(os.fsencode(index_path)).hexdigest()
         common_identity = hashlib.sha256(os.fsencode(common)).hexdigest()
+        record = self._workspace_record(workspace_id)
+        admin_dir = self._git_dir(path)
+        marker_path = admin_dir / "todo-orchestrator-worktree-token"
+        try:
+            marker = marker_path.read_text(encoding="ascii")
+        except (OSError, UnicodeError) as exc:
+            raise GitProviderError("managed worktree incarnation marker is unavailable") from exc
+        if (record is None or not isinstance(record.get("worktree_nonce"), str)
+                or marker != record["worktree_nonce"]):
+            raise GitProviderError("managed worktree incarnation differs from its creation record")
+        admin_identity = hashlib.sha256(marker.encode("ascii")).hexdigest()
         return WorkspaceIsolation(
             Sha256Digest(common_identity), Sha256Digest(root_identity), Sha256Digest(index_identity), branch,
+            Sha256Digest(admin_identity),
         )
 
     def _receipt(self, *, request_digest: Sha256Digest, correlation_id: StableId,
@@ -489,7 +585,7 @@ class GitRepositoryProvider:
         branch_ref = StableId(record["branch_ref"])
         if branch_ref != self._workspace_branch(workspace_id):
             raise GitProviderError("workspace branch identity does not match its deterministic mapping")
-        common, head, index_path = self._assert_worktree(path)
+        common, head, index_path = self._assert_worktree(path, branch_ref)
         if verify_ref:
             branch_head = self._resolve_ref(branch_ref)
             if branch_head != head:
@@ -497,11 +593,11 @@ class GitRepositoryProvider:
         if not self._is_ancestor(base_commit, head):
             raise GitProviderError("workspace HEAD no longer descends from its qualified common base")
         destination = self.config.integration_ref
+        if self._ref_is_checked_out(destination):
+            raise GitProviderError("configured integration destination is checked out in a Git worktree")
         destination_head = self._resolve_ref(destination)
-        root_identity = Sha256Digest(hashlib.sha256(os.fsencode(path.resolve(strict=True))).hexdigest())
-        index_identity = Sha256Digest(hashlib.sha256(os.fsencode(index_path)).hexdigest())
-        common_identity = Sha256Digest(hashlib.sha256(os.fsencode(common)).hexdigest())
-        isolation = WorkspaceIsolation(common_identity, root_identity, index_identity, branch_ref)
+        isolation = self._isolation(workspace_id, path, branch_ref)
+        common_identity = isolation.repository_storage
         request_material = {
             "workspace_id": str(workspace_id), "target": self._ref_value(target),
             "repository_id": str(self.config.repository_id), "base_ref": str(base_ref),
@@ -509,8 +605,9 @@ class GitRepositoryProvider:
             "destination_ref": str(destination), "destination_head": destination_head,
             "workspace_head": head, "isolation": {
                 "repository_storage": common_identity.hex,
-                "workspace_root": root_identity.hex, "index_file": index_identity.hex,
+                "workspace_root": isolation.workspace_root.hex, "index_file": isolation.index_file.hex,
                 "head_ref": str(branch_ref),
+                "worktree_admin": None if isolation.worktree_admin is None else isolation.worktree_admin.hex,
             },
         }
         request_digest = Sha256Digest(hashlib.sha256(self._canonical(request_material).encode("ascii")).hexdigest())
@@ -565,9 +662,9 @@ class GitRepositoryProvider:
             with self._locked():
                 qualification = self._qualification(request.workspace_id, request.target, request.correlation_id)
                 path = self._workspace_path(request.workspace_id)
-                _common, head, _index = self._assert_worktree(path)
-                entries, safety = self._path_state(path, head)
-                source_digest = self._manifest_digest(entries)
+                _common, head, _index = self._assert_worktree(path, self._workspace_branch(request.workspace_id))
+                entries, index_entries, safety = self._path_state(path, head)
+                source_digest = self._source_digest(entries, index_entries)
                 inputs = tuple(
                     EvidenceInput(
                         StableId("file-" + hashlib.sha256(entry.path).hexdigest()),
@@ -575,13 +672,23 @@ class GitRepositoryProvider:
                     )
                     for entry in entries
                 )
+                if entries != index_entries:
+                    inputs += tuple(
+                        EvidenceInput(
+                            StableId("index-" + hashlib.sha256(
+                                entry.mode.encode("ascii") + b"\0" + entry.path
+                            ).hexdigest()),
+                            Sha256Digest(entry.digest),
+                        )
+                        for entry in index_entries
+                    )
                 artifacts = tuple(self._artifact_availability(item.artifact_id, item.expected_digest)
                                   for item in request.artifacts)
                 observation = SourceObservation(
                     self.config.repository_id, source_digest,
                     Sha256Digest(qualification.common_base.digest),
                     WorkingTreeState.CLEAN if safety is SourceSafety.CLEAN else WorkingTreeState.DIRTY,
-                    inputs, artifacts,
+                    inputs, artifacts, StableId(head),
                 )
                 receipt = self._receipt(
                     request_digest=provider_request_digest(request), correlation_id=request.correlation_id,
@@ -632,8 +739,10 @@ class GitRepositoryProvider:
                     or fresh.isolation != workspace.isolation or fresh.receipt.provider != workspace.receipt.provider):
                 raise GitProviderError("fresh workspace qualification differs from persisted attempt identity")
             path = self._workspace_path(workspace.workspace_id)
-            _common, head, _index = self._assert_worktree(path)
-            _entries, safety = self._path_state(path, head)
+            if fresh.isolation is None:
+                raise GitProviderError("fresh workspace qualification has no Git isolation identity")
+            _common, head, _index = self._assert_worktree(path, fresh.isolation.head_ref)
+            _entries, _index_entries, safety = self._path_state(path, head)
         except Exception:
             fresh = workspace
             safety = SourceSafety.UNKNOWN
@@ -687,6 +796,11 @@ class GitRepositoryProvider:
             "source_commit": None if request.source_commit is None else str(request.source_commit),
             "destination_ref": None if request.destination_ref is None else str(request.destination_ref),
             "expected_destination": None if request.expected_destination is None else str(request.expected_destination),
+            "target": None if request.target is None else self._ref_value(request.target),
+            "attempt": None if request.attempt is None else self._ref_value(request.attempt),
+            "run": None if request.run is None else self._ref_value(request.run),
+            "assignment": None if request.assignment is None else self._ref_value(request.assignment),
+            "requested_at": None if request.requested_at is None else request.requested_at.isoformat(timespec="microseconds"),
         }
 
     def _operation_journal(self, request: GitEffectRequest, state: str,
@@ -708,7 +822,30 @@ class GitRepositoryProvider:
             "resulting_source": None if observation.resulting_source is None else observation.resulting_source.hex,
             "conflict_refs": [str(item) for item in observation.conflict_refs],
             "external_ref": None if observation.external_ref is None else str(observation.external_ref),
+            "conflict_tree": None if observation.conflict_tree is None else str(observation.conflict_tree),
         }
+
+    @staticmethod
+    def _observation_from_value(value: object) -> GitEffectObservation | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict) or set(value) != {
+            "operation_id", "disposition", "resulting_source", "conflict_refs", "external_ref", "conflict_tree",
+        }:
+            raise GitProviderError("provider operation journal observation is malformed")
+        refs = value["conflict_refs"]
+        if not isinstance(refs, list):
+            raise GitProviderError("provider operation journal conflict refs are malformed")
+        try:
+            return GitEffectObservation(
+                StableId(value["operation_id"]), GitEffectDisposition(value["disposition"]),
+                None if value["resulting_source"] is None else Sha256Digest(value["resulting_source"]),
+                tuple(StableId(item) for item in refs),
+                None if value["external_ref"] is None else StableId(value["external_ref"]),
+                None if value["conflict_tree"] is None else StableId(value["conflict_tree"]),
+            )
+        except (TypeError, ValueError) as exc:
+            raise GitProviderError("provider operation journal observation is invalid") from exc
 
     @staticmethod
     def _receipt_value(receipt: ProviderReceipt) -> dict[str, object]:
@@ -730,8 +867,16 @@ class GitRepositoryProvider:
         digest = provider_request_digest(request)
         receipt = self._receipt(request_digest=digest, correlation_id=request.operation_id,
                                 provenance_ref=self._provenance(request), suffix=observation.disposition.value)
-        self._write_json(self._operation_record_path(request.operation_id),
-                         self._operation_journal(request, observation.disposition.value, observation, receipt))
+        path = self._operation_record_path(request.operation_id)
+        journal = self._operation_journal(request, observation.disposition.value, observation, receipt)
+        prior = self._read_json(path)
+        if (observation.disposition is GitEffectDisposition.NOT_APPLIED and prior is not None
+                and isinstance(prior.get("pending_commit"), dict)):
+            journal["pending_commit"] = prior["pending_commit"]
+        if (observation.disposition is GitEffectDisposition.CONFLICT and prior is not None
+                and isinstance(prior.get("pending_conflict_tree"), dict)):
+            journal["pending_conflict_tree"] = prior["pending_conflict_tree"]
+        self._write_json(path, journal)
         return self._result(request, observation, receipt)
 
     def _provenance(self, request: GitEffectRequest) -> StableId:
@@ -752,9 +897,26 @@ class GitRepositoryProvider:
                     if prior.get("request_digest") != digest or prior.get("request") != self._request_value(request):
                         return ProviderResult(ProviderStatus.UNAVAILABLE, request.operation_id,
                                               reason_code=StableId("git_operation_identity_conflict"))
-                    inspected = self._inspect_locked(request)
-                    if inspected is not None:
-                        return inspected
+                    # A repeated perform may inspect an existing journal to
+                    # prevent duplicate effects, but it must not invent a
+                    # receipt for an execution whose original receipt was not
+                    # durably written. Use the explicit query API to record a
+                    # new, query-bound inspection receipt.
+                    observation = self._inspect_request_locked(request)
+                    if observation is not None:
+                        recorded_observation = prior.get("observation")
+                        if (recorded_observation is not None
+                                and recorded_observation != self._observation_value(observation)):
+                            return ProviderResult(ProviderStatus.UNKNOWN, request.operation_id, self.identity,
+                                                  reason_code=StableId("git_effect_recovery_required"))
+                        receipt_value = prior.get("receipt")
+                        if isinstance(receipt_value, dict):
+                            return self._result(request, observation, self._receipt_from_value(receipt_value))
+                        # The effect is observable, but the process lost the
+                        # original receipt before journaling it. Require the
+                        # explicit inspect API, whose receipt binds the query.
+                        return ProviderResult(ProviderStatus.UNKNOWN, request.operation_id, self.identity,
+                                              reason_code=StableId("git_effect_recovery_required"))
                     return ProviderResult(ProviderStatus.UNKNOWN, request.operation_id, self.identity,
                                           reason_code=StableId("git_effect_recovery_required"))
                 self._write_json(path, self._operation_journal(request, "executing"), exclusive=True)
@@ -788,7 +950,10 @@ class GitRepositoryProvider:
                 inspection = self._inspect_request_locked(request)
                 if inspection is None or inspection.disposition is not GitEffectDisposition.NOT_APPLIED:
                     raise GitProviderError("explicit retry requires a definitive NOT_APPLIED observation")
-                self._write_json(path, self._operation_journal(request, "executing"))
+                retry_record = self._operation_journal(request, "executing")
+                if "pending_commit" in prior:
+                    retry_record["pending_commit"] = prior["pending_commit"]
+                self._write_json(path, retry_record)
                 if self.failure_hook is not None:
                     self.failure_hook("before_effect", request)
                 observation = self._perform_once(request)
@@ -814,11 +979,47 @@ class GitRepositoryProvider:
                         or original.idempotency_key != request.idempotency_key
                         or provider_request_digest(original) != request.original_request_digest):
                     raise GitProviderError("inspection request differs from original Git operation")
-                result = self._inspect_locked(original)
-                if result is None:
+                journal = self._read_json(self._operation_record_path(original.operation_id))
+                observation = self._inspect_request_locked(original)
+                original_receipt = None
+                if (journal is not None
+                        and journal.get("request_digest") == provider_request_digest(original).hex
+                        and journal.get("request") == self._request_value(original)
+                        and journal.get("observation") is not None
+                        and journal.get("receipt") is not None):
+                    recorded_observation = self._observation_from_value(journal["observation"])
+                    if observation is not None and observation != recorded_observation:
+                        return ProviderResult(ProviderStatus.UNKNOWN, request.correlation_id, self.identity,
+                                              reason_code=StableId("git_effect_state_changed"))
+                    receipt_value = journal["receipt"]
+                    if not isinstance(receipt_value, dict):
+                        raise GitProviderError("provider operation journal receipt is malformed")
+                    original_receipt = self._receipt_from_value(receipt_value)
+                    if (original_receipt.provider != self.identity
+                            or original_receipt.request_digest != provider_request_digest(original)
+                            or original_receipt.correlation_id != original.operation_id
+                            or original_receipt.provenance_ref != self._provenance(original)):
+                        raise GitProviderError("provider operation journal receipt has the wrong identity")
+                if observation is None:
                     return ProviderResult(ProviderStatus.UNKNOWN, request.correlation_id, self.identity,
                                           reason_code=StableId("git_effect_state_unknown"))
-                return result
+                status = (ProviderStatus.OBSERVED_SUCCESS
+                          if observation.disposition in {GitEffectDisposition.APPLIED, GitEffectDisposition.CONFLICT,
+                                                         GitEffectDisposition.NOT_APPLIED}
+                          else ProviderStatus.OBSERVED_FAILURE)
+                receipt = self._receipt(
+                    request_digest=provider_request_digest(request),
+                    correlation_id=request.correlation_id,
+                    provenance_ref=self._provenance(original),
+                    suffix=f"inspection-{request.correlation_id}",
+                )
+                if original_receipt is not None:
+                    observation = GitEffectObservation(
+                        observation.operation_id, observation.disposition, observation.resulting_source,
+                        observation.conflict_refs, observation.external_ref, observation.conflict_tree,
+                        original_receipt,
+                    )
+                return ProviderResult(status, request.correlation_id, self.identity, observation, receipt)
         except Exception:
             return ProviderResult(ProviderStatus.UNAVAILABLE, request.correlation_id,
                                   reason_code=StableId("git_inspection_unavailable"))
@@ -854,17 +1055,26 @@ class GitRepositoryProvider:
                 base_oid = str(metadata["base_commit"])
                 actual_base = self._resolve_ref(request.base_ref)
                 head = self._resolve_ref(branch)
-                common, _head, _index = self._assert_worktree(workspace_path)
+                common, _head, _index = self._assert_worktree(workspace_path, branch)
+                marker = (self._git_dir(workspace_path) / "todo-orchestrator-worktree-token").read_text(
+                    encoding="ascii",
+                )
                 if (actual_base != base_oid or common != self._assert_repository()
-                        or metadata.get("operation_id") != str(request.operation_id)):
+                        or metadata.get("operation_id") != str(request.operation_id)
+                        or metadata.get("workspace_id") != str(request.workspace_id)
+                        or metadata.get("base_ref") != str(request.base_ref)
+                        or (request.source_commit is not None and metadata.get("base_commit") != str(request.source_commit))
+                        or metadata.get("base_digest") != request.expected_source.hex
+                        or not isinstance(metadata.get("worktree_nonce"), str)
+                        or marker != metadata["worktree_nonce"]):
                     return None
                 if not self._is_ancestor(base_oid, head):
                     return None
-                result = self._tree_digest(head)
-                if result != request.expected_source:
+                base_digest = self._tree_digest(base_oid)
+                if base_digest != request.expected_source:
                     return None
                 return GitEffectObservation(request.operation_id, GitEffectDisposition.APPLIED,
-                                            result, (), branch)
+                                            base_digest, (), branch)
             except Exception:
                 return None
         if request.operation is GitOperationKind.INTEGRATE:
@@ -873,6 +1083,25 @@ class GitRepositoryProvider:
                 return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
             if request.destination_ref != self.config.integration_ref:
                 return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
+            record = self._read_json(self._operation_record_path(request.operation_id))
+            pending_conflict = None if record is None else record.get("pending_conflict_tree")
+            if isinstance(pending_conflict, dict):
+                try:
+                    tree_oid = pending_conflict["tree"]
+                    expected_old = str(request.expected_destination)
+                    source_oid = str(request.source_commit)
+                    conflicts = tuple(StableId(value) for value in pending_conflict["conflict_refs"])
+                    pin = self._git(["rev-parse", "--verify", self._conflict_tree_ref(request.operation_id)], check=False).strip()
+                    object_type = os.fsdecode(self._git(["cat-file", "-t", str(tree_oid)], check=False).strip())
+                    if (pending_conflict.get("expected_old") == expected_old
+                            and pending_conflict.get("source_commit") == source_oid
+                            and pin and os.fsdecode(pin) == tree_oid and object_type == "tree"):
+                        return GitEffectObservation(
+                            request.operation_id, GitEffectDisposition.CONFLICT, None, conflicts,
+                            StableId(self._conflict_tree_ref(request.operation_id)), StableId(tree_oid),
+                        )
+                except (KeyError, TypeError, ValueError):
+                    return None
             current = self._git(["rev-parse", "--verify", f"{request.destination_ref.value}^{{commit}}"], check=False).strip()
             if not current:
                 return None
@@ -881,12 +1110,37 @@ class GitRepositoryProvider:
             source_oid = str(request.source_commit)
             if current_oid == expected_old:
                 return GitEffectObservation(request.operation_id, GitEffectDisposition.NOT_APPLIED)
+            pending_commit = None if record is None else record.get("pending_commit")
+            if not isinstance(pending_commit, dict) or set(pending_commit) != {
+                "commit", "expected_old", "source_commit", "tree",
+            }:
+                # Parent pairs alone do not prove this operation created the
+                # destination commit: another operation can request the same
+                # merge inputs. Without this operation's durable object ID,
+                # keep the result unknown.
+                return None
+            commit_oid = pending_commit.get("commit")
+            tree_oid = pending_commit.get("tree")
+            if (pending_commit.get("expected_old") != expected_old
+                    or pending_commit.get("source_commit") != source_oid
+                    or not isinstance(commit_oid, str) or not isinstance(tree_oid, str)):
+                return None
             try:
-                parent_output = os.fsdecode(self._git(["show", "-s", "--format=%P", current_oid]).strip()).split()
-                if parent_output == [expected_old, source_oid]:
-                    merged_digest = self._tree_digest(current_oid)
+                commit_output = os.fsdecode(
+                    self._git(["show", "-s", "--format=%T %P", commit_oid], check=False).strip(),
+                ).split()
+                commit_exists = len(commit_output) == 3 and commit_output == [tree_oid, expected_old, source_oid]
+                if not commit_exists:
+                    return None
+                if current_oid == commit_oid or self._is_ancestor(commit_oid, current_oid):
+                    merged_digest = self._tree_digest(commit_oid)
                     return GitEffectObservation(request.operation_id, GitEffectDisposition.APPLIED,
-                                                merged_digest, (), StableId(current_oid))
+                                                merged_digest, (), StableId(commit_oid))
+                # The destination advanced elsewhere while this exact prepared
+                # commit remains unpublished. A retry may safely reuse its
+                # immutable ID only if the CAS destination remains unchanged.
+                if current_oid == expected_old:
+                    return GitEffectObservation(request.operation_id, GitEffectDisposition.NOT_APPLIED)
                 return None
             except Exception:
                 return None
@@ -904,7 +1158,8 @@ class GitRepositoryProvider:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
         base_oid = self._resolve_ref(request.base_ref)
         base_digest = self._tree_digest(base_oid)
-        if base_digest != request.expected_source:
+        if (base_digest != request.expected_source
+                or (request.source_commit is not None and str(request.source_commit) != base_oid)):
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
         self._resolve_ref(self.config.integration_ref)
         workspace_id = request.workspace_id
@@ -913,19 +1168,49 @@ class GitRepositoryProvider:
         branch_head = self._git(["rev-parse", "--verify", f"{branch.value}^{{commit}}"], check=False).strip()
         if destination.exists() or branch_head:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
-        record = {
+        record_path = self._workspace_record_path(workspace_id)
+        prior = self._workspace_record(workspace_id)
+        if prior is not None:
+            if (prior.get("operation_id") != str(request.operation_id)
+                    or prior.get("base_ref") != str(request.base_ref)
+                    or prior.get("base_commit") != base_oid
+                    or prior.get("base_digest") != base_digest.hex
+                    or prior.get("branch_ref") != str(branch)
+                    or prior.get("workspace_path") != str(destination)
+                    or prior.get("destination_ref") != str(self.config.integration_ref)
+                    or not isinstance(prior.get("worktree_nonce"), str)):
+                return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+            record = prior
+        else:
+            record = {
             "format": "todo-orchestrator.git-workspace", "schema_version": 1,
             "workspace_id": str(workspace_id), "repository_id": str(self.config.repository_id),
             "operation_id": str(request.operation_id), "base_ref": str(request.base_ref),
             "base_commit": base_oid, "base_digest": base_digest.hex,
             "branch_ref": str(branch), "destination_ref": str(self.config.integration_ref),
             "workspace_path": str(destination),
-        }
-        self._write_json(self._workspace_record_path(workspace_id), record, exclusive=True)
+            "worktree_nonce": secrets.token_hex(32),
+            }
+            self._write_json(record_path, record, exclusive=True)
+            if self.failure_hook is not None:
+                self.failure_hook("after_workspace_record", request)
         destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        self._git(["worktree", "add", "--branch", branch.value.removeprefix("refs/heads/"),
+        self._git(["worktree", "add", "-b", branch.value.removeprefix("refs/heads/"),
                    str(destination), base_oid])
-        self._assert_worktree(destination)
+        admin_dir = self._git_dir(destination)
+        marker_path = admin_dir / "todo-orchestrator-worktree-token"
+        descriptor = os.open(marker_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        try:
+            with os.fdopen(descriptor, "w", encoding="ascii") as marker_file:
+                marker_file.write(record["worktree_nonce"])
+                marker_file.flush()
+                os.fsync(marker_file.fileno())
+            self._sync_directory(admin_dir)
+        except BaseException:
+            # Preserve the worktree and record for explicit inspection/recovery;
+            # never attempt cleanup after a partially published effect.
+            raise
+        self._assert_worktree(destination, branch)
         return GitEffectObservation(request.operation_id, GitEffectDisposition.APPLIED,
                                     base_digest, (), branch)
 
@@ -935,6 +1220,8 @@ class GitRepositoryProvider:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
         if request.destination_ref != self.config.integration_ref:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
+        if self._ref_is_checked_out(request.destination_ref):
+            return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
         source_oid = str(request.source_commit)
         source_tree_digest = self._tree_digest(source_oid)
         if source_tree_digest != request.expected_source:
@@ -943,12 +1230,13 @@ class GitRepositoryProvider:
         if workspace is None:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
         workspace_path = self._workspace_path(request.workspace_id)
-        common, head, _index = self._assert_worktree(workspace_path)
-        if common != self._assert_repository() or head != self._resolve_ref(StableId(workspace["branch_ref"])):
+        branch_ref = StableId(workspace["branch_ref"])
+        common, head, _index = self._assert_worktree(workspace_path, branch_ref)
+        if common != self._assert_repository() or head != self._resolve_ref(branch_ref):
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
         if head != source_oid:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
-        _source_entries, source_safety = self._path_state(workspace_path, head)
+        _source_entries, _source_index, source_safety = self._path_state(workspace_path, head)
         if source_safety is not SourceSafety.CLEAN:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.DIRTY)
         base_oid = str(workspace["base_commit"])
@@ -959,7 +1247,16 @@ class GitRepositoryProvider:
         expected_old = str(request.expected_destination)
         if current != expected_old:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)
-        _destination_entries, destination_safety = self._path_state(self.config.repository_root, current)
+        checked_out_ref = self._checked_out_ref(self.config.repository_root)
+        if checked_out_ref is None:
+            return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+        try:
+            _root_common, root_head, _root_index = self._assert_worktree(self.config.repository_root, checked_out_ref)
+        except GitProviderError:
+            return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+        _destination_entries, _destination_index, destination_safety = self._path_state(
+            self.config.repository_root, root_head,
+        )
         if destination_safety is not SourceSafety.CLEAN:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.DIRTY)
         if source_oid == current or self._is_ancestor(source_oid, current):
@@ -974,30 +1271,81 @@ class GitRepositoryProvider:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
         if merged.returncode != 0:
             conflict_paths = _merge_conflict_paths(merged.stdout)
+            output_fields = [item for item in merged.stdout.split(b"\0") if item]
+            tree_oid = os.fsdecode(output_fields[0]).strip() if output_fields else ""
+            if not tree_oid or any(char not in "0123456789abcdef" for char in tree_oid):
+                return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+            journal_path = self._operation_record_path(request.operation_id)
+            journal = self._read_json(journal_path)
+            if journal is None or journal.get("request_digest") != provider_request_digest(request).hex:
+                return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+            pending = {
+                "tree": tree_oid, "expected_old": expected_old,
+                "source_commit": source_oid, "conflict_refs": [str(item) for item in conflict_paths],
+            }
+            journal["pending_conflict_tree"] = pending
+            self._write_json(journal_path, journal)
+            pin_ref = self._conflict_tree_ref(request.operation_id)
+            pin_result = subprocess.run(
+                ["git", "--no-replace-objects", "-C", str(self.config.repository_root),
+                 "update-ref", pin_ref, tree_oid, self._zero_oid()],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=self._environment(), timeout=self.config.command_timeout_seconds, check=False,
+            )
+            if pin_result.returncode != 0:
+                existing = self._git(["rev-parse", "--verify", pin_ref], check=False).strip()
+                if not existing or os.fsdecode(existing) != tree_oid:
+                    return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
             return GitEffectObservation(request.operation_id, GitEffectDisposition.CONFLICT,
-                                        None, conflict_paths)
+                                        None, conflict_paths, StableId(pin_ref), StableId(tree_oid))
         lines = merged.stdout.split(b"\0")
         if not lines or not lines[0]:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
         tree_oid = os.fsdecode(lines[0]).strip()
         if not tree_oid or any(char not in "0123456789abcdef" for char in tree_oid):
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
-        commit_env = self._environment()
-        now = self._now().strftime("%Y-%m-%dT%H:%M:%S%z")
-        commit_env.update({
-            "GIT_AUTHOR_NAME": "Todo Orchestrator", "GIT_AUTHOR_EMAIL": "todo-orchestrator@localhost",
-            "GIT_COMMITTER_NAME": "Todo Orchestrator", "GIT_COMMITTER_EMAIL": "todo-orchestrator@localhost",
-            "GIT_AUTHOR_DATE": now, "GIT_COMMITTER_DATE": now,
-        })
-        commit = subprocess.run(
-            ["git", "--no-replace-objects", "-C", str(self.config.repository_root), "commit-tree",
-             tree_oid, "-p", current, "-p", source_oid, "-m", f"Integrate {request.workspace_id}"],
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            env=commit_env, timeout=self.config.command_timeout_seconds, check=False,
-        )
-        if commit.returncode != 0:
+        journal_path = self._operation_record_path(request.operation_id)
+        journal = self._read_json(journal_path)
+        if journal is None or journal.get("request_digest") != provider_request_digest(request).hex:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
-        new_oid = os.fsdecode(commit.stdout).strip()
+        pending = journal.get("pending_commit")
+        new_oid = None
+        if isinstance(pending, dict) and pending == {
+            "commit": pending.get("commit"), "expected_old": expected_old,
+            "source_commit": source_oid, "tree": tree_oid,
+        }:
+            pending_oid = pending.get("commit")
+            if isinstance(pending_oid, str):
+                parents = os.fsdecode(self._git(["show", "-s", "--format=%T %P", pending_oid], check=False).strip()).split()
+                if len(parents) == 3 and parents == [tree_oid, expected_old, source_oid]:
+                    new_oid = pending_oid
+        if new_oid is None:
+            commit_env = self._environment()
+            commit_time = (request.requested_at or self._now()).strftime("%Y-%m-%dT%H:%M:%S%z")
+            commit_env.update({
+                "GIT_AUTHOR_NAME": "Todo Orchestrator", "GIT_AUTHOR_EMAIL": "todo-orchestrator@localhost",
+                "GIT_COMMITTER_NAME": "Todo Orchestrator", "GIT_COMMITTER_EMAIL": "todo-orchestrator@localhost",
+                "GIT_AUTHOR_DATE": commit_time, "GIT_COMMITTER_DATE": commit_time,
+            })
+            commit = subprocess.run(
+                ["git", "--no-replace-objects", "-C", str(self.config.repository_root), "commit-tree",
+                 tree_oid, "-p", current, "-p", source_oid, "-m", f"Integrate {request.workspace_id}"],
+                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                env=commit_env, timeout=self.config.command_timeout_seconds, check=False,
+            )
+            if commit.returncode != 0:
+                return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
+            new_oid = os.fsdecode(commit.stdout).strip()
+            # Record the commit object before the CAS. Its deterministic
+            # identity is also recoverable from the immutable request timestamp
+            # if the process dies in the narrow interval before this journal write.
+            journal["pending_commit"] = {
+                "commit": new_oid, "expected_old": expected_old, "source_commit": source_oid,
+                "tree": tree_oid,
+            }
+            self._write_json(journal_path, journal)
+            if self.failure_hook is not None:
+                self.failure_hook("after_commit_object", request)
         # Use update-ref's expected-old parameter for an atomic compare-and-set.
         command = ["git", "--no-replace-objects", "-C", str(self.config.repository_root),
                    "update-ref", destination_ref, new_oid, expected_old]

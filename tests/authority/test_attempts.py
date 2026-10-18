@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -6,6 +7,7 @@ import unittest
 
 from todo_orchestrator.authority import (
     AttemptAdmissionDeniedError,
+    AttemptHostUnavailableError,
     AttemptObservationMismatchError,
     AttemptService,
     AuthorityAuthService,
@@ -24,10 +26,12 @@ from todo_orchestrator.contracts.providers import ProviderIdentity, ProviderRece
 from todo_orchestrator.model import (
     AttemptSafetyObservation,
     ChildActivity,
+    EligibilityStatus,
     ProcessLiveness,
     QualifiedDestination,
     QualifiedSourceRevision,
     SourceSafety,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import compile_plan, parse_plan_json
@@ -43,7 +47,7 @@ ATTEMPT_ACTIONS = tuple(StableId(value) for value in (
 OWNER_PASSWORD = "attempt fixture owner phrase 927"
 
 
-def _plan(project: Project, *, second=False):
+def _plan(project: Project, *, second=False, overlap_second=False):
     work_items = [{
         "id": "work-one",
         "title": "First work item",
@@ -60,7 +64,8 @@ def _plan(project: Project, *, second=False):
             "title": "Second work item",
             "objective": "Own the second scope",
             "outcome": "The second outcome is present",
-            "scope": {"paths": [{"path": "src/two", "access": "write"}], "concepts": [], "locks": []},
+            "scope": {"paths": [{"path": "src/one/subtree" if overlap_second else "src/two",
+                                     "access": "write"}], "concepts": [], "locks": []},
             "acceptance": {"assertions": ["result exists"], "required_evidence": [],
                             "allowed_dispositions": ["completed"]},
             "ownership": {"mode": "any", "actors": []},
@@ -97,10 +102,20 @@ class FakeHost:
         self.children = ChildActivity.NONE
         self.before_return = None
         self.qualification_calls = 0
+        self.qualification_workspace_ids = []
+        self.qualification_unavailable = set()
+        self.qualification_isolation_overrides = {}
+        self.qualification_guard_probe = None
+        self.qualification_guard_observations = []
         self.inspection_calls = 0
 
     def qualify_workspace(self, workspace_id, target, correlation_id):
         self.qualification_calls += 1
+        self.qualification_workspace_ids.append(workspace_id)
+        if self.qualification_guard_probe is not None:
+            self.qualification_guard_observations.append(self.qualification_guard_probe())
+        if str(workspace_id) in self.qualification_unavailable:
+            raise RuntimeError("fixture workspace cannot be qualified")
         provider = ProviderIdentity(StableId("fixture-host"), "1")
         base = QualifiedSourceRevision(
             PROJECT.project_id, StableId("fixture-repo"), StableId("base-commit"), "a" * 64
@@ -112,7 +127,19 @@ class FakeHost:
             StableId(f"workspace-receipt-{self.qualification_calls}"), provider,
             correlation_id, Sha256Digest("b" * 64), base.ref, self.clock(),
         )
-        return WorkspaceQualification(workspace_id, StableId("fixture-repo"), base, destination, receipt)
+        token = str(workspace_id)
+        isolation = self.qualification_isolation_overrides.get(token)
+        if isolation is None:
+            def identity(label):
+                return Sha256Digest(hashlib.sha256(label.encode("utf-8")).hexdigest())
+
+            isolation = WorkspaceIsolation(
+                identity("repository-storage"), identity("root:" + token), identity("index:" + token),
+                StableId("refs/heads/" + token), identity("worktree-admin:" + token),
+            )
+        return WorkspaceQualification(
+            workspace_id, StableId("fixture-repo"), base, destination, receipt, isolation,
+        )
 
     def inspect_attempt(self, attempt, workspace):
         self.inspection_calls += 1
@@ -171,6 +198,22 @@ class AttemptAuthorityTests(unittest.TestCase):
                 key="accepted-attempt-plan",
             )
             self.target = self.plan.work_items[0].definition.ref
+
+    def _claim_first_item_with_overlapping_plan(self):
+        with self.open_writer() as authority:
+            _, _, self.plan = commit_plan(
+                authority, self.auth, self.issued.bearer_token,
+                _plan(PROJECT, second=True, overlap_second=True).canonical_json,
+                key="overlapping-attempt-plan",
+            )
+            self.target = self.plan.work_items[0].definition.ref
+            claim = self.service.claim(
+                authority, self.issued.bearer_token, self.target, self.plan,
+                idempotency_key=StableId("overlap-first-claim"),
+                expected_revision=self.current_revision,
+                workspace_id=StableId("workspace-one"),
+            )
+        return claim
 
     @property
     def current_revision(self):
@@ -268,6 +311,116 @@ class AttemptAuthorityTests(unittest.TestCase):
             self.assertEqual(authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0], 1)
             self.assertEqual(authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0], events_before + 1)
             self.assertNotEqual(first.receipt.result["attempt_id"], "")
+
+    def test_overlapping_claim_requalifies_candidate_and_peer_inside_writer(self):
+        self._claim_first_item_with_overlapping_plan()
+        with self.open_writer() as authority:
+            self.host.qualification_guard_probe = lambda: authority.write_transaction_active
+            second = self.service.claim(
+                authority, self.issued.bearer_token,
+                self.plan.work_items[1].definition.ref, self.plan,
+                idempotency_key=StableId("overlap-second-claim"),
+                expected_revision=self.current_revision,
+                workspace_id=StableId("workspace-two"),
+            )
+            self.assertTrue(second.receipt.changed)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0], 2)
+        self.assertEqual(self.host.qualification_workspace_ids[-3:], [
+            StableId("workspace-two"), StableId("workspace-two"), StableId("workspace-one"),
+        ])
+        self.assertEqual(self.host.qualification_guard_observations[-3:], [False, True, True])
+
+    def test_overlapping_claim_rejects_changed_peer_binding_without_churn(self):
+        self._claim_first_item_with_overlapping_plan()
+
+        def identity(label):
+            return Sha256Digest(hashlib.sha256(label.encode("utf-8")).hexdigest())
+
+        self.host.qualification_isolation_overrides["workspace-one"] = WorkspaceIsolation(
+            identity("repository-storage"), identity("rebound-root"), identity("index:workspace-one"),
+            StableId("refs/heads/workspace-one"), identity("worktree-admin:workspace-one"),
+        )
+        before = self.current_revision
+        with self.open_writer() as authority:
+            events_before = authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0]
+            attempts_before = authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0]
+            with self.assertRaises(AttemptAdmissionDeniedError) as denied:
+                self.service.claim(
+                    authority, self.issued.bearer_token,
+                    self.plan.work_items[1].definition.ref, self.plan,
+                    idempotency_key=StableId("overlap-rebound-claim"),
+                    expected_revision=before,
+                    workspace_id=StableId("workspace-two"),
+                )
+            self.assertEqual(denied.exception.decision.status, EligibilityStatus.UNKNOWN)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0], attempts_before)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0], events_before)
+            self.assertEqual(authority.connection.execute(
+                "SELECT count(*) FROM command_idempotency WHERE idempotency_key = 'overlap-rebound-claim'"
+            ).fetchone()[0], 0)
+        self.assertEqual(self.current_revision, before)
+
+    def test_overlapping_claim_rejects_candidate_rebound_after_initial_qualification(self):
+        self._claim_first_item_with_overlapping_plan()
+
+        def identity(label):
+            return Sha256Digest(hashlib.sha256(label.encode("utf-8")).hexdigest())
+
+        replacement = WorkspaceIsolation(
+            identity("repository-storage"), identity("rebound-candidate-root"),
+            identity("index:workspace-two"), StableId("refs/heads/workspace-two"),
+            identity("worktree-admin:workspace-two"),
+        )
+        before = self.current_revision
+        with self.open_writer() as authority:
+            def writer_probe():
+                in_writer = authority.write_transaction_active
+                if in_writer:
+                    self.host.qualification_isolation_overrides["workspace-two"] = replacement
+                return in_writer
+
+            self.host.qualification_guard_probe = writer_probe
+            events_before = authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0]
+            with self.assertRaises(AttemptAdmissionDeniedError) as denied:
+                self.service.claim(
+                    authority, self.issued.bearer_token,
+                    self.plan.work_items[1].definition.ref, self.plan,
+                    idempotency_key=StableId("overlap-candidate-rebound-claim"),
+                    expected_revision=before,
+                    workspace_id=StableId("workspace-two"),
+                )
+            self.assertEqual(denied.exception.decision.status, EligibilityStatus.UNKNOWN)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0], 1)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0], events_before)
+            self.assertEqual(authority.connection.execute(
+                "SELECT count(*) FROM command_idempotency "
+                "WHERE idempotency_key = 'overlap-candidate-rebound-claim'"
+            ).fetchone()[0], 0)
+            self.assertEqual(self.host.qualification_guard_observations[-2:], [False, True])
+        self.assertEqual(self.current_revision, before)
+
+    def test_overlapping_claim_fails_closed_when_peer_requalification_is_unavailable(self):
+        self._claim_first_item_with_overlapping_plan()
+        self.host.qualification_unavailable.add("workspace-one")
+        before = self.current_revision
+        with self.open_writer() as authority:
+            events_before = authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0]
+            attempts_before = authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0]
+            with self.assertRaises(AttemptAdmissionDeniedError) as denied:
+                self.service.claim(
+                    authority, self.issued.bearer_token,
+                    self.plan.work_items[1].definition.ref, self.plan,
+                    idempotency_key=StableId("overlap-unknown-claim"),
+                    expected_revision=before,
+                    workspace_id=StableId("workspace-two"),
+                )
+            self.assertEqual(denied.exception.decision.status, EligibilityStatus.UNKNOWN)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM attempts").fetchone()[0], attempts_before)
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM authority_events").fetchone()[0], events_before)
+            self.assertEqual(authority.connection.execute(
+                "SELECT count(*) FROM command_idempotency WHERE idempotency_key = 'overlap-unknown-claim'"
+            ).fetchone()[0], 0)
+        self.assertEqual(self.current_revision, before)
 
     def test_heartbeat_during_inspection_invalidates_release_snapshot(self):
         with self.open_writer() as authority:

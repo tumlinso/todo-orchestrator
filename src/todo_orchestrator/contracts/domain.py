@@ -638,15 +638,17 @@ class ExternalOperationState(str, Enum):
     FINALIZED = "finalized"
     FAILED = "failed"
     UNKNOWN = "unknown"
+    NOT_APPLIED = "not_applied"
 
 
 EXTERNAL_OPERATION_TRANSITIONS: Mapping[ExternalOperationState, frozenset[ExternalOperationState]] = MappingProxyType({
-    ExternalOperationState.PREPARED: frozenset({ExternalOperationState.EXECUTING, ExternalOperationState.UNKNOWN}),
-    ExternalOperationState.EXECUTING: frozenset({ExternalOperationState.OBSERVED, ExternalOperationState.FAILED, ExternalOperationState.UNKNOWN}),
+    ExternalOperationState.PREPARED: frozenset({ExternalOperationState.EXECUTING, ExternalOperationState.UNKNOWN, ExternalOperationState.NOT_APPLIED}),
+    ExternalOperationState.EXECUTING: frozenset({ExternalOperationState.OBSERVED, ExternalOperationState.FAILED, ExternalOperationState.UNKNOWN, ExternalOperationState.NOT_APPLIED}),
     ExternalOperationState.OBSERVED: frozenset({ExternalOperationState.FINALIZED, ExternalOperationState.FAILED, ExternalOperationState.UNKNOWN}),
     ExternalOperationState.FINALIZED: frozenset(),
     ExternalOperationState.FAILED: frozenset(),
-    ExternalOperationState.UNKNOWN: frozenset({ExternalOperationState.OBSERVED, ExternalOperationState.FAILED}),
+    ExternalOperationState.UNKNOWN: frozenset({ExternalOperationState.OBSERVED, ExternalOperationState.FAILED, ExternalOperationState.NOT_APPLIED}),
+    ExternalOperationState.NOT_APPLIED: frozenset({ExternalOperationState.EXECUTING, ExternalOperationState.UNKNOWN}),
 })
 
 

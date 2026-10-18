@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-V04: Isolate and qualify Git workspace/integration operations
 
-Task revision: `117`; current project revision is in `todo-status.md`.
+Task revision: `123`; current project revision is in `todo-status.md`.
 
 ## Objective
 Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.
 
 ## State
-- Lifecycle: `in_progress`
-- Execution: `claimed`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

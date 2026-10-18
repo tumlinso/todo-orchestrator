@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-VERIFICATION: Verification and safe integration
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `125`; current project revision is in `todo-status.md`.
 
 ## Objective
 Verify outputs against precise source/input identities and use external providers for effects.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._

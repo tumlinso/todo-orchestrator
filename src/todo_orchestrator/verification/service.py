@@ -243,6 +243,7 @@ def _source_value(source: SourceObservation) -> dict[str, object]:
     return {
         "repository_id": str(source.repository_id), "source_digest": source.source_digest.hex,
         "base_digest": None if source.base_digest is None else source.base_digest.hex,
+        "source_revision": None if source.source_revision is None else str(source.source_revision),
         "working_tree": source.working_tree.value, "inputs": _inputs_value(source.inputs),
         "artifacts": [{"artifact_id": str(item.artifact_id), "available": item.available,
                        "content_digest": None if item.content_digest is None else item.content_digest.hex}
@@ -738,6 +739,7 @@ class _TransitionHandler:
                         source.get("source_digest") != row["source_digest"]
                         or source.get("inputs") != inputs
                         or source.get("working_tree") != json.loads(row["source_receipt_json"])["source"]["working_tree"]
+                        or source.get("source_revision") != json.loads(row["source_receipt_json"])["source"].get("source_revision")
                     ))
                     or source.get("repository_id") != json.loads(row["source_receipt_json"])["source"]["repository_id"]
                     or source.get("base_digest") != json.loads(row["source_receipt_json"])["source"]["base_digest"]
@@ -1287,6 +1289,7 @@ class VerificationService:
             and source.working_tree.value == initial_source["working_tree"]
             and str(source.repository_id) == initial_source["repository_id"]
             and (None if source.base_digest is None else source.base_digest.hex) == initial_source["base_digest"]
+            and (None if source.source_revision is None else str(source.source_revision)) == initial_source["source_revision"]
             and observation.get("source_digest") == request.expected_source.hex
         )
         status = VerificationState.STALE if not same_source else (

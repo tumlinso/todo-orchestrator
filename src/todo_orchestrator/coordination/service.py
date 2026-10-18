@@ -88,6 +88,7 @@ from todo_orchestrator.model import (
 from todo_orchestrator.planning import CompiledPlan, accepted_plan_payload, decode_accepted_plan
 
 from .store import canonical_schedule_json, load_run_schedule, schedule_digest
+from .messaging import MESSAGE_READ_ACTION, MESSAGE_SEND_ACTION, QUESTION_ANSWER_ACTION
 
 
 RUN_SCHEDULE_ACTION = StableId("todo.run.schedule")
@@ -321,7 +322,10 @@ class _DispatchHandler:
             expires_at = datetime.fromisoformat(str(claimed.result["lease_expires_at"]))
             attempt_ref = EntityRef(context.project.project_id, EntityKind.ATTEMPT, command.attempt_id)
             session_actions = ATTEMPT_SESSION_ACTIONS
-            for optional_action in (VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION):
+            for optional_action in (
+                VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
+                MESSAGE_SEND_ACTION, MESSAGE_READ_ACTION, QUESTION_ANSWER_ACTION,
+            ):
                 try:
                     self.service.auth._authorize_capability(
                         context._connection, context.project, command.parent_bearer_digest,

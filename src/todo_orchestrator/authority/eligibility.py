@@ -59,6 +59,7 @@ from todo_orchestrator.planning.snapshot import accepted_plan_payload, decode_ac
 
 from .sqlite import AuthorityError, InvalidAuthorityError, ReadOnlyAuthorityError, SQLiteAuthority, load_plan_revision_snapshot
 from .scopes import plan_scope_membership, scope_covers
+from .declarations import native_declaration_facts
 from todo_orchestrator.coordination.store import load_all_queue_entries
 
 
@@ -165,12 +166,16 @@ class EligibilityFacts:
             key.kind is not EntityKind.PLAN_REVISION or key.project_id != self.project.project_id
             or any(
                 not isinstance(ref, EntityRef) or ref.project_id != self.project.project_id
-                or ref.kind not in {EntityKind.WORK_ITEM, EntityKind.REQUIREMENT}
+                or ref.kind not in {
+                    EntityKind.WORK_ITEM, EntityKind.REQUIREMENT, EntityKind.CHECKPOINT,
+                    EntityKind.INTERFACE, EntityKind.DECISION, EntityKind.BARRIER,
+                    EntityKind.INVARIANT,
+                }
                 for ref in members
             )
             for key, members in self.plan_memberships.items()
         ):
-            raise ValueError("plan memberships must map project-local plan revisions to exact work/requirement refs")
+            raise ValueError("plan memberships must map project-local plan revisions to exact accepted-plan refs")
         if any(
             key.kind is not EntityKind.WORK_ITEM or key.project_id != self.project.project_id
             or any(
@@ -1053,6 +1058,15 @@ def _load_facts(
 
     attempt_scope_snapshots = _load_attempt_scope_snapshots(connection, project_id)
 
+    authoritative_blockers = dict(blocker_observations)
+    authoritative_decisions = dict(decision_observations)
+    if stored_plan is not None and accepted:
+        native_blockers, native_decisions = native_declaration_facts(connection, stored_plan)
+        # Local declaration rows are canonical workflow state. Caller-supplied
+        # observations remain available only for refs not owned by this plan.
+        authoritative_blockers.update(native_blockers)
+        authoritative_decisions.update(native_decisions)
+
     return EligibilityFacts(
         project=authority.project,
         authority_revision=revision,
@@ -1068,9 +1082,9 @@ def _load_facts(
         attempts=tuple(attempts),
         outcomes=outcomes,
         queue_entries=queue_entries,
-        blocker_observations=blocker_observations,
+        blocker_observations=authoritative_blockers,
         check_observations=check_observations,
-        decision_observations=decision_observations,
+        decision_observations=authoritative_decisions,
         scope_contexts=scope_contexts,
         plan_memberships=plan_memberships,
         workspace_qualifications=workspace_qualifications,

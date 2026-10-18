@@ -26,7 +26,7 @@ from todo_orchestrator.contracts.verification import EvidenceRequirement, Verifi
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 17
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -644,12 +644,243 @@ _SCHEMA_STATEMENTS = (
         FOREIGN KEY (outcome_id) REFERENCES outcomes(outcome_id),
         FOREIGN KEY (candidate_id) REFERENCES outcome_candidates(candidate_id)
     )""",
+    """CREATE TABLE declaration_facts (
+        fact_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+        fact_id TEXT NOT NULL UNIQUE,
+        plan_revision_id TEXT NOT NULL,
+        declaration_kind TEXT NOT NULL CHECK (declaration_kind IN (
+            'decision', 'interface', 'checkpoint', 'barrier', 'rendezvous'
+        )),
+        declaration_id TEXT NOT NULL,
+        declaration_digest TEXT NOT NULL CHECK (
+            length(declaration_digest) = 64 AND declaration_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        fact_kind TEXT NOT NULL CHECK (fact_kind IN (
+            'decision_resolved', 'interface_published', 'checkpoint_accepted',
+            'barrier_released', 'rendezvous_arrived', 'blocker_opened', 'blocker_cleared'
+        )),
+        participant_project_id TEXT,
+        participant_kind TEXT,
+        participant_entity_id TEXT,
+        participant_definition_revision_id TEXT,
+        participant_incarnation_id TEXT,
+        payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+        semantic_revision INTEGER NOT NULL CHECK (semantic_revision > 0),
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        CHECK (
+            (fact_kind = 'rendezvous_arrived'
+             AND participant_project_id IS NOT NULL AND participant_kind IS NOT NULL
+             AND participant_entity_id IS NOT NULL
+             AND ((participant_kind IN ('work_item', 'requirement') AND participant_definition_revision_id IS NOT NULL
+                   AND participant_incarnation_id IS NULL)
+                  OR (participant_kind = 'actor' AND participant_definition_revision_id IS NULL
+                      AND participant_incarnation_id IS NOT NULL)
+                  OR (participant_kind NOT IN ('work_item', 'requirement', 'actor')
+                      AND participant_definition_revision_id IS NULL AND participant_incarnation_id IS NULL)))
+            OR
+            (fact_kind <> 'rendezvous_arrived'
+             AND participant_project_id IS NULL AND participant_kind IS NULL AND participant_entity_id IS NULL
+             AND participant_definition_revision_id IS NULL AND participant_incarnation_id IS NULL)
+        ),
+        CHECK (
+            (declaration_kind = 'decision' AND fact_kind IN ('decision_resolved', 'blocker_opened', 'blocker_cleared'))
+            OR (declaration_kind = 'interface' AND fact_kind IN ('interface_published', 'blocker_opened', 'blocker_cleared'))
+            OR (declaration_kind = 'checkpoint' AND fact_kind IN ('checkpoint_accepted', 'blocker_opened', 'blocker_cleared'))
+            OR (declaration_kind = 'barrier' AND fact_kind IN ('barrier_released', 'blocker_opened', 'blocker_cleared'))
+            OR (declaration_kind = 'rendezvous' AND fact_kind IN ('rendezvous_arrived', 'blocker_opened', 'blocker_cleared'))
+        ),
+        FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id),
+        FOREIGN KEY (actor_id, actor_incarnation_id) REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE UNIQUE INDEX declaration_rendezvous_participant_once
+        ON declaration_facts(
+            declaration_kind, declaration_id, declaration_digest,
+            participant_project_id, participant_kind, participant_entity_id,
+            COALESCE(participant_definition_revision_id, ''),
+            COALESCE(participant_incarnation_id, '')
+        ) WHERE fact_kind = 'rendezvous_arrived'""",
+    """CREATE TABLE coordination_messages (
+        sequence INTEGER PRIMARY KEY AUTOINCREMENT CHECK (sequence > 0),
+        message_id TEXT NOT NULL UNIQUE,
+        project_id TEXT NOT NULL,
+        scope_kind TEXT NOT NULL CHECK (scope_kind IN (
+            'project', 'plan_revision', 'work_item', 'requirement', 'run', 'assignment', 'attempt', 'actor',
+            'capability', 'evidence', 'artifact', 'outcome', 'external_operation', 'checkpoint', 'interface',
+            'barrier', 'decision', 'invariant'
+        )),
+        scope_entity_id TEXT NOT NULL,
+        scope_definition_revision_id TEXT,
+        scope_incarnation_id TEXT,
+        message_type TEXT NOT NULL CHECK (message_type IN (
+            'question', 'answer', 'decision', 'interface_change', 'status', 'artifact', 'conflict', 'handoff'
+        )),
+        sender_actor_id TEXT NOT NULL,
+        sender_incarnation_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        context_run_id TEXT,
+        context_assignment_id TEXT,
+        context_attempt_id TEXT,
+        subject TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 256),
+        body_text TEXT CHECK (body_text IS NULL OR length(body_text) <= 8192),
+        content_ref_project_id TEXT,
+        content_ref_kind TEXT,
+        content_ref_entity_id TEXT,
+        content_ref_definition_revision_id TEXT,
+        content_ref_incarnation_id TEXT,
+        content_digest TEXT,
+        reply_to_message_id TEXT,
+        CHECK (
+            (scope_kind IN ('work_item', 'requirement') AND scope_definition_revision_id IS NOT NULL
+             AND scope_incarnation_id IS NULL)
+            OR (scope_kind = 'actor' AND scope_definition_revision_id IS NULL AND scope_incarnation_id IS NOT NULL)
+            OR (scope_kind NOT IN ('work_item', 'requirement', 'actor')
+                AND scope_definition_revision_id IS NULL AND scope_incarnation_id IS NULL)
+        ),
+        CHECK (context_assignment_id IS NULL OR context_run_id IS NOT NULL),
+        CHECK (
+            (content_ref_project_id IS NULL AND content_ref_kind IS NULL AND content_ref_entity_id IS NULL
+             AND content_ref_definition_revision_id IS NULL AND content_ref_incarnation_id IS NULL
+             AND content_digest IS NULL)
+            OR (content_ref_project_id = project_id AND content_ref_kind = 'artifact'
+                AND content_ref_entity_id IS NOT NULL AND content_ref_definition_revision_id IS NULL
+                AND content_ref_incarnation_id IS NULL AND content_digest IS NOT NULL
+                AND length(content_digest) = 64 AND content_digest NOT GLOB '*[^0-9a-f]*')
+        ),
+        CHECK (body_text IS NOT NULL OR content_ref_entity_id IS NOT NULL),
+        CHECK ((message_type = 'answer' AND reply_to_message_id IS NOT NULL)
+               OR (message_type <> 'answer' AND reply_to_message_id IS NULL)),
+        UNIQUE (reply_to_message_id),
+        FOREIGN KEY (sender_actor_id, sender_incarnation_id) REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (context_run_id) REFERENCES runs(run_id),
+        FOREIGN KEY (context_assignment_id) REFERENCES assignments(assignment_id),
+        FOREIGN KEY (context_attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (content_ref_entity_id) REFERENCES artifacts(artifact_id),
+        FOREIGN KEY (reply_to_message_id) REFERENCES coordination_messages(message_id)
+    )""",
+    """CREATE INDEX coordination_messages_by_scope_sequence
+        ON coordination_messages(scope_kind, scope_entity_id, sequence)""",
+    """CREATE INDEX coordination_messages_by_context
+        ON coordination_messages(context_run_id, context_assignment_id, context_attempt_id, sequence)""",
+    """CREATE TABLE coordination_message_recipients (
+        message_id TEXT NOT NULL,
+        recipient_actor_id TEXT NOT NULL,
+        recipient_incarnation_id TEXT NOT NULL,
+        PRIMARY KEY (message_id, recipient_actor_id, recipient_incarnation_id),
+        FOREIGN KEY (message_id) REFERENCES coordination_messages(message_id),
+        FOREIGN KEY (recipient_actor_id, recipient_incarnation_id) REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE INDEX coordination_message_recipients_by_actor
+        ON coordination_message_recipients(recipient_actor_id, recipient_incarnation_id, message_id)""",
+    """CREATE TABLE coordination_message_cursors (
+        cursor_id TEXT PRIMARY KEY,
+        recipient_actor_id TEXT NOT NULL,
+        recipient_incarnation_id TEXT NOT NULL,
+        context_run_id TEXT,
+        scope_kind TEXT NOT NULL CHECK (scope_kind IN (
+            'project', 'plan_revision', 'work_item', 'requirement', 'run', 'assignment', 'attempt', 'actor',
+            'capability', 'evidence', 'artifact', 'outcome', 'external_operation', 'checkpoint', 'interface',
+            'barrier', 'decision', 'invariant'
+        )),
+        scope_entity_id TEXT NOT NULL,
+        scope_definition_revision_id TEXT,
+        scope_incarnation_id TEXT,
+        delivered_sequence INTEGER NOT NULL DEFAULT 0 CHECK (delivered_sequence >= 0),
+        read_sequence INTEGER NOT NULL DEFAULT 0 CHECK (read_sequence >= 0 AND read_sequence <= delivered_sequence),
+        updated_at TEXT NOT NULL,
+        CHECK (context_run_id IS NULL OR context_run_id <> ''),
+        CHECK (
+            (scope_kind IN ('work_item', 'requirement') AND scope_definition_revision_id IS NOT NULL
+             AND scope_incarnation_id IS NULL)
+            OR (scope_kind = 'actor' AND scope_definition_revision_id IS NULL AND scope_incarnation_id IS NOT NULL)
+            OR (scope_kind NOT IN ('work_item', 'requirement', 'actor')
+                AND scope_definition_revision_id IS NULL AND scope_incarnation_id IS NULL)
+        ),
+        FOREIGN KEY (recipient_actor_id, recipient_incarnation_id) REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (context_run_id) REFERENCES runs(run_id)
+    )""",
+    """CREATE UNIQUE INDEX coordination_message_cursors_identity
+        ON coordination_message_cursors(
+            recipient_actor_id, recipient_incarnation_id, COALESCE(context_run_id, ''), scope_kind, scope_entity_id,
+            COALESCE(scope_definition_revision_id, ''), COALESCE(scope_incarnation_id, '')
+        )""",
+    """CREATE TRIGGER declaration_facts_no_update
+        BEFORE UPDATE ON declaration_facts
+        BEGIN SELECT RAISE(ABORT, 'declaration facts are append-only'); END""",
+    """CREATE TRIGGER declaration_facts_no_delete
+        BEFORE DELETE ON declaration_facts
+        BEGIN SELECT RAISE(ABORT, 'declaration facts are append-only'); END""",
+    """CREATE TRIGGER coordination_messages_no_update
+        BEFORE UPDATE ON coordination_messages
+        BEGIN SELECT RAISE(ABORT, 'coordination messages are append-only'); END""",
+    """CREATE TRIGGER coordination_messages_no_delete
+        BEFORE DELETE ON coordination_messages
+        BEGIN SELECT RAISE(ABORT, 'coordination messages are append-only'); END""",
+    """CREATE TRIGGER coordination_message_recipients_no_update
+        BEFORE UPDATE ON coordination_message_recipients
+        BEGIN SELECT RAISE(ABORT, 'message recipients are append-only'); END""",
+    """CREATE TRIGGER coordination_message_recipients_no_delete
+        BEFORE DELETE ON coordination_message_recipients
+        BEGIN SELECT RAISE(ABORT, 'message recipients are append-only'); END""",
+    """CREATE TRIGGER coordination_messages_answer_guard
+        BEFORE INSERT ON coordination_messages
+        WHEN NEW.reply_to_message_id IS NOT NULL
+        BEGIN
+            SELECT CASE WHEN NOT EXISTS (
+                SELECT 1 FROM coordination_messages AS question
+                WHERE question.message_id = NEW.reply_to_message_id
+                  AND question.message_type = 'question'
+                  AND question.project_id = NEW.project_id
+                  AND question.scope_kind = NEW.scope_kind
+                  AND question.scope_entity_id = NEW.scope_entity_id
+                  AND question.scope_definition_revision_id IS NEW.scope_definition_revision_id
+                  AND question.scope_incarnation_id IS NEW.scope_incarnation_id
+            ) THEN RAISE(ABORT, 'answer must match an existing question scope') END;
+        END""",
+    """CREATE TRIGGER coordination_message_cursors_no_delete
+        BEFORE DELETE ON coordination_message_cursors
+        BEGIN SELECT RAISE(ABORT, 'message cursors are monotonic and cannot be deleted'); END""",
+    """CREATE TRIGGER coordination_message_cursors_insert_guard
+        BEFORE INSERT ON coordination_message_cursors
+        WHEN NEW.delivered_sequence <> 0 OR NEW.read_sequence <> 0
+        BEGIN SELECT RAISE(ABORT, 'message cursor watermarks must start at zero'); END""",
+    """CREATE TRIGGER coordination_message_cursors_update_guard
+        BEFORE UPDATE ON coordination_message_cursors
+        WHEN NEW.cursor_id <> OLD.cursor_id
+          OR NEW.recipient_actor_id <> OLD.recipient_actor_id
+          OR NEW.recipient_incarnation_id <> OLD.recipient_incarnation_id
+          OR NEW.context_run_id IS NOT OLD.context_run_id
+          OR NEW.scope_kind <> OLD.scope_kind
+          OR NEW.scope_entity_id <> OLD.scope_entity_id
+          OR NEW.scope_definition_revision_id IS NOT OLD.scope_definition_revision_id
+          OR NEW.scope_incarnation_id IS NOT OLD.scope_incarnation_id
+          OR NEW.delivered_sequence < OLD.delivered_sequence
+          OR NEW.read_sequence < OLD.read_sequence
+        BEGIN SELECT RAISE(ABORT, 'message cursor identity and watermarks are monotonic'); END""",
+    """CREATE TRIGGER coordination_message_cursors_sequence_guard
+        BEFORE UPDATE ON coordination_message_cursors
+        WHEN NEW.delivered_sequence > 0 AND NOT EXISTS (
+            SELECT 1 FROM coordination_messages AS message
+            JOIN coordination_message_recipients AS recipient USING (message_id)
+            WHERE message.sequence = NEW.delivered_sequence
+              AND recipient.recipient_actor_id = NEW.recipient_actor_id
+              AND recipient.recipient_incarnation_id = NEW.recipient_incarnation_id
+              AND message.context_run_id IS NEW.context_run_id
+              AND message.scope_kind = NEW.scope_kind
+              AND message.scope_entity_id = NEW.scope_entity_id
+              AND message.scope_definition_revision_id IS NEW.scope_definition_revision_id
+              AND message.scope_incarnation_id IS NEW.scope_incarnation_id
+        )
+        BEGIN SELECT RAISE(ABORT, 'delivered cursor must identify a message delivered to this recipient and scope'); END""",
     """CREATE TABLE external_operations (
         operation_id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
         idempotency_key TEXT NOT NULL UNIQUE,
         request_digest TEXT NOT NULL CHECK (length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'),
-        state TEXT NOT NULL CHECK (state IN ('prepared', 'executing', 'observed', 'finalized', 'failed', 'unknown')),
+        state TEXT NOT NULL CHECK (state IN (
+            'prepared', 'executing', 'observed', 'finalized', 'failed', 'unknown', 'not_applied'
+        )),
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         attempt_id TEXT,
@@ -659,6 +890,26 @@ _SCHEMA_STATEMENTS = (
         CHECK (state NOT IN ('observed', 'finalized') OR receipt_digest IS NOT NULL),
         FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id)
     )""",
+    """CREATE TRIGGER external_operation_identity_immutable
+        BEFORE UPDATE ON external_operations
+        WHEN OLD.operation_id IS NOT NEW.operation_id OR OLD.kind IS NOT NEW.kind
+          OR OLD.idempotency_key IS NOT NEW.idempotency_key OR OLD.request_digest IS NOT NEW.request_digest
+          OR OLD.created_at IS NOT NEW.created_at OR OLD.attempt_id IS NOT NEW.attempt_id
+        BEGIN SELECT RAISE(ABORT, 'external operation identity is immutable'); END""",
+    """CREATE TRIGGER external_operation_state_transition_guard
+        BEFORE UPDATE ON external_operations
+        WHEN NOT (
+            (OLD.state = 'prepared' AND NEW.state IN ('executing', 'unknown', 'not_applied'))
+            OR (OLD.state = 'executing' AND NEW.state IN ('observed', 'failed', 'unknown', 'not_applied'))
+            OR (OLD.state = 'unknown' AND NEW.state IN ('observed', 'failed', 'not_applied'))
+            OR (OLD.state = 'unknown' AND NEW.state = 'executing' AND EXISTS (
+                SELECT 1 FROM verification_attempts AS v
+                WHERE v.operation_id = OLD.operation_id AND v.state = 'executing'
+            ))
+            OR (OLD.state = 'not_applied' AND NEW.state IN ('executing', 'unknown'))
+            OR (OLD.state = 'observed' AND NEW.state IN ('finalized', 'failed', 'unknown'))
+        )
+        BEGIN SELECT RAISE(ABORT, 'external operation state transition is invalid'); END""",
     """CREATE TABLE git_effect_operations (
         operation_id TEXT PRIMARY KEY,
         request_json TEXT NOT NULL,
@@ -687,6 +938,7 @@ _SCHEMA_STATEMENTS = (
             (OLD.state = 'prepared' AND NEW.state IN ('executing', 'not_applied', 'unknown'))
             OR (OLD.state = 'executing' AND NEW.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'unknown'))
             OR (OLD.state = 'unknown' AND NEW.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied', 'unknown'))
+            OR (OLD.state = 'not_applied' AND NEW.state IN ('executing', 'unknown', 'not_applied'))
             OR (OLD.state IN ('applied', 'conflict', 'dirty', 'rejected', 'not_applied') AND NEW.state = 'finalized')
         )
         BEGIN SELECT RAISE(ABORT, 'Git effect state transition is invalid'); END""",
@@ -884,7 +1136,7 @@ def _compile_schema_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v13 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v17 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
 _SCHEMA_SIGNATURE = _compile_schema_signature()
 
@@ -898,6 +1150,8 @@ _REQUIRED_TABLES = frozenset({
     "artifacts", "evidence", "evidence_inputs", "evidence_artifacts", "evidence_facts",
     "outcomes", "outcome_evidence", "outcome_candidates", "outcome_provenance",
     "external_operations", "git_effect_operations", "verification_attempts", "authority_events",
+    "declaration_facts", "coordination_messages", "coordination_message_recipients",
+    "coordination_message_cursors",
     "command_receipts", "command_idempotency",
 })
 
@@ -1560,7 +1814,7 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
 
     try:
         if _schema_signature(connection) != _SCHEMA_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v13 definition")
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v17 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -1624,7 +1878,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v13 authority without replacing an existing path.
+        """Create a new schema-v17 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -1776,7 +2030,7 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v13 is the only supported version. A current v13 authority is a
+        Schema v17 is the only supported version. A current v17 authority is a
         no-op. Older versions and every other unsupported version are rejected
         without opening the file writable; this method never guesses a
         conversion or restores a backup.

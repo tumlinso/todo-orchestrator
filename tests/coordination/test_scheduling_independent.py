@@ -39,6 +39,7 @@ from todo_orchestrator.model import (
     RunSchedule,
     ScheduledWork,
     SourceSafety,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import PlanService
@@ -100,11 +101,24 @@ class FixedClock:
         return NOW
 
 
+def synthetic_workspace_isolation(workspace_id):
+    encoded = str(workspace_id).encode("utf-8")
+
+    def identity(label):
+        return Sha256Digest(hashlib.sha256(label.encode("ascii") + b"\0" + encoded).hexdigest())
+
+    return WorkspaceIsolation(
+        Sha256Digest("a" * 64), identity("root"), identity("index"),
+        StableId("refs/heads/synthetic/" + str(workspace_id)), identity("admin"),
+    )
+
+
 class TrustedHost:
     """Deterministic trusted provider fixture used only by disposable tests."""
 
     def __init__(self):
         self.qualification_calls = 0
+        self.workspace_isolations = {}
 
     def qualify_workspace(self, workspace_id, target, correlation_id):
         self.qualification_calls += 1
@@ -115,7 +129,10 @@ class TrustedHost:
             StableId("qualification-" + hashlib.sha256(str(correlation_id).encode()).hexdigest()[:18]),
             provider, correlation_id, Sha256Digest("2" * 64), base.ref, NOW,
         )
-        return WorkspaceQualification(workspace_id, REPOSITORY, base, destination, receipt)
+        return WorkspaceQualification(
+            workspace_id, REPOSITORY, base, destination, receipt,
+            self.workspace_isolations.get(workspace_id),
+        )
 
     def inspect_attempt(self, attempt, workspace):
         receipt = ProviderReceipt(
@@ -267,6 +284,12 @@ class IndependentSchedulingTests(unittest.TestCase):
         self.assertNotEqual(entry.assignment.run, self.plan.revision.ref)
 
     def test_mixed_lane_policies_roles_and_queue_order_survive_reopen_and_retry(self):
+        self.host.workspace_isolations.update({
+            StableId(workspace): synthetic_workspace_isolation(workspace)
+            for workspace in (
+                "serial-alpha-workspace", "parallel-beta-workspace", "parallel-gamma-workspace",
+            )
+        })
         lanes = (
             LaneSpec(StableId("lane-z"), QueuePolicy.SERIAL, ROLE_BUILD, IsolationPolicy.SHARED_SCOPES),
             LaneSpec(StableId("lane-a"), QueuePolicy.PARALLEL, ROLE_REVIEW,

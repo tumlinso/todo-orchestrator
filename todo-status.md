@@ -3,7 +3,7 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # Todo Status v2 Projection
 
-Project revision: `118`
+Project revision: `127`
 
 ## Workstreams
 - `TO-A01` | status: done | execution: closed | next: Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.
@@ -17,7 +17,7 @@ Project revision: `118`
 - `TO-F04` | status: done | execution: closed | next: Define standalone trust and provider interfaces for identity/authorization, repository/source observation, Git workspace effects, process execution, resource reservations, and evidence receipts.
 - `TO-C01` | status: done | execution: closed | next: Schedule accepted work through Runs and Assignments, with deterministic queues, role constraints and optional lane structure for parallel work. No dependency on an agent/model scheduler.
 - `TO-C02` | status: done | execution: closed | next: Join assignment selection, authoritative claim, bounded capability issuance and dispatch in a coherent transaction. Make resumption stable under connection/process restart and ambiguous task/run selection.
-- `TO-C03` | status: planned | execution: ready | next: Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
+- `TO-C03` | status: in_progress | execution: claimed | next: Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
 - `TO-C04` | status: planned | execution: ready | next: Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.
 - `TO-C05` | status: planned | execution: ready | next: Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.
 - `TO-I01` | status: planned | execution: ready | next: Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.
@@ -37,7 +37,7 @@ Project revision: `118`
 - `TO-V01` | status: done | execution: closed | next: Retain declared gates, checkpoints and evidence contracts without embedding concrete runners. Make required evidence and accepted negative results first-class, distinguishing acceptance from runtime exit status.
 - `TO-V02` | status: done | execution: closed | next: Use durable gate-attempt identities and prepared/executing/observed/finalized lifecycle. Call trusted provider interfaces for actual commands/resources; correlate completion with source identity, operation identity and receipts.
 - `TO-V03` | status: done | execution: closed | next: Require current applicable evidence for successful dispositions at the final commit, while preserving immutable historical acceptance records. Recheck dependency/requirement inputs after external execution and at acceptance.
-- `TO-V04` | status: in_progress | execution: claimed | next: Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.
+- `TO-V04` | status: done | execution: closed | next: Adapt existing conservative Git-worktree, artifact and integration behavior behind a trusted repository-effects provider. Preserve operation-intent, idempotent receipt and conflict-recovery semantics without coupling the domain engine to subprocess Git details.
 - `TO-AUTHORITY` | status: done | execution: closed | next: Own project-local transactional state, authorization, resource-independent admission, and history.
 - `TO-COORDINATION` | status: planned | execution: ready | next: Coordinate concurrent human or automated workers without adopting an agent runtime.
 - `TO-FOUNDATION` | status: done | execution: closed | next: Define the standalone product, baseline semantics, and trust boundaries before changing source.
@@ -45,6 +45,6 @@ Project revision: `118`
 - `TO-PLANNING` | status: done | execution: closed | next: Make structured plan compilation, dependency validation, and safe change-set application first-class.
 - `TO-QUALIFICATION` | status: planned | execution: ready | next: Prove standalone safety, compatibility, packaging, recovery, and release readiness.
 - `TO-RECOVERY` | status: planned | execution: ready | next: Reconcile interruptions and preserve work, evidence, and authoritative provenance.
-- `TO-VERIFICATION` | status: planned | execution: ready | next: Verify outputs against precise source/input identities and use external providers for effects.
+- `TO-VERIFICATION` | status: done | execution: closed | next: Verify outputs against precise source/input identities and use external providers for effects.
 - `TO-ROOT` | status: planned | execution: inactive | next: Deliver an independently usable, transactional workflow and planning engine for Todo Orchestrator.
 <!-- todo-orchestrator:v2-managed:end -->

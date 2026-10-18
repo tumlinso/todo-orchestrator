@@ -1,4 +1,4 @@
-# SQLite authority v12
+# SQLite authority v17
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v12 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v12
+Schema v17 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v17
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -48,7 +48,7 @@ Reusing an exact definition reference requires identical bundle bytes, digest,
 and normalized projections. Snapshot, membership, and definition corruption
 fails closed; the reader does not repair or infer missing authority state.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v13
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v17
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -74,10 +74,10 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v12 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v11 or any other unsupported version
+Schema v17 is the only implemented version. `migrate()` is an explicit current
+version no-op and rejects schema v1 through v16 or any other unsupported version
 without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v11 migration is provided. A future migration must preserve
+be recreated; no v1-v16 migration is provided. A future migration must preserve
 definition identity and full accepted-snapshot meaning; it cannot infer mixed
 membership from matching revision IDs.
 
@@ -99,6 +99,20 @@ and named typed evidence facts. These records do not accept work outcomes.
 Schemas v11 and v12 add candidate reports, immutable accepted outcome provenance
 and typed benchmark measurement payloads. They preserve the distinction between
 verification observations, candidate reports and separately authorized outcomes.
+Schemas v13 through v15 add physical workspace bindings and durable Git-effect
+intents, observations and receipts. The current transition guards preserve the
+explicit verification retry path while refusing arbitrary uncertain-effect
+reexecution. Git inspection receipts remain distinct from original execution
+receipts; missing execution receipts are never reconstructed as historical fact.
+Schema v16 adds append-only decision, interface, checkpoint, barrier, rendezvous,
+and blocker facts keyed to the exact accepted declaration digest, plus scoped
+coordination messages, recipient-incarnation delivery, one-answer constraints,
+and monotonic delivered/read cursors. Messages never create authoritative
+workflow facts. Native declaration observations return unknown when the exact
+accepted declaration or required attempt context is unavailable. Schema v17
+partitions inbox cursors by exact run context, including a separate unbound
+partition, while allowing same-run participants with different assignments or
+attempts to share the run's message stream.
 For a future supported migration, first validate the source identity/version
 read-only, create a non-overwriting adjacent backup with SQLite's online backup
 API, and apply the versioned DDL in one transaction with the version marker

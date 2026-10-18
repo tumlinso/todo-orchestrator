@@ -19,6 +19,11 @@ __all__ = [
     "RUN_DISPATCH_ACTION",
     "RunScheduleConflictError", "RunScheduleNotFoundError", "RunScheduleView",
     "ScheduledWork",
+    "AnswerConflictError", "CursorError", "InboxPage", "InboxStatus", "MESSAGE_READ_ACTION",
+    "MESSAGE_SEND_ACTION", "MESSAGE_TYPES", "MessageContentRef", "MessageNotFoundError",
+    "MessageScopeError", "MessageType", "MessageView", "MessagingError", "MessagingService",
+    "PayloadRejectedError",
+    "QUESTION_ANSWER_ACTION",
 ]
 
 
@@ -31,4 +36,14 @@ def __getattr__(name: str):
         from . import service
 
         return getattr(service, name)
+    if name in {
+        "AnswerConflictError", "CursorError", "InboxPage", "InboxStatus", "MESSAGE_READ_ACTION",
+        "MESSAGE_SEND_ACTION", "MESSAGE_TYPES", "MessageContentRef", "MessageNotFoundError",
+        "MessageScopeError", "MessageType", "MessageView", "MessagingError", "MessagingService",
+        "PayloadRejectedError",
+        "QUESTION_ANSWER_ACTION",
+    }:
+        from . import messaging
+
+        return getattr(messaging, name)
     raise AttributeError(name)

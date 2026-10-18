@@ -63,6 +63,12 @@ rejection and manual-role actions are not automatically issued to a worker
 session. A read uses its genuine grant reference; historical records cannot mint
 provider authority.
 
+Git effects use `todo.git.workspace.create` and `todo.git.integrate`. Reading an
+operation requires `todo.git.operation.read`; reconciliation requires
+`todo.git.operation.reconcile`. These separately scoped inspection grants may
+belong to a current principal different from the original effect actor.
+Inspection authority does not authorize a new effect or an automatic retry.
+
 This service establishes local principals and enforces grant lineage. Future
 commands must still validate referenced entity existence, lifecycle state,
 lease ownership, evidence policy, and operation-specific authorization scope.

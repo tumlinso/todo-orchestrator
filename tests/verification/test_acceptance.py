@@ -7,8 +7,10 @@ import unittest
 
 from todo_orchestrator.contracts import (
     DeclarationObservation, DeclarationStatus, EntityKind, EntityRef, ProviderIdentity,
-    ProviderReceipt, ProviderResult, ProviderStatus, Sha256Digest, StableId, provider_request_digest,
+    OutcomeDisposition, ProviderReceipt, ProviderResult, ProviderStatus, Sha256Digest, StableId,
+    provider_request_digest,
 )
+from todo_orchestrator.coordination.payloads import PayloadRejectedError
 from todo_orchestrator.planning import compile_plan_json
 from todo_orchestrator.verification.acceptance import (
     ACCEPT_OUTCOME_ACTION, CandidateObservationMismatchError, _declaration_result,
@@ -19,6 +21,26 @@ from tests.verification.test_execution_independent import FixtureSourceObserver,
 
 
 class OutcomeApplicabilityTests(unittest.TestCase):
+    def test_candidate_note_rejects_issued_bearer_without_authority_churn(self):
+        fixture_case = acceptance_fixtures.IndependentOutcomeAcceptanceTests()
+        fixture_case.setUp()
+        self.addCleanup(fixture_case.doCleanups)
+        f = fixture_case.fixture
+        dispatched = fixture_case.dispatch("verify", "payload-note-dispatch")
+        before = fixture_case.snapshot()
+        with f.open_writer() as authority:
+            with self.assertRaises(PayloadRejectedError):
+                fixture_case.acceptance.report_candidate(
+                    authority,
+                    dispatched.bearer_token,
+                    dispatched.attempt.ref,
+                    OutcomeDisposition.COMPLETED,
+                    idempotency_key=StableId("payload-note-report"),
+                    expected_revision=f.revision(),
+                    note=f"Do not share this credential: {dispatched.bearer_token}",
+                )
+        self.assertEqual(fixture_case.snapshot(), before)
+
     def test_declaration_receipts_bind_exact_payload_and_report_typed_status(self):
         fixture_case = acceptance_fixtures.IndependentOutcomeAcceptanceTests()
         fixture_case.setUp()

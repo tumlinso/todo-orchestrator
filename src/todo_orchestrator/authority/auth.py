@@ -45,6 +45,10 @@ _ATTEMPT_SESSION_ACTIONS = frozenset({
 _ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
     StableId("todo.verification.execute"), StableId("todo.verification.reconcile"),
     StableId("todo.outcome.report"),
+    # Coordination actions may be delegated only when they are present on the
+    # authenticated parent's grant; they are not added to ordinary sessions.
+    StableId("todo.message.send"), StableId("todo.message.read"),
+    StableId("todo.question.answer"),
 })
 
 
@@ -127,6 +131,7 @@ class AuthorizationRequirement:
     assignment: EntityRef | None = None
     attempt: EntityRef | None = None
     additional_actions: tuple[StableId, ...] = ()
+    plan_revision: EntityRef | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.action, StableId):
@@ -140,6 +145,11 @@ class AuthorizationRequirement:
         ):
             if value is not None and (value.kind is not kind or value.project_id != self.scope.project_id):
                 raise ValueError(f"{name} must be a project-local {kind.value} reference")
+        if self.plan_revision is not None and (
+            self.plan_revision.kind is not EntityKind.PLAN_REVISION
+            or self.plan_revision.project_id != self.scope.project_id
+        ):
+            raise ValueError("plan_revision must be a project-local plan revision reference")
         if not isinstance(self.additional_actions, tuple) or any(
             not isinstance(action, StableId) for action in self.additional_actions
         ) or len(set(self.additional_actions)) != len(self.additional_actions):
@@ -748,6 +758,9 @@ class AuthorityAuthService:
             _verified_scope_membership(connection, project, scope)
             if scope.kind is EntityKind.PLAN_REVISION else None
         )
+        if (scope.kind is EntityKind.PLAN_REVISION and requirement.plan_revision is not None
+                and scope != requirement.plan_revision):
+            raise CapabilityDeniedError("plan-scoped capability is bound to another accepted plan revision")
         if not _scope_covers(scope, requirement.scope, plan_membership=membership):
             raise CapabilityDeniedError("capability does not cover the requested scope")
         run, assignment, attempt = _context_from_row(project, row)

@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
+import json
 import sqlite3
 from typing import Protocol
 
@@ -49,7 +50,13 @@ from .auth import (
     CapabilityDeniedError,
 )
 from .commands import MutationContext
-from .eligibility import EligibilityAdapter, _scope_parts, _scope_snapshot_payload
+from .eligibility import (
+    EligibilityAdapter,
+    _load_attempt_scope_snapshots,
+    _path_overlaps,
+    _scope_parts,
+    _scope_snapshot_payload,
+)
 from .sqlite import AuthorityError, SQLiteAuthority
 
 
@@ -79,6 +86,7 @@ ATTEMPT_SESSION_VERIFICATION_REPORT_ACTIONS = (
 )
 _ATTEMPT_SESSION_ACTION_CEILING = frozenset((
     *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
+    StableId("todo.message.send"), StableId("todo.message.read"), StableId("todo.question.answer"),
 ))
 _LIVE_STATES = (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED)
 _TERMINAL_STATES = (AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED)
@@ -178,6 +186,7 @@ def _workspace_values(qualification: WorkspaceQualification) -> tuple[object, ..
             "workspace_root": isolation.workspace_root.hex,
             "index_file": isolation.index_file.hex,
             "head_ref": str(isolation.head_ref),
+            "worktree_admin": None if isolation.worktree_admin is None else isolation.worktree_admin.hex,
         }, ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"),
     )
     return (
@@ -210,13 +219,14 @@ def _workspace_from_row(project: Project, row: sqlite3.Row) -> WorkspaceQualific
         if isolation_value is None:
             isolation = None
         elif isinstance(isolation_value, dict) and set(isolation_value) == {
-            "repository_storage", "workspace_root", "index_file", "head_ref",
+            "repository_storage", "workspace_root", "index_file", "head_ref", "worktree_admin",
         }:
             isolation = WorkspaceIsolation(
                 Sha256Digest(isolation_value["repository_storage"]),
                 Sha256Digest(isolation_value["workspace_root"]),
                 Sha256Digest(isolation_value["index_file"]),
                 StableId(isolation_value["head_ref"]),
+                None if isolation_value["worktree_admin"] is None else Sha256Digest(isolation_value["worktree_admin"]),
             )
         else:
             raise ValueError("unexpected isolation fields")
@@ -374,7 +384,13 @@ def _check_observation(
         raise AttemptHostUnavailableError("a fresh host safety observation is required")
     if observation.attempt != attempt_ref or observation.lease_id != StableId(row["lease_id"] or "_missing"):
         raise AttemptLeaseMismatchError("host observation is not bound to the current attempt lease")
-    if observation.workspace != workspace:
+    fresh_workspace = observation.workspace
+    if (fresh_workspace.workspace_id != workspace.workspace_id
+            or fresh_workspace.repository_id != workspace.repository_id
+            or fresh_workspace.common_base != workspace.common_base
+            or fresh_workspace.destination != workspace.destination
+            or fresh_workspace.isolation != workspace.isolation
+            or fresh_workspace.receipt.provider != workspace.receipt.provider):
         raise AttemptObservationMismatchError("host observation workspace differs from persisted qualification")
     if observation.observed_state is not AttemptState(row["state"]):
         raise AttemptObservationMismatchError("attempt state changed while the host observation was being collected")
@@ -486,6 +502,33 @@ class _ClaimHandler(_AttemptHandlerBase):
             "assignment": None if command.assignment is None else str(command.assignment.entity_id),
         }
 
+    @staticmethod
+    def _overlapping_peers(
+        context: MutationContext,
+        project: Project,
+        candidate_paths: tuple[tuple[str, str], ...],
+        qualifications: Mapping[EntityRef, WorkspaceQualification],
+    ) -> tuple[Attempt, ...]:
+        snapshots = _load_attempt_scope_snapshots(context._connection, project.project_id)
+        peers: list[Attempt] = []
+        rows = context._connection.execute("SELECT * FROM attempts ORDER BY attempt_id").fetchall()
+        for row in rows:
+            attempt = _attempt_from_row(project, row)
+            if attempt.state in _TERMINAL_STATES:
+                continue
+            snapshot = snapshots.get(attempt.ref)
+            if snapshot is None or attempt.ref not in qualifications:
+                continue
+            if any(
+                first_access != "forbidden" and second_access != "forbidden"
+                and _path_overlaps(first_path, second_path)
+                and (first_access == "write" or second_access == "write")
+                for first_path, first_access in candidate_paths
+                for second_path, second_access in snapshot.paths
+            ):
+                peers.append(attempt)
+        return tuple(peers)
+
     def apply(self, context: MutationContext, command: _Claim) -> CommandEffect:
         if command.plan.project != context.project or not _target_in_plan(command.plan, command.target):
             raise AttemptAdmissionDeniedError(EligibilityDecision(
@@ -498,8 +541,9 @@ class _ClaimHandler(_AttemptHandlerBase):
         self.service._validate_qualification(command.qualification, command.workspace_id,
                                              command.target, command.correlation_id,
                                              now, require_fresh=True)
+        qualification = command.qualification
         qualifications = _workspace_map(context._connection, context.project)
-        qualifications[command.target] = command.qualification
+        qualifications[command.target] = qualification
         target_item = next(item for item in command.plan.work_items if item.definition.ref == command.target)
         raw_scope = _scope_parts(target_item.context)
         if raw_scope is None:
@@ -514,9 +558,37 @@ class _ClaimHandler(_AttemptHandlerBase):
             command.target, context.actor, CLAIM_ACTION, context.starting_revision,
             command.run, command.assignment,
         )
+        # First apply policy against the current authority snapshot. Obvious
+        # refusals do not trigger host requalification or mutate authority.
         decision = self._decision(context, request, command.plan,
                                   workspace_qualifications=qualifications)
         self._require_allowed(decision)
+        peers = self._overlapping_peers(context, context.project, scope_snapshot.paths, qualifications)
+        if peers:
+            try:
+                qualification = self.service._requalify_binding(
+                    command.qualification, command.target, command.correlation_id,
+                )
+                qualifications[command.target] = qualification
+                for peer in peers:
+                    original = qualifications[peer.ref]
+                    correlation = StableId("peer-workspace-" + hashlib.sha256(
+                        f"{command.correlation_id}:{peer.attempt_id}".encode("utf-8")
+                    ).hexdigest())
+                    qualifications[peer.ref] = self.service._requalify_binding(
+                        original, peer.work_item, correlation,
+                    )
+            except (AttemptHostUnavailableError, AttemptObservationMismatchError) as exc:
+                raise AttemptAdmissionDeniedError(EligibilityDecision(
+                    EligibilityStatus.UNKNOWN, context.starting_revision,
+                    (self.service._cause(
+                        "overlapping_workspace_unverified",
+                        f"overlapping workspace could not be freshly qualified: {exc}", command.target,
+                    ),),
+                )) from exc
+            decision = self._decision(context, request, command.plan,
+                                      workspace_qualifications=qualifications)
+            self._require_allowed(decision)
         expires_at = self.service._now() + self.service.lease_duration
         try:
             context.execute(
@@ -530,7 +602,7 @@ class _ClaimHandler(_AttemptHandlerBase):
                  None if command.run is None else str(command.run.entity_id),
                  str(command.lease_id), _iso(expires_at)),
             )
-            _insert_workspace(context, command.attempt_id, command.qualification)
+            _insert_workspace(context, command.attempt_id, qualification)
             context.execute(
                 "INSERT INTO attempt_scope_snapshots(attempt_id, scope_json, scope_digest) VALUES (?, ?, ?)",
                 (str(command.attempt_id), scope_json, scope_digest),
@@ -843,6 +915,37 @@ class AttemptService:
             observed_at = _utc(receipt.observed_at, "workspace qualification time")
             if observed_at > now or now - observed_at > self.max_observation_age:
                 raise AttemptObservationMismatchError("workspace qualification is stale or from the future")
+
+    @staticmethod
+    def _workspace_binding(qualification: WorkspaceQualification) -> tuple[object, ...]:
+        """Fields fixed when a workspace is first bound to an attempt."""
+        return (
+            qualification.workspace_id,
+            qualification.repository_id,
+            qualification.common_base,
+            qualification.destination,
+            qualification.receipt.provider,
+            qualification.isolation,
+        )
+
+    def _requalify_binding(
+        self,
+        original: WorkspaceQualification,
+        target: EntityRef,
+        correlation_id: StableId,
+    ) -> WorkspaceQualification:
+        try:
+            fresh = self.host.qualify_workspace(original.workspace_id, target, correlation_id)
+        except Exception as exc:
+            raise AttemptHostUnavailableError(f"workspace requalification failed: {exc}") from exc
+        self._validate_qualification(
+            fresh, original.workspace_id, target, correlation_id, self._now(), require_fresh=True,
+        )
+        if self._workspace_binding(fresh) != self._workspace_binding(original):
+            raise AttemptObservationMismatchError(
+                "fresh workspace qualification differs from its original immutable binding"
+            )
+        return fresh
 
     def _prepare_observation(
         self, authority: SQLiteAuthority, attempt_ref: EntityRef, idempotency_key: StableId

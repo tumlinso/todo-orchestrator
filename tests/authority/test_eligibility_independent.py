@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import hashlib
 from pathlib import Path
 import json
 import tempfile
@@ -42,6 +43,7 @@ from todo_orchestrator.model import (
     QualifiedDestination,
     QualifiedSourceRevision,
     WorkspaceQualification,
+    WorkspaceIsolation,
 )
 from todo_orchestrator.planning import compile_plan, parse_plan_json
 from tests.authority.plan_fixtures import commit_plan
@@ -231,6 +233,13 @@ def workspace_qualification(
         QualifiedSourceRevision(project_id, repository, StableId(base_ref), base_digest),
         QualifiedDestination(project_id, repository, StableId(destination_ref)),
         receipt,
+        WorkspaceIsolation(
+            Sha256Digest("a" * 64),
+            Sha256Digest(hashlib.sha256(f"root:{workspace_id}".encode()).hexdigest()),
+            Sha256Digest(hashlib.sha256(f"index:{workspace_id}".encode()).hexdigest()),
+            StableId(f"refs/heads/{workspace_id}"),
+            Sha256Digest(hashlib.sha256(f"admin:{workspace_id}".encode()).hexdigest()),
+        ),
     )
 
 

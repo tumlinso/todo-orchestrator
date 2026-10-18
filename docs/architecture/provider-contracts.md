@@ -34,4 +34,12 @@ counts alongside their evidence digests. An explicit allowed negative evaluation
 can retain a definitive benchmark miss; failed command execution and
 inconclusive/provider failures do not become passing checks.
 
+The current provider contract version is 5. Source observations can retain an
+exact source revision. Git requests bind the target, attempt, scheduling context
+and accepted outcome/source provenance. Git inspection receipts bind the current
+inspection query; an existing original execution receipt is carried separately
+in the observation and must retain its original identity. If no execution
+receipt was durably recorded, inspection does not invent one. See
+[local Git effects](git-effects.md) for the implemented provider and service.
+
 The contracts use `PROVIDER_CONTRACT_VERSION` for this interface and carry provider-specific versions in identities and receipts. A host decides which versions it trusts. Provider instances are optional: abstract planning and other operations that need no external observation/effect remain usable when a provider is absent. An operation that requires an unavailable provider returns a typed `UNAVAILABLE` result. These contracts add no Project Control adapter, discovery registry, process/Git implementation, network runner, or hardware authority.

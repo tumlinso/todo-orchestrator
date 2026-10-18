@@ -38,6 +38,7 @@ from todo_orchestrator.model import (
     EligibilityStatus,
     QualifiedDestination,
     QualifiedSourceRevision,
+    WorkspaceIsolation,
     WorkspaceQualification,
 )
 from todo_orchestrator.planning import (
@@ -379,7 +380,14 @@ class EligibilityPolicyTests(unittest.TestCase):
                 sid("receipt-" + workspace_id), provider, sid("correlation-" + workspace_id),
                 Sha256Digest("b" * 64), sid("provenance-" + workspace_id), NOW,
             )
-            return WorkspaceQualification(sid(workspace_id), repository, source, destination, receipt)
+            marker = "a" if workspace_id == "workspace-a" else "b"
+            isolation = WorkspaceIsolation(
+                Sha256Digest("d" * 64), Sha256Digest(marker * 64),
+                Sha256Digest(("1" if marker == "a" else "2") * 64),
+                sid("refs/heads/" + workspace_id),
+                Sha256Digest(("3" if marker == "a" else "4") * 64),
+            )
+            return WorkspaceQualification(sid(workspace_id), repository, source, destination, receipt, isolation)
 
         isolated = base_facts(
             self.project, path_plan, attempts=(attempt,),
@@ -389,7 +397,7 @@ class EligibilityPolicyTests(unittest.TestCase):
         different_base = QualifiedSourceRevision(self.project.project_id, repository, sid("release"), "c" * 64)
         bad_workspace = WorkspaceQualification(
             sid("workspace-b"), repository, different_base, destination,
-            qualification("workspace-b").receipt,
+            qualification("workspace-b").receipt, qualification("workspace-b").isolation,
         )
         unsafe = base_facts(
             self.project, path_plan, attempts=(attempt,),

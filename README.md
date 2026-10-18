@@ -2,7 +2,7 @@
 
 Todo Orchestrator is being prepared as a standalone, independently usable workflow engine. The redesign will draw on the existing implementation while progressively copying and adapting functionality and preserving the original implementation throughout.
 
-Development has begun from the preserved bootstrap package. The Python library provides an authenticated SQLite authority, guarded plan revisions, shared admission and run/attempt coordination, durable verification, and provenance-preserving outcome acceptance. Native Git effects, recovery, the complete workflow CLI, and release qualification remain under development.
+Development has begun from the preserved bootstrap package. The Python library provides an authenticated SQLite authority, guarded plan revisions, shared admission and run/attempt coordination, durable verification, provenance-preserving outcome acceptance, and native Git workspace/integration effects. Coordination messages, recovery tooling, the complete workflow CLI, and release qualification remain under development.
 
 - Repository: [tumlinso/todo-orchestrator](https://github.com/tumlinso/todo-orchestrator)
 - Project Control workspace and repository ID: `todo-orchestrator`.

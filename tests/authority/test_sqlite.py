@@ -63,7 +63,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
     def open_writer(self, *, project_value: Project | None = None, busy_timeout: float = 5) -> SQLiteAuthority:
         return SQLiteAuthority.open_writer(self.path, project_value or self.project, busy_timeout=busy_timeout)
 
-    def test_initialization_records_identity_and_schema_v11_in_normalized_tables(self):
+    def test_initialization_records_identity_and_schema_v17_in_normalized_tables(self):
         with self.open_reader() as authority:
             connection = authority.connection
             self.assertEqual(connection.execute("PRAGMA application_id").fetchone()[0], APPLICATION_ID)
@@ -399,7 +399,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v13"
+                InvalidAuthorityError, "frozen schema-v17"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -415,7 +415,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v13"
+                InvalidAuthorityError, "frozen schema-v17"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -431,7 +431,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v13"
+                InvalidAuthorityError, "frozen schema-v17"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -458,7 +458,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v13"
+                InvalidAuthorityError, "frozen schema-v17"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -528,6 +528,25 @@ class SQLiteAuthorityTests(unittest.TestCase):
         result = SQLiteAuthority.migrate(self.path, self.project)
         self.assertEqual((result.from_version, result.to_version), (SCHEMA_VERSION, SCHEMA_VERSION))
         self.assertEqual(self.path.read_bytes(), original)
+
+    def test_unknown_external_operation_resumes_only_with_executing_verification_row(self):
+        with self.open_writer() as authority:
+            with authority.write_transaction() as connection:
+                connection.execute(
+                    "INSERT INTO external_operations(operation_id, kind, idempotency_key, request_digest, state, "
+                    "created_at, updated_at) VALUES (?, ?, ?, ?, 'prepared', ?, ?)",
+                    ("external-op-retry-guard", "todo.verification", "external-op-retry-guard-key",
+                     "b" * 64, "2026-10-18T00:00:00+00:00", "2026-10-18T00:00:00+00:00"),
+                )
+                connection.execute(
+                    "UPDATE external_operations SET state = 'unknown' WHERE operation_id = ?",
+                    ("external-op-retry-guard",),
+                )
+                with self.assertRaisesRegex(sqlite3.IntegrityError, "state transition is invalid"):
+                    connection.execute(
+                        "UPDATE external_operations SET state = 'executing' WHERE operation_id = ?",
+                        ("external-op-retry-guard",),
+                    )
 
     def test_read_only_store_rejects_write_transaction_and_nested_transactions(self):
         with self.open_reader() as reader:

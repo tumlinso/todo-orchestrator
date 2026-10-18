@@ -14,7 +14,7 @@ from .domain import EntityKind, EntityRef, EvidenceInput, EvidenceResult, Sha256
 from .verification import EvidenceKind, EvidenceRequirement, VerificationContract
 
 
-PROVIDER_CONTRACT_VERSION = 3
+PROVIDER_CONTRACT_VERSION = 5
 T = TypeVar("T")
 
 
@@ -302,6 +302,7 @@ class SourceObservation:
     working_tree: WorkingTreeState
     inputs: tuple[EvidenceInput, ...] = ()
     artifacts: tuple[ArtifactAvailability, ...] = ()
+    source_revision: StableId | None = None
 
     def __post_init__(self) -> None:
         _id(self.repository_id, "repository_id")
@@ -309,6 +310,8 @@ class SourceObservation:
             raise TypeError("source_digest must be a Sha256Digest")
         if self.base_digest is not None and not isinstance(self.base_digest, Sha256Digest):
             raise TypeError("base_digest must be a Sha256Digest")
+        if self.source_revision is not None:
+            _id(self.source_revision, "source_revision")
         if not isinstance(self.working_tree, WorkingTreeState):
             raise TypeError("working_tree must be a WorkingTreeState")
         _tuple(self.inputs, "inputs", EvidenceInput, unique=True)
@@ -446,6 +449,7 @@ class GitEffectDisposition(str, Enum):
     DIRTY = "dirty"
     REJECTED = "rejected"
     NOT_APPLIED = "not_applied"
+    UNKNOWN = "unknown"
 
 
 @dataclass(frozen=True)
@@ -461,6 +465,16 @@ class GitEffectRequest:
     source_commit: StableId | None = None
     destination_ref: StableId | None = None
     expected_destination: StableId | None = None
+    target: EntityRef | None = None
+    attempt: EntityRef | None = None
+    run: EntityRef | None = None
+    assignment: EntityRef | None = None
+    requested_at: datetime | None = None
+    accepted_outcome_id: StableId | None = None
+    accepted_candidate_id: StableId | None = None
+    accepted_provenance_digest: Sha256Digest | None = None
+    accepted_source_digest: Sha256Digest | None = None
+    accepted_source_receipt_id: StableId | None = None
 
     def __post_init__(self) -> None:
         for value, name in ((self.operation_id, "operation_id"), (self.idempotency_key, "idempotency_key")):
@@ -481,6 +495,30 @@ class GitEffectRequest:
         ):
             if value is not None:
                 _id(value, name)
+        for value, kind, name in (
+            (self.target, EntityKind.WORK_ITEM, "target"),
+            (self.attempt, EntityKind.ATTEMPT, "attempt"),
+            (self.run, EntityKind.RUN, "run"),
+            (self.assignment, EntityKind.ASSIGNMENT, "assignment"),
+        ):
+            if value is not None and (not isinstance(value, EntityRef) or value.kind is not kind
+                                      or value.project_id != self.context.project_id):
+                raise ValueError(f"{name} must be a project-local {kind.value} reference")
+        if self.requested_at is not None:
+            _aware(self.requested_at, "requested_at")
+        for value, name in (
+            (self.accepted_outcome_id, "accepted_outcome_id"),
+            (self.accepted_candidate_id, "accepted_candidate_id"),
+            (self.accepted_source_receipt_id, "accepted_source_receipt_id"),
+        ):
+            if value is not None:
+                _id(value, name)
+        for value, name in (
+            (self.accepted_provenance_digest, "accepted_provenance_digest"),
+            (self.accepted_source_digest, "accepted_source_digest"),
+        ):
+            if value is not None and not isinstance(value, Sha256Digest):
+                raise TypeError(f"{name} must be a Sha256Digest")
 
 
 @dataclass(frozen=True)
@@ -490,6 +528,8 @@ class GitEffectObservation:
     resulting_source: Sha256Digest | None = None
     conflict_refs: tuple[StableId, ...] = ()
     external_ref: StableId | None = None
+    conflict_tree: StableId | None = None
+    original_receipt: ProviderReceipt | None = None
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -499,6 +539,10 @@ class GitEffectObservation:
             raise TypeError("resulting_source must be a Sha256Digest")
         if self.external_ref is not None:
             _id(self.external_ref, "external_ref")
+        if self.conflict_tree is not None:
+            _id(self.conflict_tree, "conflict_tree")
+        if self.original_receipt is not None and not isinstance(self.original_receipt, ProviderReceipt):
+            raise TypeError("original_receipt must be a ProviderReceipt when supplied")
         _tuple(self.conflict_refs, "conflict_refs", StableId, unique=True)
         if self.disposition is GitEffectDisposition.APPLIED and self.resulting_source is None:
             raise ValueError("an applied Git effect requires resulting_source")

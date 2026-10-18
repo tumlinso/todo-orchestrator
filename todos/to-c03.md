@@ -3,14 +3,14 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-C03: Provide typed durable communication and decision synchronization
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `126`; current project revision is in `todo-status.md`.
 
 ## Objective
 Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `in_progress`
+- Execution: `claimed`
 - Parallel policy: `serial`
 - Result: `-`
 

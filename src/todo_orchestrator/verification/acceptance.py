@@ -31,6 +31,13 @@ from todo_orchestrator.authority.attempts import (
     _stored_attempt,
     _stored_workspace,
 )
+from todo_orchestrator.authority.declarations import (
+    NATIVE_DECLARATION_PROVIDER_IDENTITY,
+    SQLiteDeclarationObserver,
+    declaration_condition,
+    load_plan_declaration,
+    native_declaration_facts,
+)
 from todo_orchestrator.authority.commands import MutationContext
 from todo_orchestrator.authority.sqlite import AuthorityError, InvalidAuthorityError, SQLiteAuthority, load_plan_revision_snapshot
 from todo_orchestrator.contracts import (
@@ -83,6 +90,7 @@ from todo_orchestrator.planning import (
 )
 from todo_orchestrator.contracts import RequirementMode
 from todo_orchestrator.planning.package import _compatible_interface_version
+from todo_orchestrator.coordination.payloads import validate_bounded_text
 
 from .service import (
     SourceObserver,
@@ -246,7 +254,9 @@ def _source_receipt_value(receipt: ProviderReceipt) -> dict[str, object]:
 
 def _decode_source(encoded: str) -> dict[str, object]:
     value = json.loads(encoded)
-    if not isinstance(value, dict) or set(value) != {"repository_id", "source_digest", "base_digest", "working_tree", "inputs", "artifacts"}:
+    if not isinstance(value, dict) or set(value) != {
+        "repository_id", "source_digest", "base_digest", "source_revision", "working_tree", "inputs", "artifacts",
+    }:
         raise CandidateObservationMismatchError("stored source observation has an invalid shape")
     return value
 
@@ -415,6 +425,12 @@ def _declaration_result(connection, plan: CompiledPlan, target: EntityRef, kind:
             "declaration_unavailable", str(target.entity_id), f"current accepted plan has no {kind} declaration",
         ),))
     if kind == "decisions":
+        if connection is not None:
+            declaration_record = load_plan_declaration(
+                connection, plan.project, plan.revision.plan_revision_id, "decision", target.entity_id,
+            )
+            if declaration_record is not None:
+                return declaration_condition(connection, declaration_record)[0]
         selected = declaration.get("selected_option_id")
         return ConditionResult(
             ConditionStatus.SATISFIED if selected is not None else ConditionStatus.UNRESOLVED,
@@ -597,6 +613,8 @@ def _current_dependency_failures(connection, plan: CompiledPlan, target: EntityR
             None if payload.get("selected_option_id") is None else str(payload["selected_option_id"]),
         ) for identifier, payload in _declarations(plan, "decisions").items()
     }
+    _native_blockers, native_decisions = native_declaration_facts(connection, plan)
+    decisions.update(native_decisions)
     failures = []
     for group in item.definition.requirement_groups:
         if group.kind is not RequirementKind.PREREQUISITE:
@@ -685,6 +703,12 @@ class _ReportHandler:
 
     def apply(self, context: MutationContext, command: _Report) -> CommandEffect:
         attempt, row = _stored_attempt(context._connection, context.project, command.attempt)
+        if command.note is not None:
+            validate_bounded_text(
+                command.note,
+                field="candidate note",
+                connection=context._connection,
+            )
         # Provider calls happen before dispatch. Recheck freshness and lease
         # validity only after the writer reservation has been acquired.
         now = self.service._now()
@@ -846,7 +870,7 @@ class _FinalizeHandler:
         writer_declaration_records = self.service._observe_declarations(
             plan, command.target, command.attempt, workspace, plan_revision, context.actor,
             command.provider_capability_id,
-            "writer:" + str(command.candidate_id), self.service._now(),
+            "writer:" + str(command.candidate_id), self.service._now(), authority=context.authority,
         )
         commit_now = self.service._now()
         if attempt.lease is None or attempt.lease.expires_at <= commit_now:
@@ -935,8 +959,9 @@ class OutcomeAcceptanceService:
         if not isinstance(source_identity, ProviderIdentity) or not isinstance(host_identity, ProviderIdentity):
             raise TypeError("source_identity and host_identity must be ProviderIdentity values")
         if declaration_observer is None:
-            if declaration_identity is not None:
-                raise ValueError("declaration_identity requires a declaration_observer")
+            if declaration_identity is not None and not isinstance(declaration_identity, ProviderIdentity):
+                raise TypeError("declaration_identity must be a ProviderIdentity")
+            declaration_identity = declaration_identity or NATIVE_DECLARATION_PROVIDER_IDENTITY
         elif (not callable(getattr(declaration_observer, "observe_declaration", None))
               or not isinstance(declaration_identity, ProviderIdentity)):
             raise TypeError("declaration_observer requires observe_declaration and a ProviderIdentity")
@@ -996,8 +1021,15 @@ class OutcomeAcceptanceService:
         )
 
     def _observe_declarations(self, plan, target, attempt_ref, workspace, plan_revision_id,
-                              actor, capability_id, correlation_prefix, now):
-        if self.declaration_observer is None:
+                              actor, capability_id, correlation_prefix, now, *, authority=None):
+        observer = self.declaration_observer
+        if observer is None:
+            if authority is None:
+                return []
+            observer = SQLiteDeclarationObserver(
+                authority, identity=self.declaration_identity, clock=self.clock,
+            )
+        if observer is None:
             return []
         records = []
         for reference, kind, expected_version in _declaration_specs(plan, target):
@@ -1014,7 +1046,7 @@ class OutcomeAcceptanceService:
                 reference, kind, declaration_digest, expected_version,
             )
             try:
-                result = self.declaration_observer.observe_declaration(request)
+                result = observer.observe_declaration(request)
             except Exception:
                 continue
             observed_now = self._now()
@@ -1297,7 +1329,7 @@ class OutcomeAcceptanceService:
             reasons.append("source identity, digest, working-tree state, or input contents changed")
         declaration_records = self._observe_declarations(
             plan, target, attempt_ref, workspace, current_revision, actor,
-            capability_id, str(outcome_ref.entity_id), self._now(),
+            capability_id, str(outcome_ref.entity_id), self._now(), authority=authority,
         )
         with authority.read_transaction() as connection:
             # Re-read plan and all evidence after the external observation so
@@ -1456,7 +1488,7 @@ class OutcomeAcceptanceService:
         }, key=str))
         declaration_records = self._observe_declarations(
             plan, target, attempt_ref, workspace, plan_revision, actor, capability_id,
-            str(candidate_ref.entity_id), self._now(),
+            str(candidate_ref.entity_id), self._now(), authority=authority,
         ) if action == ACCEPT_OUTCOME_ACTION else []
         command = _Finalize(action, attempt_ref, target, candidate_ref.entity_id, source_json, receipt_json,
                             provider_request_digest(request), safety_json, "{}", _json(declaration_records), plan_revision,

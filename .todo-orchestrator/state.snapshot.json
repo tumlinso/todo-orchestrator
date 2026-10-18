@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T20:15:10Z",
+  "generated_at": "2026-10-18T21:15:02Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 118,
+  "project_revision": 127,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 118,
+    "project_revision": 127,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -1217,9 +1217,112 @@
         "revision": 118,
         "seq": 118,
         "timestamp": "2026-10-18T20:15:10Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-VERIFICATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-VERIFICATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-V04\"}",
+        "revision": 119,
+        "seq": 119,
+        "timestamp": "2026-10-18T20:23:59Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "2ace8ac6-cc58-42f6-a43d-05fca1b275cf",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 120,
+        "seq": 120,
+        "timestamp": "2026-10-18T20:34:15Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-V04-native-git-and-verification",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-V04-native-git-and-verification\"}",
+        "revision": 121,
+        "seq": 121,
+        "timestamp": "2026-10-18T21:10:34Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-V04-native-git-and-verification",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"0272530f-1ae0-4478-8e5d-f8244c8d99b6\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 122,
+        "seq": 122,
+        "timestamp": "2026-10-18T21:11:15Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-V04",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 123, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 123,
+        "seq": 123,
+        "timestamp": "2026-10-18T21:11:15Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-VERIFICATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-VERIFICATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-VERIFICATION\"}",
+        "revision": 124,
+        "seq": 124,
+        "timestamp": "2026-10-18T21:11:36Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-VERIFICATION",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 125, \"disposition\": \"validated\", \"reached_checkpoints\": []}",
+        "revision": 125,
+        "seq": 125,
+        "timestamp": "2026-10-18T21:12:04Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-C03\"}",
+        "revision": 126,
+        "seq": 126,
+        "timestamp": "2026-10-18T21:12:27Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "a886cd22-52e6-4b4d-9890-3de3c1b20497",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 127,
+        "seq": 127,
+        "timestamp": "2026-10-18T21:15:02Z"
       }
     ],
     "evidence": [
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T21:11:15Z",
+        "gate_id": "TO-V04-native-git-and-verification",
+        "id": "0272530f-1ae0-4478-8e5d-f8244c8d99b6",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"c69ea4b3ddf8d35d7103e3bb41b230ae88cda332de2bab9a9e4c044eae874d65\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/authority-authentication.md\", \"docs/architecture/git-effects.md\", \"docs/architecture/provider-contracts.md\", \"docs/product/parity-fixture-corpus.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/model/eligibility.py\", \"src/todo_orchestrator/providers/__init__.py\", \"src/todo_orchestrator/providers/git.py\", \"src/todo_orchestrator/providers/git/__init__.py\", \"src/todo_orchestrator/providers/git/provider.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\", \"tests/verification/test_git.py\", \"tests/verification/test_git_independent.py\", \"tests/verification/test_git_service.py\", \"tests/verification/test_git_service_independent.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/providers/git\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/verification\", \"sha256\": \"missing\"}, {\"path\": \"tests/verification\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 121}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/0272530f-1ae0-4478-8e5d-f8244c8d99b6",
+        "revision": 122,
+        "status": "passed"
+      },
       {
         "checkpoint_id": null,
         "claim_id": null,
@@ -1588,6 +1691,19 @@
       },
       {
         "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
+        "id": "TO-C03-native-communication-and-sync",
+        "input_fingerprint": null,
+        "last_run_at": null,
+        "required": 1,
+        "revision": 127,
+        "status": "pending",
+        "task_id": "TO-C03",
+        "type": "command",
+        "valid": 0
+      },
+      {
+        "checkpoint_id": null,
         "config_json": "{\"argv\": [\"python\", \"scripts/check_reference_baseline.py\"], \"cwd\": \".\", \"input_paths\": [\"docs/product\", \"scripts/check_reference_baseline.py\"]}",
         "id": "TO-F01-BASELINE-CHECK",
         "input_fingerprint": "28053bff07d747bf0e2d41d6f560de588553e4d31f539ed9e6aaa5cc641c1fc9",
@@ -1754,6 +1870,19 @@
         "task_id": "TO-V03",
         "type": "command",
         "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/verification\", \"src/todo_orchestrator/providers/git\", \"tests/verification\"]}",
+        "id": "TO-V04-native-git-and-verification",
+        "input_fingerprint": "593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0",
+        "last_run_at": "2026-10-18T21:11:15Z",
+        "required": 1,
+        "revision": 122,
+        "status": "passed",
+        "task_id": "TO-V04",
+        "type": "command",
+        "valid": 1
       }
     ],
     "handoffs": [
@@ -1899,6 +2028,16 @@
       },
       {
         "claim_id": null,
+        "created_at": "2026-10-18T21:12:04Z",
+        "id": "79753ff3-a781-4aec-b3d4-1e1edb6513c0",
+        "kind": "complete",
+        "note": "Reviewed completed V01\u2013V04 against written criteria and integrated current source. All 290 isolated source tests passed; V04 required verification gate passed at revision122 and V04 closed123. Typed contracts/evidence/negative results, durable verification receipt/retry protocol, source/artifact/declaration-bound outcome acceptance, and actual Git isolation/integration/recovery are present. Relevant architecture docs and test suites capture evidence. Coverage boundaries: provider command/liveness facts remain trusted host interfaces (no active host worker qualification); absent native declaration observer remains UNKNOWN until C03; native recovery tooling, full CLI/external resource adapters and complete release journeys remain subsequent scoped tasks. Disposable Git/product qualification does not authorize parallel claims in this uncommitted development checkout. Original source/legacy authorities/active Project Control preserved.",
+        "payload_json": "{\"authority_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"changed_owned_paths\": [], \"checkpoints\": [], \"completion_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"completion_gates\": [], \"completion_revision\": 125, \"finalized_checkpoints\": [], \"gates\": [], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json            |  155 ++-\\n docs/architecture/authority-authentication.md     |    6 +\\n docs/architecture/provider-contracts.md           |    8 +\\n src/todo_orchestrator/authority/README.md         |   19 +-\\n src/todo_orchestrator/authority/attempts.py       |  112 ++-\\n src/todo_orchestrator/authority/sqlite.py         |   35 +-\\n src/todo_orchestrator/contracts/domain.py         |    8 +-\\n src/todo_orchestrator/contracts/providers.py      |   46 +-\\n src/todo_orchestrator/model/eligibility.py        |    3 +\\n src/todo_orchestrator/providers/__init__.py       |   12 +-\\n src/todo_orchestrator/providers/git.py            | 1041 ---------------------\\n src/todo_orchestrator/verification/acceptance.py  |    4 +-\\n src/todo_orchestrator/verification/service.py     |    3 +\\n tests/authority/test_attempts.py                  |  159 +++-\\n tests/authority/test_eligibility.py               |   12 +-\\n tests/authority/test_eligibility_independent.py   |    9 +\\n tests/authority/test_sqlite.py                    |   29 +-\\n tests/coordination/test_scheduling.py             |   21 +-\\n tests/coordination/test_scheduling_independent.py |   25 +-\\n tests/verification/test_git.py                    |  221 ++++-\\n tests/verification/test_git_independent.py        |  832 ++++++++++++++--\\n todo-status.md                                    |    6 +-\\n todos.md                                          |    6 +-\\n todos/to-v04.md                                   |    8 +-\\n todos/to-verification.md                          |    6 +-\\n 25 files changed, 1579 insertions(+), 1207 deletions(-)\", \"git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Reviewed completed V01\\u2013V04 against written criteria and integrated current source. All 290 isolated source tests passed; V04 required verification gate passed at revision122 and V04 closed123. Typed contracts/evidence/negative results, durable verification receipt/retry protocol, source/artifact/declaration-bound outcome acceptance, and actual Git isolation/integration/recovery are present. Relevant architecture docs and test suites capture evidence. Coverage boundaries: provider command/liveness facts remain trusted host interfaces (no active host worker qualification); absent native declaration observer remains UNKNOWN until C03; native recovery tooling, full CLI/external resource adapters and complete release journeys remain subsequent scoped tasks. Disposable Git/product qualification does not authorize parallel claims in this uncommitted development checkout. Original source/legacy authorities/active Project Control preserved.\", \"producer_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-VERIFICATION\"}",
+        "revision": 125,
+        "task_id": "TO-VERIFICATION"
+      },
+      {
+        "claim_id": null,
         "created_at": "2026-10-18T14:50:48Z",
         "id": "815e2124-c64a-4145-941c-7327339bbb46",
         "kind": "complete",
@@ -1916,6 +2055,16 @@
         "payload_json": "{\"authority_commit\": \"d6cf85f364626b5b5f89349826b0871b43e8bc42\", \"changed_owned_paths\": [\"tests/verification/__init__.py\", \"tests/verification/test_contracts.py\", \"tests/verification/test_requirements_independent.py\"], \"checkpoints\": [], \"completion_commit\": \"d6cf85f364626b5b5f89349826b0871b43e8bc42\", \"completion_gates\": [{\"evidence_id\": \"eb5579ac-3d0b-41d4-bc66-e5e7f7e963de\", \"evidence_revision\": 103, \"id\": \"TO-V01-typed-requirements\", \"input_fingerprint\": \"66ea742e996d334b36687b0041fe4b247b5e7ba1ab3fe4f85f640a89b3364b89\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"d6cf85f364626b5b5f89349826b0871b43e8bc42\"}], \"completion_revision\": 104, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-V01-typed-requirements\", \"input_fingerprint\": \"66ea742e996d334b36687b0041fe4b247b5e7ba1ab3fe4f85f640a89b3364b89\", \"last_run_at\": \"2026-10-18T19:17:25Z\", \"revision\": 103, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 205 +++++++++++++++++++++++-----\\n README.md                                   |   2 +-\\n planning/standalone-v1/README.md            |   7 +\\n src/todo_orchestrator/authority/README.md   |  19 +--\\n src/todo_orchestrator/authority/sqlite.py   |  38 +++++-\\n src/todo_orchestrator/contracts/__init__.py |   4 +-\\n src/todo_orchestrator/contracts/domain.py   |  13 +-\\n src/todo_orchestrator/planning/changes.py   |   7 +-\\n src/todo_orchestrator/planning/package.py   |  31 ++++-\\n tests/authority/test_sqlite.py              |   2 +-\\n tests/contracts/test_domain.py              |   2 +-\\n todo-status.md                              |   6 +-\\n todos.md                                    |   6 +-\\n todos/to-c02.md                             |   8 +-\\n todos/to-c03.md                             |   2 +\\n todos/to-c04.md                             |   2 +\\n todos/to-c05.md                             |   2 +\\n todos/to-coordination.md                    |   2 +\\n todos/to-i01.md                             |   2 +\\n todos/to-i04.md                             |   2 +\\n todos/to-integration.md                     |   2 +\\n todos/to-q01.md                             |   2 +\\n todos/to-q02.md                             |   2 +\\n todos/to-q03.md                             |   2 +\\n todos/to-q05.md                             |   2 +\\n todos/to-qualification.md                   |   2 +\\n todos/to-r01.md                             |   2 +\\n todos/to-r02.md                             |   2 +\\n todos/to-r03.md                             |   2 +\\n todos/to-r04.md                             |   2 +\\n todos/to-recovery.md                        |   2 +\\n todos/to-root.md                            |   2 +\\n todos/to-v01.md                             |   8 +-\\n todos/to-v02.md                             |   2 +\\n todos/to-v03.md                             |   2 +\\n todos/to-v04.md                             |   2 +\\n todos/to-verification.md                    |   2 +\\n 37 files changed, 334 insertions(+), 68 deletions(-)\", \"git_head\": \"d6cf85f364626b5b5f89349826b0871b43e8bc42\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Typed versioned contracts for nine verification kinds + named evidence preserved through compile, changeset digest, exact accepted snapshot and normalized SQLite projection. Immutable constructor/default roundtrips, malformed versions/paths/fields, stale review and unauthorized worker weakening covered independently. Root full209 source tests passed before final domain-provider immutable Mapping fix; final verification10/contracts30 pass afterfix, planning50 passed after prerequisiteguard. Required gate rerun catches regression and now passes. Domain contract2/schema9; earlier alpha authorities failclosed. Execution/finalacceptance remain V02/V03; no real providers or production migration claimed.\", \"producer_commit\": \"d6cf85f364626b5b5f89349826b0871b43e8bc42\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-V01\"}",
         "revision": 104,
         "task_id": "TO-V01"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T21:11:15Z",
+        "id": "a29e600e-89f7-40fa-807a-f29b1bd328b0",
+        "kind": "complete",
+        "note": "Implemented trusted local Git provider and authenticated durable GitEffectService. Qualified real linked-worktree/index/ref/incarnation isolation with fresh guarded peer observations, filesystem+index+selection-policy source identity, exact accepted source revisions, CAS integration to non-checked-out destination, pinned conflict/commit artifacts, distinct execution and query-bound inspection receipts, current recovery-only grants, exact retries and explicit proven-absence retry. Real subprocess exit/reopen and accepted-integration interruption recovery preserve effects without duplication. Full isolated source suite passed 290 tests; plan consistency and git diff --check passed; external reference fingerprints verified unchanged. docs/architecture/git-effects.md and tests/verification/test_git_service*.py record behavior/limits. Development claims remain serial; no active Project Control, legacy authority or original source changes.",
+        "payload_json": "{\"authority_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"changed_owned_paths\": [\"src/todo_orchestrator/providers/git/__init__.py\", \"src/todo_orchestrator/providers/git/provider.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/verification/test_git.py\", \"tests/verification/test_git_independent.py\", \"tests/verification/test_git_service.py\", \"tests/verification/test_git_service_independent.py\"], \"checkpoints\": [], \"completion_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"completion_gates\": [{\"evidence_id\": \"0272530f-1ae0-4478-8e5d-f8244c8d99b6\", \"evidence_revision\": 122, \"id\": \"TO-V04-native-git-and-verification\", \"input_fingerprint\": \"593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\"}], \"completion_revision\": 123, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-V04-native-git-and-verification\", \"input_fingerprint\": \"593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0\", \"last_run_at\": \"2026-10-18T21:11:15Z\", \"revision\": 122, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json            |   39 +-\\n docs/architecture/authority-authentication.md     |    6 +\\n docs/architecture/provider-contracts.md           |    8 +\\n src/todo_orchestrator/authority/README.md         |   19 +-\\n src/todo_orchestrator/authority/attempts.py       |  112 ++-\\n src/todo_orchestrator/authority/sqlite.py         |   35 +-\\n src/todo_orchestrator/contracts/domain.py         |    8 +-\\n src/todo_orchestrator/contracts/providers.py      |   46 +-\\n src/todo_orchestrator/model/eligibility.py        |    3 +\\n src/todo_orchestrator/providers/__init__.py       |   12 +-\\n src/todo_orchestrator/providers/git.py            | 1041 ---------------------\\n src/todo_orchestrator/verification/acceptance.py  |    4 +-\\n src/todo_orchestrator/verification/service.py     |    3 +\\n tests/authority/test_attempts.py                  |  159 +++-\\n tests/authority/test_eligibility.py               |   12 +-\\n tests/authority/test_eligibility_independent.py   |    9 +\\n tests/authority/test_sqlite.py                    |   29 +-\\n tests/coordination/test_scheduling.py             |   21 +-\\n tests/coordination/test_scheduling_independent.py |   25 +-\\n tests/verification/test_git.py                    |  221 ++++-\\n tests/verification/test_git_independent.py        |  832 ++++++++++++++--\\n todo-status.md                                    |    2 +-\\n todos.md                                          |    2 +-\\n 23 files changed, 1472 insertions(+), 1176 deletions(-)\", \"git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented trusted local Git provider and authenticated durable GitEffectService. Qualified real linked-worktree/index/ref/incarnation isolation with fresh guarded peer observations, filesystem+index+selection-policy source identity, exact accepted source revisions, CAS integration to non-checked-out destination, pinned conflict/commit artifacts, distinct execution and query-bound inspection receipts, current recovery-only grants, exact retries and explicit proven-absence retry. Real subprocess exit/reopen and accepted-integration interruption recovery preserve effects without duplication. Full isolated source suite passed 290 tests; plan consistency and git diff --check passed; external reference fingerprints verified unchanged. docs/architecture/git-effects.md and tests/verification/test_git_service*.py record behavior/limits. Development claims remain serial; no active Project Control, legacy authority or original source changes.\", \"producer_commit\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-V04\"}",
+        "revision": 123,
+        "task_id": "TO-V04"
       },
       {
         "claim_id": null,
@@ -2743,6 +2892,19 @@
         "task_id": "TO-V03",
         "valid": 1,
         "validation_git_head": "d6cf85f364626b5b5f89349826b0871b43e8bc42"
+      },
+      {
+        "completion_git_head": "495f4e50086d9e994f4a9aa9082e37b49beca472",
+        "completion_revision": 123,
+        "evidence_id": "0272530f-1ae0-4478-8e5d-f8244c8d99b6",
+        "evidence_revision": 122,
+        "gate_id": "TO-V04-native-git-and-verification",
+        "input_fingerprint": "593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0",
+        "provenance_json": "{\"claim_id\": \"2ace8ac6-cc58-42f6-a43d-05fca1b275cf\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"c69ea4b3ddf8d35d7103e3bb41b230ae88cda332de2bab9a9e4c044eae874d65\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/authority-authentication.md\", \"docs/architecture/git-effects.md\", \"docs/architecture/provider-contracts.md\", \"docs/product/parity-fixture-corpus.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/model/eligibility.py\", \"src/todo_orchestrator/providers/__init__.py\", \"src/todo_orchestrator/providers/git.py\", \"src/todo_orchestrator/providers/git/__init__.py\", \"src/todo_orchestrator/providers/git/provider.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\", \"tests/verification/test_git.py\", \"tests/verification/test_git_independent.py\", \"tests/verification/test_git_service.py\", \"tests/verification/test_git_service_independent.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/providers/git\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/verification\", \"sha256\": \"missing\"}, {\"path\": \"tests/verification\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 121}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/0272530f-1ae0-4478-8e5d-f8244c8d99b6\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-V04",
+        "valid": 1,
+        "validation_git_head": "495f4e50086d9e994f4a9aa9082e37b49beca472"
       }
     ],
     "task_dependencies": [
@@ -3683,12 +3845,12 @@
         "priority": 40,
         "result": null,
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 126,
+        "status": "in_progress",
         "tags_json": "[]",
         "title": "Provide typed durable communication and decision synchronization",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T21:12:27Z",
+        "version": 2
       },
       {
         "attention_reason": null,
@@ -4442,9 +4604,9 @@
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "495f4e50086d9e994f4a9aa9082e37b49beca472",
+        "completion_git_head": "495f4e50086d9e994f4a9aa9082e37b49beca472",
+        "completion_revision": 123,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-V04",
         "kind": "task",
@@ -4456,20 +4618,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-VERIFICATION",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 117,
-        "status": "in_progress",
+        "revision": 123,
+        "status": "done",
         "tags_json": "[]",
         "title": "Isolate and qualify Git workspace/integration operations",
-        "updated_at": "2026-10-18T20:12:48Z",
-        "version": 2
+        "updated_at": "2026-10-18T21:11:15Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "495f4e50086d9e994f4a9aa9082e37b49beca472",
+        "completion_git_head": "495f4e50086d9e994f4a9aa9082e37b49beca472",
+        "completion_revision": 125,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-VERIFICATION",
         "kind": "workstream",
@@ -4481,14 +4643,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-ROOT",
         "priority": 15,
-        "result": null,
+        "result": "validated",
         "result_policy_json": "{\"allowed_dispositions\": [\"validated\", \"no_change_required\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 125,
+        "status": "done",
         "tags_json": "[]",
         "title": "Verification and safe integration",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T21:12:04Z",
+        "version": 3
       }
     ],
     "workflow_context_fragments": [
@@ -5426,13 +5588,13 @@
         "task_id": "TO-C02"
       },
       {
-        "activated_at": null,
+        "activated_at": "2026-10-18T21:12:27Z",
         "completed_at": null,
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 2,
-        "revision": 2,
-        "state": "queued",
+        "revision": 126,
+        "state": "active",
         "task_id": "TO-C03"
       },
       {
@@ -5737,22 +5899,22 @@
       },
       {
         "activated_at": "2026-10-18T20:12:48Z",
-        "completed_at": null,
+        "completed_at": "2026-10-18T21:11:15Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-VERIFICATION",
         "position": 3,
-        "revision": 117,
-        "state": "active",
+        "revision": 123,
+        "state": "completed",
         "task_id": "TO-V04"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T21:11:36Z",
+        "completed_at": "2026-10-18T21:12:04Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-VERIFICATION",
         "position": 4,
-        "revision": 2,
-        "state": "queued",
+        "revision": 125,
+        "state": "completed",
         "task_id": "TO-VERIFICATION"
       }
     ],
@@ -5774,11 +5936,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-COORDINATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 94,
+        "revision": 126,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "ready",
-        "updated_at": "2026-10-18T19:09:17Z",
+        "state": "active",
+        "updated_at": "2026-10-18T21:12:27Z",
         "workspace_mode": "exclusive"
       },
       {
@@ -5846,11 +6008,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-VERIFICATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 117,
+        "revision": 125,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "active",
-        "updated_at": "2026-10-18T20:12:48Z",
+        "state": "closed",
+        "updated_at": "2026-10-18T21:12:04Z",
         "workspace_mode": "exclusive"
       }
     ],
