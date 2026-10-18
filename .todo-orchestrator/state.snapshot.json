@@ -1,0 +1,90 @@
+{
+  "generated_at": "2026-10-18T14:06:30Z",
+  "project": {
+    "configuration": {
+      "busy_timeout_ms": 5000,
+      "claim_lease_seconds": 7200,
+      "context_budget_bytes": 12000,
+      "legacy_review_days": {
+        "blocked": 7,
+        "in_progress": 3,
+        "planned": 3,
+        "stale": 3
+      },
+      "resource_lease_seconds": 300
+    },
+    "created_at": "2026-10-18T14:06:30Z",
+    "project_name": "Todo Orchestrator",
+    "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
+    "schema_version": 2
+  },
+  "project_revision": 1,
+  "schema_version": 2,
+  "semantic_context": {
+    "declarations": [],
+    "invalidations": [],
+    "orientation": [],
+    "project_revision": 1,
+    "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
+    "skill_uses": []
+  },
+  "snapshot_version": 3,
+  "tables": {
+    "barrier_requirements": [],
+    "barriers": [],
+    "checkpoint_gates": [],
+    "checkpoint_interfaces": [],
+    "checkpoints": [],
+    "decisions": [],
+    "events": [
+      {
+        "actor_session_id": null,
+        "entity_id": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
+        "entity_type": "project",
+        "event_type": "project.bootstrapped",
+        "payload_json": "{\"project_name\": \"Todo Orchestrator\"}",
+        "revision": 1,
+        "seq": 1,
+        "timestamp": "2026-10-18T14:06:30Z"
+      }
+    ],
+    "evidence": [],
+    "gates": [],
+    "handoffs": [],
+    "interface_consumers": [],
+    "interfaces": [],
+    "invariants": [],
+    "live_recovery_audit": [],
+    "migration_warnings": [],
+    "named_locks": [],
+    "ownership_scopes": [],
+    "project_amendments": [],
+    "project_declarations": [],
+    "project_fragment_invalidations": [],
+    "resource_classes": [],
+    "resource_instances": [],
+    "resource_requests": [],
+    "task_artifacts": [],
+    "task_completion_gates": [],
+    "task_dependencies": [],
+    "task_invariants": [],
+    "task_locks": [],
+    "tasks": [],
+    "workflow_context_fragments": [],
+    "workflow_integration_queue": [],
+    "workflow_lane_tasks": [],
+    "workflow_lanes": [],
+    "workflow_message_receipts": [],
+    "workflow_message_recipients": [],
+    "workflow_messages": [],
+    "workflow_patch_artifacts": [],
+    "workflow_recovery_audit": [],
+    "workflow_rendezvous": [],
+    "workflow_rendezvous_arrivals": [],
+    "workflow_rendezvous_participants": [],
+    "workflow_run_charters": [],
+    "workflow_runs": [],
+    "workflow_workspaces": []
+  },
+  "workflow_snapshot_version": 1
+}
