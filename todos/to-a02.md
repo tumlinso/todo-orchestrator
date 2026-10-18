@@ -1,16 +1,18 @@
+
+
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-A02: Implement atomic transitions, revisions, idempotency and history
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `40`; current project revision is in `todo-status.md`.
 
 ## Objective
 Define typed command execution and revisioned state transitions in one transaction, with receipt identity, event history and derived read models; avoid a redundant event-sourced database architecture.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

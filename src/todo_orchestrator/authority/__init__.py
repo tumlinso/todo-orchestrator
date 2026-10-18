@@ -1,5 +1,16 @@
 """Project-local transactional authority storage."""
 
+from .commands import (
+    CommandActorNotRegisteredError,
+    CommandDispatchError,
+    CommandDispatcher,
+    CommandHandlerContractError,
+    DuplicateCommandHandlerError,
+    IdempotencyConflictError,
+    MutationContext,
+    StaleAuthorityRevisionError,
+    UnknownCommandHandlerError,
+)
 from .sqlite import (
     APPLICATION_ID,
     SCHEMA_VERSION,
@@ -19,6 +30,15 @@ from .sqlite import (
 __all__ = [
     "APPLICATION_ID",
     "SCHEMA_VERSION",
+    "CommandActorNotRegisteredError",
+    "CommandDispatchError",
+    "CommandDispatcher",
+    "CommandHandlerContractError",
+    "DuplicateCommandHandlerError",
+    "IdempotencyConflictError",
+    "MutationContext",
+    "StaleAuthorityRevisionError",
+    "UnknownCommandHandlerError",
     "AuthorityAlreadyExistsError",
     "AuthorityError",
     "AuthorityIdentityMismatchError",

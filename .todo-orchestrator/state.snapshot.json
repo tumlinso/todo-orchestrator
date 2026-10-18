@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T16:17:43Z",
+  "generated_at": "2026-10-18T16:40:07Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 35,
+  "project_revision": 40,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 35,
+    "project_revision": 40,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -387,6 +387,56 @@
         "revision": 35,
         "seq": 35,
         "timestamp": "2026-10-18T16:17:43Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-AUTHORITY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-AUTHORITY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-A02\"}",
+        "revision": 36,
+        "seq": 36,
+        "timestamp": "2026-10-18T16:32:32Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "df9977fd-b94b-441a-861c-d81e039a44d7",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 37,
+        "seq": 37,
+        "timestamp": "2026-10-18T16:39:27Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A02-command-atomicity",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-A02-command-atomicity\"}",
+        "revision": 38,
+        "seq": 38,
+        "timestamp": "2026-10-18T16:40:02Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A02-command-atomicity",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"8b52d2e0-6d5f-4f9b-965e-7c98030a248f\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 39,
+        "seq": 39,
+        "timestamp": "2026-10-18T16:40:07Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-A02",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 40, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 40,
+        "seq": 40,
+        "timestamp": "2026-10-18T16:40:07Z"
       }
     ],
     "evidence": [
@@ -459,6 +509,19 @@
         "checkpoint_id": null,
         "claim_id": null,
         "content_hash": null,
+        "created_at": "2026-10-18T16:40:07Z",
+        "gate_id": "TO-A02-command-atomicity",
+        "id": "8b52d2e0-6d5f-4f9b-965e-7c98030a248f",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"5cc5eb5d976fe8d00c99362c8802e67c478d933768929a100ad9e05839c2ea4b\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/commands.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/commands.py\", \"tests/authority/test_commands.py\", \"tests/authority/test_sqlite.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a02.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/authority\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/model\", \"sha256\": \"missing\"}, {\"path\": \"tests/authority\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 38}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/8b52d2e0-6d5f-4f9b-965e-7c98030a248f",
+        "revision": 39,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
         "created_at": "2026-10-18T15:58:18Z",
         "gate_id": "TO-F04-PROVIDER-CONTRACTS",
         "id": "973382bd-599c-4891-aef0-64f6f5e8f2d3",
@@ -493,6 +556,19 @@
         "revision": 34,
         "status": "passed",
         "task_id": "TO-A01",
+        "type": "command",
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/authority\", \"src/todo_orchestrator/model\", \"tests/authority\"]}",
+        "id": "TO-A02-command-atomicity",
+        "input_fingerprint": "8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97",
+        "last_run_at": "2026-10-18T16:40:07Z",
+        "required": 1,
+        "revision": 39,
+        "status": "passed",
+        "task_id": "TO-A02",
         "type": "command",
         "valid": 1
       },
@@ -625,6 +701,16 @@
         "payload_json": "{\"authority_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"changed_owned_paths\": [\"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"tests/authority/__init__.py\", \"tests/authority/test_sqlite.py\"], \"checkpoints\": [], \"completion_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"completion_gates\": [{\"evidence_id\": \"f8969bce-284f-4266-b925-4ef43f57e152\", \"evidence_revision\": 34, \"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\"}], \"completion_revision\": 35, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"last_run_at\": \"2026-10-18T16:17:43Z\", \"revision\": 34, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 242 +++++++++++++++++++++++-----\\n src/todo_orchestrator/contracts/__init__.py |   6 +-\\n todo-status.md                              |   8 +-\\n todos.md                                    |   8 +-\\n todos/to-a01.md                             |   8 +-\\n todos/to-f04.md                             |   8 +-\\n todos/to-foundation.md                      |  10 +-\\n 7 files changed, 229 insertions(+), 61 deletions(-)\", \"git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"SQLite schema-v1 foundation accepted after independent review and adversarial corrections. 24 disposable authority tests pass; integrated source61 and reference4 pass. Explicit init atomically publishes and syncs directory, preserving valid DB on uncertain sync. Existing opens validate identity, WAL, frozen structural schema and FULL writer mode; missing/foreign/unsupported/malformed authorities rejected without repair. Cross-project target identity preserved. Reader snapshots, writer serialization and rollback qualified in temp DBs. Semantic commands/receipt execution remain A02; no live/legacy authority, service/config/source modification.\", \"producer_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-A01\"}",
         "revision": 35,
         "task_id": "TO-A01"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T16:40:07Z",
+        "id": "c539447f-bbb1-4420-b5c3-7cfe4c010e34",
+        "kind": "complete",
+        "note": "Implemented trusted typed command dispatcher with atomic mutation/revision/event/receipt/idempotency, durable exact retries, no-op protection, stale/digest conflict refusal, bounded history/delta and normalized logical fingerprints. Schema2 explicitly rejects v1 without conversion. Authority suite37 and integrated source suite74 passed; reference4 and external source hashes verified. Fixtures only; actor provenance does not authenticate callers.",
+        "payload_json": "{\"authority_commit\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"changed_owned_paths\": [\"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/commands.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/commands.py\", \"tests/authority/test_commands.py\", \"tests/authority/test_sqlite.py\"], \"checkpoints\": [], \"completion_commit\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"completion_gates\": [{\"evidence_id\": \"8b52d2e0-6d5f-4f9b-965e-7c98030a248f\", \"evidence_revision\": 39, \"id\": \"TO-A02-command-atomicity\", \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"6644c958117b475bb2deed85690d4efc2012285a\"}], \"completion_revision\": 40, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-A02-command-atomicity\", \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"last_run_at\": \"2026-10-18T16:40:07Z\", \"revision\": 39, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 59 ++++++++++++++++++++++-------\\n src/todo_orchestrator/authority/README.md   | 45 ++++++++++++++++------\\n src/todo_orchestrator/authority/__init__.py | 20 ++++++++++\\n src/todo_orchestrator/authority/sqlite.py   | 49 ++++++++++++++++++------\\n tests/authority/test_sqlite.py              | 34 +++++++++++++----\\n todo-status.md                              |  4 +-\\n todos.md                                    |  4 +-\\n todos/to-a02.md                             |  8 ++--\\n 8 files changed, 172 insertions(+), 51 deletions(-)\", \"git_head\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented trusted typed command dispatcher with atomic mutation/revision/event/receipt/idempotency, durable exact retries, no-op protection, stale/digest conflict refusal, bounded history/delta and normalized logical fingerprints. Schema2 explicitly rejects v1 without conversion. Authority suite37 and integrated source suite74 passed; reference4 and external source hashes verified. Fixtures only; actor provenance does not authenticate callers.\", \"producer_commit\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-A02\"}",
+        "revision": 40,
+        "task_id": "TO-A02"
       },
       {
         "claim_id": null,
@@ -1165,6 +1251,19 @@
         "task_id": "TO-A01",
         "valid": 1,
         "validation_git_head": "e4537408a0202cb01e978025725dc45341ac3319"
+      },
+      {
+        "completion_git_head": "6644c958117b475bb2deed85690d4efc2012285a",
+        "completion_revision": 40,
+        "evidence_id": "8b52d2e0-6d5f-4f9b-965e-7c98030a248f",
+        "evidence_revision": 39,
+        "gate_id": "TO-A02-command-atomicity",
+        "input_fingerprint": "8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97",
+        "provenance_json": "{\"claim_id\": \"df9977fd-b94b-441a-861c-d81e039a44d7\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/authority\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"5cc5eb5d976fe8d00c99362c8802e67c478d933768929a100ad9e05839c2ea4b\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/commands.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/commands.py\", \"tests/authority/test_commands.py\", \"tests/authority/test_sqlite.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a02.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/authority\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/model\", \"sha256\": \"missing\"}, {\"path\": \"tests/authority\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"6644c958117b475bb2deed85690d4efc2012285a\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 38}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/8b52d2e0-6d5f-4f9b-965e-7c98030a248f\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-A02",
+        "valid": 1,
+        "validation_git_head": "6644c958117b475bb2deed85690d4efc2012285a"
       },
       {
         "completion_git_head": "9100f82384ab3099057b272ca5504a64e651aad0",
@@ -1992,9 +2091,9 @@
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "6644c958117b475bb2deed85690d4efc2012285a",
+        "completion_git_head": "6644c958117b475bb2deed85690d4efc2012285a",
+        "completion_revision": 40,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-A02",
         "kind": "task",
@@ -2006,14 +2105,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-AUTHORITY",
         "priority": 50,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 40,
+        "status": "done",
         "tags_json": "[]",
         "title": "Implement atomic transitions, revisions, idempotency and history",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T16:40:07Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -3856,13 +3955,13 @@
         "task_id": "TO-A01"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T16:32:32Z",
+        "completed_at": "2026-10-18T16:40:07Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-AUTHORITY",
         "position": 1,
-        "revision": 2,
-        "state": "queued",
+        "revision": 40,
+        "state": "completed",
         "task_id": "TO-A02"
       },
       {
@@ -4262,11 +4361,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-AUTHORITY",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 35,
+        "revision": 40,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
         "state": "ready",
-        "updated_at": "2026-10-18T16:17:43Z",
+        "updated_at": "2026-10-18T16:40:07Z",
         "workspace_mode": "exclusive"
       },
       {

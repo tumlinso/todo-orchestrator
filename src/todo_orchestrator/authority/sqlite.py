@@ -23,7 +23,7 @@ from todo_orchestrator.contracts import Project
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -363,14 +363,26 @@ _SCHEMA_STATEMENTS = (
         event_kind TEXT NOT NULL,
         payload_json TEXT NOT NULL,
         occurred_at TEXT NOT NULL,
-        UNIQUE (semantic_revision, event_ordinal)
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
+        UNIQUE (semantic_revision, event_ordinal),
+        FOREIGN KEY (actor_id, actor_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
     )""",
     """CREATE TABLE command_receipts (
         receipt_id TEXT PRIMARY KEY,
         command_kind TEXT NOT NULL,
         semantic_revision INTEGER NOT NULL CHECK (semantic_revision >= 0),
+        changed INTEGER NOT NULL CHECK (changed IN (0, 1)),
+        event_id TEXT UNIQUE,
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
         result_json TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        CHECK ((changed = 1) = (event_id IS NOT NULL)),
+        FOREIGN KEY (event_id) REFERENCES authority_events(event_id),
+        FOREIGN KEY (actor_id, actor_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
     )""",
     """CREATE TABLE command_idempotency (
         idempotency_key TEXT PRIMARY KEY,
@@ -384,6 +396,18 @@ _SCHEMA_STATEMENTS = (
     """CREATE TRIGGER authority_events_no_delete
         BEFORE DELETE ON authority_events
         BEGIN SELECT RAISE(ABORT, 'authority events are append-only'); END""",
+    """CREATE TRIGGER command_receipts_no_update
+        BEFORE UPDATE ON command_receipts
+        BEGIN SELECT RAISE(ABORT, 'command receipts are append-only'); END""",
+    """CREATE TRIGGER command_receipts_no_delete
+        BEFORE DELETE ON command_receipts
+        BEGIN SELECT RAISE(ABORT, 'command receipts are append-only'); END""",
+    """CREATE TRIGGER command_idempotency_no_update
+        BEFORE UPDATE ON command_idempotency
+        BEGIN SELECT RAISE(ABORT, 'command idempotency records are append-only'); END""",
+    """CREATE TRIGGER command_idempotency_no_delete
+        BEFORE DELETE ON command_idempotency
+        BEGIN SELECT RAISE(ABORT, 'command idempotency records are append-only'); END""",
 )
 
 
@@ -396,7 +420,7 @@ def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...
     return tuple(tuple(row) for row in rows)
 
 
-def _compile_schema_v1_signature() -> tuple[tuple[object, ...], ...]:
+def _compile_schema_v2_signature() -> tuple[tuple[object, ...], ...]:
     connection = sqlite3.connect(":memory:")
     try:
         for statement in _SCHEMA_STATEMENTS:
@@ -406,9 +430,9 @@ def _compile_schema_v1_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v1 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v2 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
-_SCHEMA_V1_SIGNATURE = _compile_schema_v1_signature()
+_SCHEMA_V2_SIGNATURE = _compile_schema_v2_signature()
 
 _REQUIRED_TABLES = frozenset({
     "authority_meta", "plan_revisions", "work_items", "plan_revision_work_items",
@@ -507,8 +531,8 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
         raise InvalidAuthorityError("authority semantic revision is invalid")
 
     try:
-        if _schema_signature(connection) != _SCHEMA_V1_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v1 definition")
+        if _schema_signature(connection) != _SCHEMA_V2_SIGNATURE:
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v2 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -571,7 +595,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v1 authority without replacing an existing path.
+        """Create a new schema-v2 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -723,9 +747,10 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v1 is the only supported version. A current v1 authority is a
-        no-op. Older or newer versions are rejected without opening the file
-        writable; this method never guesses a conversion or restores a backup.
+        Schema v2 is the only supported version. A current v2 authority is a
+        no-op. Schema v1 and every other unsupported version are rejected
+        without opening the file writable; this method never guesses a
+        conversion or restores a backup.
         """
 
         with cls.open_reader(path, project, busy_timeout=busy_timeout) as authority:
