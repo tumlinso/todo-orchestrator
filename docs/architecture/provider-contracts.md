@@ -21,7 +21,7 @@ Effectful ports also expose read-only `inspect` methods using `EffectInspectionR
 
 ## Contracts
 
-- `SourceObserver` reports repository identity, source/base digests, named content/interface inputs, and clean/dirty working-tree state. Requests can bind an exact attempt/workspace/target and an optional authored verification contract. Exact artifact expectations require fresh availability and digest observations under the same correlated receipt. The service compares the result with expected source and persisted workspace scope.
+- `SourceObserver` reports repository identity, source/base digests, named content/interface inputs, and clean/dirty working-tree state. Requests can bind an exact attempt/workspace/target and an optional authored verification contract, or use a base-only request that names one exact configured repository ref before an attempt or workspace exists. Base-only observations return the resolved commit and policy-qualified tree digest, with the exact ref as receipt provenance; they do not create or inspect a workspace. Exact artifact expectations require fresh availability and digest observations under the same correlated receipt. The service compares the result with expected source and persisted workspace scope.
 - `DeclarationObserver` reports accepted checkpoint, published interface, barrier or rendezvous state for an exact plan/declaration payload. Requests and observations bind the target, kind, payload digest, optional interface version and provider receipt. Missing observations remain unresolved; declarations and completed producers do not prove publication or arrival.
 - `GitEffectsProvider` receives an operation and idempotency identity, expected source and authority revision, and optional workspace reference. Its disposition reports applied, conflict, dirty, or rejected effects; `OBSERVED_SUCCESS` means the disposition is known, not that it was applied. Unknown effects require reconciliation and preservation of conflicting or dirty work.
 - `GitEffectsProvider.inspect` resolves a prior effect to its observed disposition, including `NOT_APPLIED` only when absence is definitive.
@@ -42,10 +42,16 @@ in the observation and must retain its original identity. If no execution
 receipt was durably recorded, inspection does not invent one. See
 [local Git effects](git-effects.md) for the implemented provider and service.
 
-The current provider contract version is 6. Declaration observation requests
+Provider contract version 7 allowed source observations for an exact workspace
+and target before an attempt is attached. The current provider contract version
+is 8. A base-ref-only source observation can establish the current qualified
+commit and tree for a pre-effect recovery preview; its request digest includes
+the ref, and its receipt is correlated to that query. It is a read-only
+observation, not a durable effect receipt or a guarantee that the ref cannot
+move afterward. Declaration observation requests
 carry the actual caller's read or accept action alongside its actor and
 capability. The native observer checks current scope, context, expiry and
 revocation, allowing an independent authorized approver without borrowing the
 worker's grant. An omitted authorization action yields unknown native status.
 
-The contracts use `PROVIDER_CONTRACT_VERSION` for this interface and carry provider-specific versions in identities and receipts. A host decides which versions it trusts. Provider instances are optional: abstract planning and other operations that need no external observation/effect remain usable when a provider is absent. An operation that requires an unavailable provider returns a typed `UNAVAILABLE` result. These contracts add no Project Control adapter, discovery registry, process/Git implementation, network runner, or hardware authority.
+The contracts use `PROVIDER_CONTRACT_VERSION` for this interface and carry provider-specific versions in identities and receipts. A host decides which versions it trusts. `SourceObservationRequest` supports an attempt plus exact workspace/target, an unattached exact workspace/target, or a base-only exact ref; these forms cannot be mixed. A workspace is never accepted without its target. Provider instances are optional: abstract planning and other operations that need no external observation/effect remain usable when a provider is absent. An operation that requires an unavailable provider returns a typed `UNAVAILABLE` result. These contracts add no Project Control adapter, discovery registry, process/Git implementation, network runner, or hardware authority.

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 
-from todo_orchestrator.contracts import AttemptState, EntityKind, EntityRef, StableId
+from todo_orchestrator.contracts import AttemptState, EntityKind, EntityRef, Sha256Digest, StableId
 from todo_orchestrator.contracts.providers import ProviderReceipt
 
 from .eligibility import WorkspaceQualification
@@ -48,6 +48,7 @@ class AttemptSafetyObservation:
     process: ProcessLiveness
     children: ChildActivity
     receipt: ProviderReceipt
+    source_digest: Sha256Digest | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.attempt, EntityRef) or self.attempt.kind is not EntityKind.ATTEMPT:
@@ -70,6 +71,8 @@ class AttemptSafetyObservation:
             raise TypeError("children must be a ChildActivity value")
         if not isinstance(self.receipt, ProviderReceipt):
             raise TypeError("receipt must be a ProviderReceipt")
+        if self.source_digest is not None and not isinstance(self.source_digest, Sha256Digest):
+            raise TypeError("source_digest must be a Sha256Digest or None")
         if self.receipt.correlation_id != self.attempt.entity_id:
             raise ValueError("safety receipt must correlate with the current attempt")
         if self.receipt.provenance_ref != self.workspace.common_base.ref:

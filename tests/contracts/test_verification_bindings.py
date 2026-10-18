@@ -74,12 +74,14 @@ class VerificationBindingContractTests(unittest.TestCase):
         values.update(changes)
         return VerificationRequest(**values)
 
-    def test_source_observation_requires_complete_project_local_attempt_binding(self):
+    def test_source_observation_supports_workspace_binding_before_attempt_attachment(self):
         request = self.source_request()
         self.assertEqual(request.attempt, self.attempt)
         self.assertEqual(request.target, self.target)
-        with self.assertRaisesRegex(ValueError, "supplied together"):
-            self.source_request(attempt=None)
+        unattached = self.source_request(attempt=None)
+        self.assertIsNone(unattached.attempt)
+        self.assertEqual(unattached.workspace_id, self.workspace)
+        self.assertEqual(unattached.target, self.target)
         with self.assertRaisesRegex(ValueError, "project-local attempt"):
             self.source_request(attempt=EntityRef(sid("other"), EntityKind.ATTEMPT, sid("attempt")))
         with self.assertRaisesRegex(ValueError, "project-local qualified work-item"):
@@ -101,7 +103,7 @@ class VerificationBindingContractTests(unittest.TestCase):
             provider_request_digest(request),
             provider_request_digest(replace(request, expected_source=digest("b"))),
         )
-        with self.assertRaisesRegex(ValueError, "attempt, workspace_id, and target"):
+        with self.assertRaisesRegex(ValueError, "workspace_id and target"):
             replace(request, target=None)
 
     def test_source_observation_request_digest_covers_all_source_binding_fields(self):

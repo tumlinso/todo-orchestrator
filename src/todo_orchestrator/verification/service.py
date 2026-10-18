@@ -49,13 +49,22 @@ from todo_orchestrator.contracts.providers import (
     WorkingTreeState,
     provider_request_digest,
 )
-from todo_orchestrator.model import CommandEffect, CommandResult, WorkspaceQualification
+from todo_orchestrator.model import (
+    AttemptSafetyObservation,
+    ChildActivity,
+    CommandEffect,
+    CommandResult,
+    ProcessLiveness,
+    SourceSafety,
+    WorkspaceQualification,
+)
 from todo_orchestrator.planning import CompiledPlan, decode_accepted_plan
 
 from todo_orchestrator.authority.auth import (
     AuthorizationRequirement,
     AuthorityAuthService,
     CapabilityDeniedError,
+    RECOVERY_APPLY_ACTION,
     _actor_ref,
     _context_from_row,
     _token_digest,
@@ -63,6 +72,7 @@ from todo_orchestrator.authority.auth import (
 from todo_orchestrator.authority.attempts import (
     AttemptError,
     AttemptNotFoundError,
+    _check_observation,
     _attempt_from_row,
     _parse_time,
     _stored_attempt,
@@ -71,13 +81,19 @@ from todo_orchestrator.authority.attempts import (
     VERIFICATION_ACTION,
     VERIFICATION_RECONCILE_ACTION,
 )
-from todo_orchestrator.authority.commands import MutationContext, StaleAuthorityRevisionError
+from todo_orchestrator.authority.commands import (
+    IdempotencyConflictError,
+    MutationContext,
+    StaleAuthorityRevisionError,
+)
 from todo_orchestrator.authority.sqlite import (
     AuthorityError,
     InvalidAuthorityError,
     SQLiteAuthority,
     load_plan_revision_snapshot,
 )
+from todo_orchestrator.authority.child_store import require_parent_children_resolved
+from todo_orchestrator.authority.recovery_approval import RecoveryApproval, _is_recovery_approval
 
 
 VERIFY_ACTION = VERIFICATION_ACTION
@@ -198,6 +214,8 @@ class _Transition:
     inspection_json: str | None = None
     evidence_id: StableId | None = None
     stale_reason: str | None = None
+    recovery_approval: RecoveryApproval | None = None
+    recovery_source_json: str | None = None
 
 
 def _json(value: object) -> str:
@@ -237,6 +255,50 @@ def _receipt_value(receipt: ProviderReceipt) -> dict[str, object]:
         "provenance_ref": str(receipt.provenance_ref),
         "observed_at": receipt.observed_at.astimezone(timezone.utc).isoformat(timespec="microseconds"),
     }
+
+
+def _recovery_approval_digest(approval: RecoveryApproval) -> str:
+    """Stable audit binding for one sealed recovery approval."""
+    observation = approval.host_observation
+    host_value: dict[str, object] | None = None
+    if observation is not None:
+        workspace = observation.workspace
+        host_value = {
+            "attempt": _ref_value(observation.attempt),
+            "observed_state": observation.observed_state.value,
+            "lease_id": str(observation.lease_id),
+            "lease_expires_at": observation.observed_lease_expires_at.astimezone(
+                timezone.utc
+            ).isoformat(timespec="microseconds"),
+            "workspace_id": str(workspace.workspace_id),
+            "repository_id": str(workspace.repository_id),
+            "base_ref": str(workspace.common_base.ref),
+            "base_digest": workspace.common_base.digest,
+            "destination": str(workspace.destination.ref),
+            "isolation": workspace.isolation.value,
+            "source": observation.source.value,
+            "process": observation.process.value,
+            "children": observation.children.value,
+            "receipt": _receipt_value(observation.receipt),
+        }
+    return _digest(_json({
+        "intent_kind": approval.intent_kind,
+        "actor": _ref_value(approval.actor),
+        "capability_id": str(approval.capability_id),
+        "target": _ref_value(approval.target),
+        "attempt": None if approval.attempt is None else _ref_value(approval.attempt),
+        "run": None if approval.run is None else _ref_value(approval.run),
+        "assignment": None if approval.assignment is None else _ref_value(approval.assignment),
+        "operation": None if approval.operation is None else _ref_value(approval.operation),
+        "intent_digest": approval.intent_digest.hex,
+        "authority_revision": approval.authority_revision,
+        "expected_lease_id": None if approval.expected_lease_id is None else str(approval.expected_lease_id),
+        "expected_lease_expires_at": None if approval.expected_lease_expires_at is None else
+            approval.expected_lease_expires_at.astimezone(timezone.utc).isoformat(timespec="microseconds"),
+        "expected_source_digest": None if approval.expected_source_digest is None else
+            approval.expected_source_digest.hex,
+        "host_observation": host_value,
+    })).hex
 
 
 def _source_value(source: SourceObservation) -> dict[str, object]:
@@ -560,10 +622,11 @@ class _TransitionHandler:
             try:
                 inspection = json.loads(command.inspection_json)
                 if isinstance(inspection, dict):
-                    inspection.pop("receipt", None)
+                    if command.recovery_approval is None:
+                        inspection.pop("receipt", None)
             except (TypeError, ValueError):
                 inspection = command.inspection_json
-        return {
+        payload = {
             "action": str(command.action), "attempt": _ref_value(command.attempt),
             "target": _ref_value(command.target), "operation_id": str(command.operation_id),
             "expected_state": command.expected_state, "state": command.state,
@@ -579,6 +642,15 @@ class _TransitionHandler:
             "evidence_id": None if command.evidence_id is None else str(command.evidence_id),
             "stale_reason": command.stale_reason,
         }
+        if command.recovery_approval is not None:
+            payload["recovery_approval_digest"] = _recovery_approval_digest(command.recovery_approval)
+            payload["recovery_intent_kind"] = command.recovery_approval.intent_kind
+            payload["recovery_intent_digest"] = command.recovery_approval.intent_digest.hex
+        if command.recovery_source_json is not None:
+            payload["recovery_source_digest"] = _digest(command.recovery_source_json).hex
+        if command.recovery_approval is not None and command.inspection_json is not None:
+            payload["recovery_inspection_digest"] = _digest(command.inspection_json).hex
+        return payload
 
     def apply(self, context: MutationContext, command: _Transition) -> CommandEffect:
         row = context._connection.execute(
@@ -590,16 +662,29 @@ class _TransitionHandler:
         if row is None:
             raise VerificationNotFoundError("verification operation does not exist")
         attempt, _ = _stored_attempt(context._connection, context.project, command.attempt)
-        if (attempt.work_item != command.target or attempt.actor != context.actor or attempt.run != command.run
+        recovery = command.action == RECOVERY_APPLY_ACTION
+        if (attempt.work_item != command.target
+                or (attempt.actor != context.actor and not recovery) or attempt.run != command.run
                 or attempt.assignment != command.assignment or row["attempt_id"] != str(command.attempt.entity_id)
                 or row["work_item_id"] != str(command.target.entity_id)
                 or row["definition_revision_id"] != str(command.target.definition_revision_id)):
             raise VerificationDeniedError("verification operation is not bound to this active attempt context")
+        if recovery:
+            self.service._validate_recovery_transition(context, command, attempt, row)
+        elif command.recovery_approval is not None:
+            raise VerificationDeniedError("recovery approval cannot authorize an ordinary verification transition")
         if row["state"] != command.expected_state:
             raise VerificationStateError(
                 f"verification operation is {row['state']}, expected {command.expected_state}"
             )
-        if command.state not in _ALLOWED_TRANSITIONS.get(command.expected_state, frozenset()):
+        retry_reinspection = (
+            recovery and command.recovery_approval is not None
+            and command.recovery_approval.intent_kind == "retry_original_operation"
+            and command.expected_state in {VerificationState.EXECUTING, VerificationState.UNKNOWN}
+            and command.state == VerificationState.EXECUTING
+        )
+        if (command.state not in _ALLOWED_TRANSITIONS.get(command.expected_state, frozenset())
+                and not retry_reinspection):
             raise VerificationStateError(f"unsupported verification transition {command.expected_state} -> {command.state}")
         now = self.service._now()
         live = attempt.state in {AttemptState.ADMITTED, AttemptState.ACTIVE}
@@ -607,7 +692,7 @@ class _TransitionHandler:
             VerificationState.EXECUTING, VerificationState.OBSERVED, VerificationState.UNKNOWN,
             VerificationState.NOT_STARTED, VerificationState.FINALIZED, VerificationState.REJECTED,
             VerificationState.STALE, VerificationState.FAILED,
-        } and (not live or attempt.lease is None or attempt.lease.expires_at <= now):
+        } and (not live or attempt.lease is None or attempt.lease.expires_at <= now) and not recovery:
             raise VerificationDeniedError("attempt is terminal, unsafe, or its lease expired")
         if command.state == VerificationState.EXECUTING and not self.service._requirement_is_current(
             context._connection, context.project, attempt, row,
@@ -655,11 +740,20 @@ class _TransitionHandler:
         payload = {
             "operation_id": str(command.operation_id), "attempt_id": str(command.attempt.entity_id),
             "target": str(command.target.entity_id), "requirement_id": row["requirement_id"],
+            "action": str(command.action),
             "previous_state": command.expected_state, "state": effective_state,
             "request_digest": row["request_digest"], "source_digest": row["source_digest"],
             "evidence_id": None if command.evidence_id is None else str(command.evidence_id),
             "stale_reason": effective_stale_reason,
         }
+        if command.recovery_approval is not None:
+            payload["recovery_approval_digest"] = _recovery_approval_digest(command.recovery_approval)
+            payload["recovery_intent_kind"] = command.recovery_approval.intent_kind
+            payload["recovery_intent_digest"] = command.recovery_approval.intent_digest.hex
+        if command.recovery_source_json is not None:
+            payload["recovery_source_digest"] = _digest(command.recovery_source_json).hex
+        if command.recovery_approval is not None and command.inspection_json is not None:
+            payload["recovery_inspection_digest"] = _digest(command.inspection_json).hex
         return CommandEffect(True, {"operation_id": str(command.operation_id), "state": effective_state,
                                     "evidence_id": None if command.evidence_id is None else str(command.evidence_id)},
                              f"todo.verification.{effective_state}", payload)
@@ -727,8 +821,16 @@ class _TransitionHandler:
             context.project.project_id, EntityKind.WORK_ITEM, StableId(row["work_item_id"]),
             StableId(row["definition_revision_id"]),
         )
+        source_context = request.context
+        if command.recovery_approval is not None:
+            if (context.actor != command.recovery_approval.actor
+                    or context.authorized_capability_id != command.recovery_approval.capability_id):
+                raise VerificationDeniedError("final source receipt is not bound to the approved recovery actor")
+            source_context = self.service._context(
+                context.actor, context.authorized_capability_id, StableId(row["operation_id"]), target,
+            )
         final_request = _source_request(
-            request.context, request.attempt, target, request.workspace_id, request.contract,
+            source_context, request.attempt, target, request.workspace_id, request.contract,
             StableId(row["operation_id"]), "after", request.expected_source,
         )
         try:
@@ -870,6 +972,234 @@ class VerificationService:
                 f"authority revision changed: expected {expected_revision}, current {actual}"
             )
 
+    def _validate_recovery_transition(
+        self, context: MutationContext, command: _Transition, attempt, row: sqlite3.Row,
+    ) -> None:
+        approval = command.recovery_approval
+        if not _is_recovery_approval(approval):
+            raise VerificationDeniedError("recovery transition requires a freshly approved inspection intent")
+        if (context.authorized_capability_id != approval.capability_id
+                or context.actor != approval.actor):
+            # The dispatcher requirement binds the action; the context and
+            # approval bind the concrete grant currently authorizing it.
+            raise VerificationDeniedError("recovery approval differs from the authenticated writer context")
+        if approval.intent_kind not in {"retry_original_operation", "reconcile_observed_effect"}:
+            raise VerificationDeniedError("recovery intent does not authorize verification lifecycle changes")
+        if (approval.target != attempt.work_item or approval.attempt != attempt.ref
+                or approval.run != attempt.run or approval.assignment != attempt.assignment
+                or approval.operation is None
+                or approval.operation.kind is not EntityKind.EXTERNAL_OPERATION
+                or approval.operation.project_id != context.project.project_id
+                or approval.operation.entity_id != command.operation_id
+                or approval.authority_revision > context.starting_revision):
+            raise VerificationDeniedError("recovery approval no longer matches the exact operation context")
+        retry_transitions = {
+            (VerificationState.NOT_STARTED, VerificationState.EXECUTING),
+            (VerificationState.EXECUTING, VerificationState.EXECUTING),
+            (VerificationState.UNKNOWN, VerificationState.EXECUTING),
+            (VerificationState.EXECUTING, VerificationState.UNKNOWN),
+            (VerificationState.EXECUTING, VerificationState.FAILED),
+            (VerificationState.EXECUTING, VerificationState.OBSERVED),
+            (VerificationState.OBSERVED, VerificationState.FINALIZED),
+            (VerificationState.OBSERVED, VerificationState.REJECTED),
+            (VerificationState.OBSERVED, VerificationState.STALE),
+        }
+        reconcile_transitions = {
+            (VerificationState.EXECUTING, VerificationState.OBSERVED),
+            (VerificationState.UNKNOWN, VerificationState.OBSERVED),
+            (VerificationState.OBSERVED, VerificationState.FINALIZED),
+            (VerificationState.OBSERVED, VerificationState.REJECTED),
+            (VerificationState.OBSERVED, VerificationState.STALE),
+        }
+        permitted = retry_transitions if approval.intent_kind == "retry_original_operation" else reconcile_transitions
+        if command.action != RECOVERY_APPLY_ACTION or (command.expected_state, command.state) not in permitted:
+            raise VerificationDeniedError("recovery intent does not authorize this verification transition")
+        if (attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.EXPIRED}
+                or attempt.lease is None
+                or approval.expected_lease_id != attempt.lease.lease_id
+                or approval.expected_lease_expires_at != attempt.lease.expires_at
+                or approval.expected_source_digest is None
+                or approval.expected_source_digest.hex != row["source_digest"]):
+            raise VerificationDeniedError("recovery approval lease, state, or source binding changed")
+
+        # R01's approval is collected at a fixed authority revision. The first
+        # writer must start there. Later writes in the same recovery chain may
+        # proceed only when the latest event is the immediately linked prior
+        # transition under this exact proof.
+        approval_digest = _recovery_approval_digest(approval)
+        if context.starting_revision == approval.authority_revision:
+            pass
+        elif context.starting_revision > approval.authority_revision:
+            prior = context._connection.execute(
+                "SELECT event_kind, payload_json, actor_id, actor_incarnation_id "
+                "FROM authority_events WHERE semantic_revision = ? ORDER BY event_ordinal DESC LIMIT 1",
+                (context.starting_revision,),
+            ).fetchone()
+            try:
+                previous_payload = json.loads(prior["payload_json"]) if prior is not None else {}
+            except (TypeError, ValueError):
+                previous_payload = {}
+            if (prior is None
+                    or prior["actor_id"] != str(approval.actor.entity_id)
+                    or prior["actor_incarnation_id"] != str(approval.actor.incarnation_id)
+                    or previous_payload.get("action") != str(RECOVERY_APPLY_ACTION)
+                    or previous_payload.get("operation_id") != str(command.operation_id)
+                    or previous_payload.get("attempt_id") != str(attempt.attempt_id)
+                    or previous_payload.get("request_digest") != row["request_digest"]
+                    or previous_payload.get("source_digest") != row["source_digest"]
+                    or previous_payload.get("recovery_intent_kind") != approval.intent_kind
+                    or previous_payload.get("recovery_approval_digest") != approval_digest
+                    or previous_payload.get("state") != command.expected_state):
+                raise VerificationDeniedError("recovery transition is not linked to its immediately preceding approved event")
+        else:
+            raise VerificationDeniedError("recovery approval is from a future authority revision")
+
+        if (approval.host_observation is None
+                or (approval.intent_kind == "retry_original_operation"
+                    and approval.host_observation.source is not SourceSafety.CLEAN)
+                or approval.host_observation.process is not ProcessLiveness.STOPPED
+                or approval.host_observation.children is not ChildActivity.NONE):
+            raise VerificationDeniedError("recovery host observation does not prove stopped, safe execution")
+        if approval.intent_kind == "reconcile_observed_effect" and approval.host_observation.source not in {
+            SourceSafety.CLEAN, SourceSafety.DIRTY,
+        }:
+            raise VerificationDeniedError("observed-effect reconciliation requires a known source state")
+        workspace = _stored_workspace(context._connection, context.project, attempt.ref)
+        attempt_row = context._connection.execute(
+            "SELECT * FROM attempts WHERE attempt_id = ?", (str(attempt.attempt_id),),
+        ).fetchone()
+        try:
+            observation = _check_observation(
+                approval.host_observation, target=attempt.work_item, attempt_ref=attempt.ref,
+                row=attempt_row, workspace=workspace, now=self._now(), max_age=self.max_source_age,
+            )
+        except (AttemptError, TypeError, ValueError) as exc:
+            raise VerificationDeniedError(f"recovery host observation is no longer current: {exc}") from exc
+        if (observation.lease_id != approval.expected_lease_id
+                or observation.observed_lease_expires_at != approval.expected_lease_expires_at
+                or observation.source_digest != approval.expected_source_digest):
+            raise VerificationDeniedError("recovery host observation differs from its approved source and lease")
+
+        try:
+            require_parent_children_resolved(context._connection, attempt.attempt_id)
+        except ValueError as exc:
+            raise VerificationDeniedError("recovery is blocked by an unresolved native child") from exc
+        if context._connection.execute(
+            "SELECT 1 FROM outcome_candidates WHERE attempt_id = ? AND state = 'pending' LIMIT 1",
+            (str(attempt.attempt_id),),
+        ).fetchone() is not None:
+            raise VerificationDeniedError("recovery is blocked by a pending outcome candidate")
+
+        request = _request_from_json(row["request_json"])
+        if (provider_request_digest(request).hex != row["request_digest"]
+                or row["external_digest"] != row["request_digest"]
+                or row["external_idempotency_key"] != str(request.idempotency_key)
+                or request.operation_id != command.operation_id
+                or request.attempt != attempt.ref
+                or request.requirement.entity_id != StableId(row["requirement_id"])
+                or request.requirement.definition_revision_id != StableId(row["requirement_definition_revision_id"])
+                or request.verifier_id != StableId(row["verifier_id"])
+                or request.verifier_version != row["verifier_version"]
+                or request.verifier_id != self.provider_identity.provider_id
+                or request.verifier_version != self.provider_identity.version
+                or request.expected_source.hex != row["source_digest"]
+                or request.contract_digest.hex != row["contract_digest"]
+                or request.context.actor != attempt.actor
+                or request.context.project_id != context.project.project_id
+                or row["work_item_id"] != str(attempt.work_item.entity_id)
+                or row["definition_revision_id"] != str(attempt.work_item.definition_revision_id)):
+            raise VerificationObservationMismatchError("recovery operation no longer matches its immutable authorized request")
+        if (approval.intent_kind == "retry_original_operation"
+                and command.state == VerificationState.EXECUTING):
+            self._validate_recovery_inspection(context, command, request, row)
+        if (command.expected_state == VerificationState.NOT_STARTED
+                and command.state == VerificationState.EXECUTING):
+            if command.recovery_source_json is None:
+                raise VerificationObservationMismatchError("retry requires a fresh exact source observation")
+            self._validate_recovery_source(context, command, request, attempt, row, workspace)
+        elif command.state == VerificationState.EXECUTING and approval.intent_kind == "retry_original_operation":
+            if command.recovery_source_json is None:
+                raise VerificationObservationMismatchError("retry requires a fresh exact source observation")
+            self._validate_recovery_source(context, command, request, attempt, row, workspace)
+        elif command.recovery_source_json is not None:
+            raise VerificationObservationMismatchError("unexpected recovery source observation on this transition")
+
+    def _validate_recovery_inspection(
+        self, context: MutationContext, command: _Transition,
+        request: VerificationRequest, row: sqlite3.Row,
+    ) -> None:
+        try:
+            document = json.loads(command.inspection_json or "")
+            provider_receipt = document["receipt"]
+            provider = provider_receipt["provider"]
+            observed_at = datetime.fromisoformat(provider_receipt["observed_at"])
+            if document.get("state") != VerificationInspectionState.NOT_STARTED.value:
+                raise ValueError("provider operation is not NOT_STARTED")
+            if document.get("original_receipt") is not None:
+                raise ValueError("NOT_STARTED inspection must not contain an execution receipt")
+            expected_context = self.service._context(
+                context.actor, context.authorized_capability_id,
+                command.operation_id, command.target,
+            )
+            correlation = _id(
+                "vrecovery-inspect", f"{command.operation_id}:{command.idempotency_key}",
+            )
+            inspection_request = EffectInspectionRequest(
+                expected_context, command.operation_id, request.idempotency_key,
+                Sha256Digest(row["request_digest"]), correlation,
+            )
+            now = self.service._now()
+            if (provider.get("provider_id") != str(self.service.provider_identity.provider_id)
+                    or provider.get("version") != self.service.provider_identity.version
+                    or provider.get("contract_version") != self.service.provider_identity.contract_version
+                    or provider_receipt.get("correlation_id") != str(correlation)
+                    or provider_receipt.get("request_digest") != provider_request_digest(inspection_request).hex
+                    or provider_receipt.get("provenance_ref") != str(command.operation_id)
+                    or observed_at > now
+                    or now - observed_at.astimezone(timezone.utc) > self.service.max_source_age):
+                raise ValueError("inspection receipt differs from the current exact recovery request")
+            StableId(provider_receipt["receipt_id"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise VerificationObservationMismatchError("retry lacks a fresh exact NOT_STARTED inspection") from exc
+
+    def _validate_recovery_source(
+        self, context: MutationContext, command: _Transition, request: VerificationRequest,
+        attempt, row: sqlite3.Row, workspace: WorkspaceQualification,
+    ) -> None:
+        try:
+            document = json.loads(command.recovery_source_json or "")
+            source = document["source"]
+            receipt = document["receipt"]
+            provider = receipt["provider"]
+            observed_at = datetime.fromisoformat(receipt["observed_at"])
+            if not isinstance(source, dict) or not isinstance(receipt, dict):
+                raise TypeError("source observation and receipt must be objects")
+            expected_request = _source_request(
+                self._context(context.actor, context.authorized_capability_id,
+                              command.operation_id, command.target),
+                attempt.ref, command.target, workspace.workspace_id, request.contract,
+                command.operation_id, "before", request.expected_source,
+            )
+            now = self._now()
+            if (source.get("source_digest") != row["source_digest"]
+                    or source.get("inputs") != json.loads(row["inputs_json"])
+                    or source.get("repository_id") != str(workspace.repository_id)
+                    or source.get("base_digest") != workspace.common_base.digest
+                    or source.get("working_tree") != WorkingTreeState.CLEAN.value
+                    or source.get("source_revision") != json.loads(row["source_receipt_json"])["source"].get("source_revision")
+                    or provider.get("provider_id") != str(self.source_identity.provider_id)
+                    or provider.get("version") != self.source_identity.version
+                    or provider.get("contract_version") != self.source_identity.contract_version
+                    or receipt.get("correlation_id") != str(expected_request.correlation_id)
+                    or receipt.get("request_digest") != provider_request_digest(expected_request).hex
+                    or receipt.get("provenance_ref") != str(workspace.workspace_id)
+                    or observed_at > now
+                    or now - observed_at.astimezone(timezone.utc) > self.max_source_age):
+                raise ValueError("fresh source proof differs from the approved operation source")
+            StableId(receipt["receipt_id"])
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise VerificationObservationMismatchError("fresh recovery source proof is invalid") from exc
+
     @staticmethod
     def _requirement_is_current(connection: sqlite3.Connection, project: Project,
                                 attempt, operation: sqlite3.Row) -> bool:
@@ -988,13 +1318,15 @@ class VerificationService:
         evidence_id: StableId | None = None, stale_reason: str | None = None,
         idempotency_key: StableId | None = None, run: EntityRef | None = None,
         assignment: EntityRef | None = None, expected_revision: int | None = None,
+        recovery_approval: RecoveryApproval | None = None,
+        recovery_source_json: str | None = None,
     ) -> CommandResult:
         command = _Transition(
             action, view.attempt, view.target, view.operation.entity_id, expected_state, state,
             idempotency_key or self._command_key(view.operation.entity_id, phase),
             self._now().isoformat(timespec="microseconds"), run, assignment,
             observation_json, receipt_json, final_source_receipt_json, inspection_json,
-            evidence_id, stale_reason,
+            evidence_id, stale_reason, recovery_approval, recovery_source_json,
         )
         return self.auth.execute(
             authority, bearer_token, command, idempotency_key=command.idempotency_key,
@@ -1137,15 +1469,32 @@ class VerificationService:
     def _start_and_call(self, authority: SQLiteAuthority, bearer_token: str,
                         view: VerificationOperationView, request: VerificationRequest,
                         run: EntityRef | None, assignment: EntityRef | None,
-                        *, idempotency_key: StableId | None = None) -> None:
-        if view.state != VerificationState.PREPARED and view.state != VerificationState.NOT_STARTED:
+                        *, idempotency_key: StableId | None = None,
+                        action: StableId = VERIFY_ACTION,
+                        recovery_approval: RecoveryApproval | None = None,
+                        recovery_source_json: str | None = None,
+                        recovery_inspection_json: str | None = None,
+                        expected_revision: int | None = None) -> None:
+        recovery_retry = (
+            recovery_approval is not None
+            and recovery_approval.intent_kind == "retry_original_operation"
+            and view.state in {
+                VerificationState.EXECUTING, VerificationState.UNKNOWN, VerificationState.NOT_STARTED,
+            }
+        )
+        if (view.state != VerificationState.PREPARED and view.state != VerificationState.NOT_STARTED
+                and not recovery_retry):
             raise VerificationStateError("only a durably prepared or proven-not-started operation may execute")
+        if recovery_approval is not None and recovery_inspection_json is None:
+            raise VerificationObservationMismatchError("recovery retry requires a fresh provider inspection")
         phase_key = (self._command_key(view.operation.entity_id, "executing") if idempotency_key is None
                      else _id("verify-retry", f"{view.operation.entity_id}:{idempotency_key}"))
         started = self._apply_transition(
             authority, bearer_token, view, expected_state=view.state, state=VerificationState.EXECUTING,
-            action=VERIFY_ACTION, phase="executing", idempotency_key=phase_key,
-            run=run, assignment=assignment,
+            action=action, phase="executing", idempotency_key=phase_key,
+            inspection_json=recovery_inspection_json,
+            run=run, assignment=assignment, expected_revision=expected_revision,
+            recovery_approval=recovery_approval, recovery_source_json=recovery_source_json,
         )
         # A replaying caller did not own the durable effect intent. It must
         # never repeat the provider side effect.
@@ -1160,16 +1509,19 @@ class VerificationService:
             self._transition_from_view(authority, bearer_token, current, VerificationState.UNKNOWN,
                                        "provider-raised", inspection_json=_json({
                                            "status": "exception", "reason_type": type(exc).__name__,
-                                       }))
+                                       }), action=action, recovery_approval=recovery_approval)
             return
         if not isinstance(result, ProviderResult):
-            self._mark_unknown(authority, bearer_token, view.operation, "provider returned no typed result")
+            self._mark_unknown(authority, bearer_token, view.operation,
+                               "provider returned no typed result",
+                               action=action, recovery_approval=recovery_approval)
             return
         if result.status in {ProviderStatus.UNKNOWN, ProviderStatus.UNAVAILABLE}:
             self._transition_from_view(
                 authority, bearer_token, self.read_operation(authority, view.operation), VerificationState.UNKNOWN,
                 "provider-unknown", inspection_json=_json({"status": result.status.value,
                     "reason": None if result.reason_code is None else str(result.reason_code)}),
+                action=action, recovery_approval=recovery_approval,
             )
             return
         try:
@@ -1179,34 +1531,42 @@ class VerificationService:
             )
             _receipt_time(receipt, now=self._now(), earliest=view.created_at)
         except VerificationObservationMismatchError as exc:
-            self._mark_unknown(authority, bearer_token, view.operation, str(exc))
+            self._mark_unknown(authority, bearer_token, view.operation, str(exc),
+                               action=action, recovery_approval=recovery_approval)
             return
         if result.status is ProviderStatus.OBSERVED_FAILURE:
             current = self.read_operation(authority, view.operation)
             self._apply_transition(
                 authority, bearer_token, current, expected_state=VerificationState.EXECUTING,
-                state=VerificationState.FAILED, action=VERIFY_ACTION, phase="provider-failed",
+                state=VerificationState.FAILED, action=action, phase="provider-failed",
                 receipt_json=_json(_receipt_value(receipt)), inspection_json=_json({"status": "observed_failure",
                     "reason": str(result.reason_code)}), run=run, assignment=assignment,
+                recovery_approval=recovery_approval,
             )
             return
         observation = result.value
         if not isinstance(observation, VerificationObservation):
-            self._mark_unknown(authority, bearer_token, view.operation, "successful provider result omitted its observation")
+            self._mark_unknown(authority, bearer_token, view.operation,
+                               "successful provider result omitted its observation",
+                               action=action, recovery_approval=recovery_approval)
             return
         try:
             self._validate_observation(observation, request, receipt, authorized_at=view.created_at)
         except VerificationObservationMismatchError as exc:
-            self._mark_unknown(authority, bearer_token, view.operation, str(exc))
+            self._mark_unknown(authority, bearer_token, view.operation, str(exc),
+                               action=action, recovery_approval=recovery_approval)
             return
         current = self.read_operation(authority, view.operation)
         self._apply_transition(
             authority, bearer_token, current, expected_state=VerificationState.EXECUTING,
-            state=VerificationState.OBSERVED, action=VERIFY_ACTION, phase="observed",
+            state=VerificationState.OBSERVED, action=action, phase="observed",
             observation_json=_json(_observation_value(observation)), receipt_json=_json(_receipt_value(receipt)),
-            run=run, assignment=assignment,
+            run=run, assignment=assignment, recovery_approval=recovery_approval,
         )
-        self._finalize_observed(authority, bearer_token, self.read_operation(authority, view.operation), run, assignment)
+        self._finalize_observed(
+            authority, bearer_token, self.read_operation(authority, view.operation), run, assignment,
+            recovery_approval=recovery_approval,
+        )
 
     def _validate_observation(
         self, observation: VerificationObservation, request: VerificationRequest, receipt: ProviderReceipt,
@@ -1244,26 +1604,41 @@ class VerificationService:
                 )
 
     def _mark_unknown(self, authority: SQLiteAuthority, bearer_token: str,
-                      operation_ref: EntityRef, reason: str) -> None:
+                      operation_ref: EntityRef, reason: str, *, action: StableId = VERIFY_ACTION,
+                      recovery_approval: RecoveryApproval | None = None) -> None:
         view = self.read_operation(authority, operation_ref)
         if view.state not in {VerificationState.EXECUTING, VerificationState.UNKNOWN}:
             return
         self._transition_from_view(
             authority, bearer_token, view, VerificationState.UNKNOWN, "unknown",
             inspection_json=_json({"status": "unknown", "reason": reason[:512]}),
+            action=action, recovery_approval=recovery_approval,
         )
 
     def _fresh_source_for_view(
         self, authority: SQLiteAuthority, bearer_token: str, view: VerificationOperationView,
-        phase: str,
+        phase: str, recovery_approval: RecoveryApproval | None = None,
     ) -> tuple[SourceObservation, ProviderReceipt, VerificationRequest, WorkspaceQualification]:
         actor, capability_id = self._actor_and_capability(authority, bearer_token)
         request = self._load_stored_request(authority, view.operation)
         with authority.read_transaction() as connection:
             attempt, _ = _stored_attempt(connection, authority.project, view.attempt)
             workspace = _stored_workspace(connection, authority.project, view.attempt)
-        if actor != attempt.actor:
+        if recovery_approval is None and actor != attempt.actor:
             raise VerificationDeniedError("only the current attempt owner may finalize its verification")
+        if recovery_approval is not None and (
+            not _is_recovery_approval(recovery_approval)
+            or actor != recovery_approval.actor
+            or capability_id != recovery_approval.capability_id
+            or recovery_approval.intent_kind not in {
+                "retry_original_operation", "reconcile_observed_effect",
+            }
+            or recovery_approval.operation != view.operation
+            or recovery_approval.attempt != view.attempt
+            or recovery_approval.target != view.target
+            or recovery_approval.expected_source_digest != view.source_digest
+        ):
+            raise VerificationDeniedError("fresh-source request differs from the approved recovery operation")
         source_request = _source_request(
             self._context(actor, capability_id, view.operation.entity_id, view.target), view.attempt,
             view.target, workspace.workspace_id, request.contract, view.operation.entity_id,
@@ -1275,11 +1650,14 @@ class VerificationService:
     def _finalize_observed(
         self, authority: SQLiteAuthority, bearer_token: str, view: VerificationOperationView,
         run: EntityRef | None = None, assignment: EntityRef | None = None,
+        recovery_approval: RecoveryApproval | None = None,
+        expected_revision: int | None = None,
+        idempotency_key: StableId | None = None,
     ) -> None:
         if view.state != VerificationState.OBSERVED:
             return
         source, source_receipt, request, _workspace = self._fresh_source_for_view(
-            authority, bearer_token, view, "after",
+            authority, bearer_token, view, "after", recovery_approval,
         )
         observation = json.loads(view.observation or "{}") if isinstance(view.observation, str) else dict(view.observation or {})
         expected_inputs = _inputs_value(request.inputs)
@@ -1300,11 +1678,136 @@ class VerificationService:
         evidence_id = _id("evidence", str(view.operation.entity_id))
         self._apply_transition(
             authority, bearer_token, view, expected_state=VerificationState.OBSERVED,
-            state=status, action=VERIFY_ACTION, phase="finalize",
+            state=status,
+            action=VERIFY_ACTION if recovery_approval is None else RECOVERY_APPLY_ACTION,
+            phase="finalize",
             observation_json=_json(observation), receipt_json=_json(dict(view.provider_receipt or {})),
             final_source_receipt_json=_json({"source": _source_value(source), "receipt": _receipt_value(source_receipt)}),
             evidence_id=evidence_id, stale_reason=stale_reason, run=run, assignment=assignment,
+            expected_revision=expected_revision, recovery_approval=recovery_approval,
+            idempotency_key=idempotency_key,
         )
+
+    def recovery_replay(
+        self, authority: SQLiteAuthority, bearer_token: str, operation_ref: EntityRef,
+        intent_kind: str, idempotency_key: StableId, intent_digest: Sha256Digest,
+    ) -> VerificationOperationView | None:
+        """Replay an exact recovery lifecycle receipt before volatile inspection.
+
+        Current recovery.apply authority is checked by ``replay_authorized``;
+        the event must bind the same operation, intent kind, actor, request,
+        and a durable digest of the sealed approval used for its first write.
+        """
+        if intent_kind not in {"retry_original_operation", "reconcile_observed_effect"}:
+            raise ValueError("intent_kind is not a supported verification recovery intent")
+        if not isinstance(idempotency_key, StableId):
+            raise TypeError("idempotency_key must be a StableId")
+        if not isinstance(intent_digest, Sha256Digest):
+            raise TypeError("intent_digest must be a Sha256Digest")
+        view = self.read_operation(authority, operation_ref)
+        with authority.read_transaction() as connection:
+            attempt, _ = _stored_attempt(connection, authority.project, view.attempt)
+        command_key = _id(
+            "verify-retry" if intent_kind == "retry_original_operation" else "verify-reconcile",
+            f"{operation_ref.entity_id}:{idempotency_key}",
+        )
+
+        def matches(_connection: sqlite3.Connection, receipt_row: sqlite3.Row) -> bool:
+            if receipt_row["event_id"] is None or receipt_row["changed"] != 1:
+                return False
+            if not isinstance(receipt_row["payload_json"], str):
+                return False
+            try:
+                payload = json.loads(receipt_row["payload_json"])
+            except (TypeError, ValueError):
+                return False
+            digest = payload.get("recovery_approval_digest")
+            event_kind = receipt_row["event_kind"]
+            return bool(
+                isinstance(event_kind, str) and event_kind.startswith("todo.verification.")
+                and payload.get("action") == str(RECOVERY_APPLY_ACTION)
+                and payload.get("operation_id") == str(operation_ref.entity_id)
+                and payload.get("attempt_id") == str(view.attempt.entity_id)
+                and payload.get("target") == str(view.target.entity_id)
+                and payload.get("request_digest") == view.request_digest.hex
+                and payload.get("source_digest") == view.source_digest.hex
+                and payload.get("recovery_intent_kind") == intent_kind
+                and payload.get("recovery_intent_digest") == intent_digest.hex
+                and isinstance(digest, str) and len(digest) == 64
+                and all(character in "0123456789abcdef" for character in digest)
+            )
+
+        result = self.auth.replay_authorized(
+            authority, bearer_token, command_key,
+            AuthorizationRequirement(RECOVERY_APPLY_ACTION, view.target, attempt.run,
+                                     attempt.assignment, attempt.ref),
+            "todo.verification.transition", matches,
+        )
+        return None if result is None else self.read_operation(authority, operation_ref)
+
+    def _authorize_recovery_call(
+        self, authority: SQLiteAuthority, bearer_token: str, view: VerificationOperationView,
+        attempt, actor: EntityRef, capability_id: StableId,
+        approval: RecoveryApproval | None, intent_kind: str, expected_revision: int | None,
+    ) -> RecoveryApproval:
+        if not _is_recovery_approval(approval):
+            raise VerificationDeniedError("recovery requires a freshly approved inspection intent")
+        assert isinstance(approval, RecoveryApproval)
+        if (approval.intent_kind != intent_kind or approval.actor != actor
+                or approval.capability_id != capability_id
+                or approval.target != view.target or approval.attempt != view.attempt
+                or approval.run != attempt.run or approval.assignment != attempt.assignment
+                or approval.operation != view.operation
+                or approval.authority_revision < 0
+                or expected_revision is not None and expected_revision != approval.authority_revision):
+            raise VerificationDeniedError("recovery approval differs from the authenticated operation intent")
+        self._authorize_read(authority, bearer_token, actor, capability_id, AuthorizationRequirement(
+            RECOVERY_APPLY_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
+        ))
+        with authority.read_transaction() as connection:
+            current, row = _stored_attempt(connection, authority.project, attempt.ref)
+            workspace = _stored_workspace(connection, authority.project, attempt.ref)
+            try:
+                require_parent_children_resolved(connection, attempt.ref.entity_id)
+            except ValueError as exc:
+                raise VerificationDeniedError("recovery is blocked by an unresolved native child") from exc
+            if connection.execute(
+                "SELECT 1 FROM outcome_candidates WHERE attempt_id = ? AND state = 'pending' LIMIT 1",
+                (str(attempt.ref.entity_id),),
+            ).fetchone() is not None:
+                raise VerificationDeniedError("recovery is blocked by a pending outcome candidate")
+            observation = approval.host_observation
+            if (current.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.EXPIRED}
+                    or current.lease is None
+                    or approval.expected_lease_id != current.lease.lease_id
+                    or approval.expected_lease_expires_at != current.lease.expires_at
+                    or observation is None
+                    or observation.source_digest != approval.expected_source_digest
+                    or approval.expected_source_digest != view.source_digest):
+                raise VerificationDeniedError("recovery approval lease or source is no longer current")
+            try:
+                _check_observation(
+                    observation, target=view.target, attempt_ref=view.attempt, row=row,
+                    workspace=workspace, now=self._now(), max_age=self.max_source_age,
+                )
+            except (AttemptError, TypeError, ValueError) as exc:
+                raise VerificationDeniedError(f"recovery host observation is no longer current: {exc}") from exc
+            if (observation.process is not ProcessLiveness.STOPPED
+                    or observation.children is not ChildActivity.NONE
+                    or intent_kind == "retry_original_operation" and observation.source is not SourceSafety.CLEAN
+                    or intent_kind == "reconcile_observed_effect"
+                    and observation.source not in {SourceSafety.CLEAN, SourceSafety.DIRTY}):
+                raise VerificationDeniedError("recovery host observation does not establish the required safe state")
+        request = self._load_stored_request(authority, view.operation)
+        if (request.operation_id != view.operation.entity_id or request.attempt != view.attempt
+                or request.expected_source != approval.expected_source_digest
+                or request.contract_digest != view.contract_digest
+                or request.verifier_id != view.verifier.provider_id
+                or request.verifier_version != view.verifier.version
+                or request.verifier_id != self.provider_identity.provider_id
+                or request.verifier_version != self.provider_identity.version):
+            raise VerificationObservationMismatchError("recovery request differs from its durable operation identity")
+        return approval
 
     @staticmethod
     def _stored_source_value(authority: SQLiteAuthority, operation_ref: EntityRef) -> dict[str, object]:
@@ -1323,18 +1826,48 @@ class VerificationService:
     def reconcile(
         self, authority: SQLiteAuthority, bearer_token: str, operation_ref: EntityRef,
         *, idempotency_key: StableId, expected_revision: int | None = None,
+        _recovery: bool = False, _recovery_approval: RecoveryApproval | None = None,
     ) -> VerificationOperationView:
-        self._check_revision(authority, expected_revision)
+        if type(_recovery) is not bool:
+            raise TypeError("_recovery must be a bool")
+        if not isinstance(idempotency_key, StableId):
+            raise TypeError("idempotency_key must be a StableId")
         transition_key = _id("verify-reconcile", f"{operation_ref.entity_id}:{idempotency_key}")
+        if _recovery:
+            if not _is_recovery_approval(_recovery_approval):
+                raise VerificationDeniedError("recovery reconciliation requires a sealed approval")
+            replay = self.recovery_replay(
+                authority, bearer_token, operation_ref, "reconcile_observed_effect", idempotency_key,
+                _recovery_approval.intent_digest,
+            )
+            if replay is not None:
+                return replay
+            assert isinstance(_recovery_approval, RecoveryApproval)
+            if (expected_revision is not None
+                    and expected_revision != _recovery_approval.authority_revision):
+                raise VerificationDeniedError("expected revision differs from the approved recovery intent")
+            expected_revision = _recovery_approval.authority_revision
+        elif _recovery_approval is not None:
+            raise VerificationDeniedError("recovery approval cannot be supplied without private recovery mode")
+        self._check_revision(authority, expected_revision)
         view = self.read_operation(authority, operation_ref)
         actor, capability_id = self._actor_and_capability(authority, bearer_token)
         with authority.read_transaction() as connection:
             attempt, _ = _stored_attempt(connection, authority.project, view.attempt)
-        if actor != attempt.actor:
-            raise VerificationDeniedError("only the current attempt owner may reconcile verification")
-        self._authorize_read(authority, bearer_token, actor, capability_id, AuthorizationRequirement(
-            VERIFY_RECONCILE_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
-        ))
+        recovery_approval = None
+        action = VERIFY_RECONCILE_ACTION
+        if _recovery:
+            recovery_approval = self._authorize_recovery_call(
+                authority, bearer_token, view, attempt, actor, capability_id,
+                _recovery_approval, "reconcile_observed_effect", expected_revision,
+            )
+            action = RECOVERY_APPLY_ACTION
+        else:
+            if actor != attempt.actor:
+                raise VerificationDeniedError("only the current attempt owner may reconcile verification")
+            self._authorize_read(authority, bearer_token, actor, capability_id, AuthorizationRequirement(
+                VERIFY_RECONCILE_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
+            ))
         with authority.read_transaction() as connection:
             already_reconciled = connection.execute(
                 "SELECT 1 FROM command_idempotency WHERE idempotency_key = ?", (str(transition_key),)
@@ -1342,8 +1875,15 @@ class VerificationService:
         if already_reconciled:
             return self.read_operation(authority, operation_ref)
         if view.state == VerificationState.OBSERVED:
-            self._finalize_observed(authority, bearer_token, view, attempt.run, attempt.assignment)
+            self._finalize_observed(
+                authority, bearer_token, view, attempt.run, attempt.assignment,
+                recovery_approval=recovery_approval,
+                expected_revision=expected_revision if _recovery else None,
+                idempotency_key=transition_key if _recovery else None,
+            )
             return self.read_operation(authority, operation_ref)
+        if _recovery and view.state not in {VerificationState.EXECUTING, VerificationState.UNKNOWN}:
+            raise VerificationStateError("observed-effect recovery requires an unresolved operation, not a retry candidate")
         if view.state not in {VerificationState.EXECUTING, VerificationState.UNKNOWN, VerificationState.NOT_STARTED}:
             return view
         request = self._load_stored_request(authority, operation_ref)
@@ -1360,6 +1900,8 @@ class VerificationService:
         else:
             reason = "provider returned no typed inspection"
         if not isinstance(result, ProviderResult):
+            if _recovery:
+                raise VerificationProviderUnavailableError("recovery provider inspection was unavailable")
             current = self.read_operation(authority, operation_ref)
             self._transition_from_view(authority, bearer_token, current, VerificationState.UNKNOWN,
                 "inspection-unavailable", action=VERIFY_RECONCILE_ACTION,
@@ -1368,6 +1910,8 @@ class VerificationService:
                 inspection_json=_json({"status": "unavailable", "reason": reason[:512]}))
             return self.read_operation(authority, operation_ref)
         if result.status in {ProviderStatus.UNKNOWN, ProviderStatus.UNAVAILABLE}:
+            if _recovery:
+                raise VerificationStateError("recovery inspection did not establish an observed effect")
             current = self.read_operation(authority, operation_ref)
             self._transition_from_view(authority, bearer_token, current, VerificationState.UNKNOWN,
                 "inspection-unknown", action=VERIFY_RECONCILE_ACTION,
@@ -1377,6 +1921,8 @@ class VerificationService:
                     "reason": None if result.reason_code is None else str(result.reason_code)}))
             return self.read_operation(authority, operation_ref)
         if result.status is not ProviderStatus.OBSERVED_SUCCESS:
+            if _recovery:
+                raise VerificationStateError("recovery inspection did not establish an observed effect")
             current = self.read_operation(authority, operation_ref)
             self._transition_from_view(authority, bearer_token, current, VerificationState.UNKNOWN,
                 "inspection-failed", action=VERIFY_RECONCILE_ACTION, idempotency_key=transition_key,
@@ -1398,11 +1944,15 @@ class VerificationService:
         })
         current = self.read_operation(authority, operation_ref)
         if inspection.state is VerificationInspectionState.NOT_STARTED:
+            if _recovery:
+                raise VerificationStateError("recovery observed-effect intent cannot authorize a retry")
             self._transition_from_view(authority, bearer_token, current, VerificationState.NOT_STARTED,
                 "inspection-not-started", action=VERIFY_RECONCILE_ACTION,
                 idempotency_key=transition_key, expected_revision=expected_revision,
                 inspection_json=inspection_json)
         elif inspection.state is VerificationInspectionState.RUNNING:
+            if _recovery:
+                raise VerificationStateError("recovery cannot reconcile a still-running provider operation")
             self._transition_from_view(authority, bearer_token, current, VerificationState.UNKNOWN,
                 "inspection-running", action=VERIFY_RECONCILE_ACTION,
                 idempotency_key=transition_key, expected_revision=expected_revision,
@@ -1421,34 +1971,124 @@ class VerificationService:
             self._validate_observation(observation, request, original_receipt, authorized_at=view.created_at)
             self._transition_from_view(
                 authority, bearer_token, current, VerificationState.OBSERVED, "inspection-completed",
-                action=VERIFY_RECONCILE_ACTION, observation_json=_json(_observation_value(observation)),
+                action=action, observation_json=_json(_observation_value(observation)),
                 idempotency_key=transition_key,
-                expected_revision=expected_revision,
+                expected_revision=expected_revision if _recovery else expected_revision,
                 receipt_json=_json(_receipt_value(original_receipt)), inspection_json=inspection_json,
+                recovery_approval=recovery_approval,
             )
             self._finalize_observed(authority, bearer_token, self.read_operation(authority, operation_ref),
-                                    attempt.run, attempt.assignment)
+                                    attempt.run, attempt.assignment,
+                                    recovery_approval=recovery_approval)
         return self.read_operation(authority, operation_ref)
 
     def retry_not_started(
         self, authority: SQLiteAuthority, bearer_token: str, operation_ref: EntityRef,
         *, idempotency_key: StableId, expected_revision: int | None = None,
+        _recovery: bool = False, _recovery_approval: RecoveryApproval | None = None,
     ) -> VerificationOperationView:
+        if type(_recovery) is not bool:
+            raise TypeError("_recovery must be a bool")
+        if not isinstance(idempotency_key, StableId):
+            raise TypeError("idempotency_key must be a StableId")
+        if _recovery:
+            if not _is_recovery_approval(_recovery_approval):
+                raise VerificationDeniedError("recovery retry requires a sealed approval")
+            replay = self.recovery_replay(
+                authority, bearer_token, operation_ref, "retry_original_operation", idempotency_key,
+                _recovery_approval.intent_digest,
+            )
+            if replay is not None:
+                return replay
+            assert isinstance(_recovery_approval, RecoveryApproval)
+            if (expected_revision is not None
+                    and expected_revision != _recovery_approval.authority_revision):
+                raise VerificationDeniedError("expected revision differs from the approved recovery intent")
+            expected_revision = _recovery_approval.authority_revision
+        elif _recovery_approval is not None:
+            raise VerificationDeniedError("recovery approval cannot be supplied without private recovery mode")
         self._check_revision(authority, expected_revision)
         view = self.read_operation(authority, operation_ref)
-        if view.state != VerificationState.NOT_STARTED:
+        if (_recovery and view.state not in {
+                VerificationState.EXECUTING, VerificationState.UNKNOWN, VerificationState.NOT_STARTED,
+        }) or (not _recovery and view.state != VerificationState.NOT_STARTED):
             raise VerificationStateError("retry requires a provider inspection proving NOT_STARTED")
         actor, capability_id = self._actor_and_capability(authority, bearer_token)
         with authority.read_transaction() as connection:
             attempt, _ = _stored_attempt(connection, authority.project, view.attempt)
-        if actor != attempt.actor:
-            raise VerificationDeniedError("only the current attempt owner may retry verification")
-        self._authorize_read(authority, bearer_token, actor, capability_id, AuthorizationRequirement(
-            VERIFY_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
-        ))
+        recovery_approval = None
+        action = VERIFY_ACTION
+        source_json = None
+        if _recovery:
+            recovery_approval = self._authorize_recovery_call(
+                authority, bearer_token, view, attempt, actor, capability_id,
+                _recovery_approval, "retry_original_operation", expected_revision,
+            )
+            action = RECOVERY_APPLY_ACTION
+        else:
+            if actor != attempt.actor:
+                raise VerificationDeniedError("only the current attempt owner may retry verification")
+            self._authorize_read(authority, bearer_token, actor, capability_id, AuthorizationRequirement(
+                VERIFY_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
+            ))
         request = self._load_stored_request(authority, operation_ref)
+        recovery_inspection_json = None
+        retry_key = None
+        if _recovery:
+            retry_key = _id("verify-retry", f"{view.operation.entity_id}:{idempotency_key}")
+            inspection_request = EffectInspectionRequest(
+                self._context(actor, capability_id, view.operation.entity_id, view.target),
+                view.operation.entity_id, request.idempotency_key, view.request_digest,
+                _id("vrecovery-inspect", f"{view.operation.entity_id}:{retry_key}"),
+            )
+            try:
+                inspection_result = self.provider.inspect(inspection_request)
+            except Exception as exc:
+                raise VerificationProviderUnavailableError(
+                    f"recovery provider inspection failed: {type(exc).__name__}"
+                ) from exc
+            if (not isinstance(inspection_result, ProviderResult)
+                    or inspection_result.status is not ProviderStatus.OBSERVED_SUCCESS
+                    or not isinstance(inspection_result.value, VerificationInspection)
+                    or inspection_result.value.operation_id != view.operation.entity_id
+                    or inspection_result.value.state is not VerificationInspectionState.NOT_STARTED
+                    or inspection_result.value.original_receipt is not None):
+                raise VerificationStateError("recovery retry requires a fresh exact NOT_STARTED provider inspection")
+            inspection_receipt = _provider_result_receipt(
+                inspection_result, self.provider_identity, inspection_request.correlation_id,
+                provider_request_digest(inspection_request), view.operation.entity_id,
+            )
+            _receipt_time(inspection_receipt, now=self._now(), earliest=view.created_at)
+            if self._now() - inspection_receipt.observed_at.astimezone(timezone.utc) > self.max_source_age:
+                raise VerificationObservationMismatchError("recovery provider inspection receipt is stale")
+            recovery_inspection_json = _json({
+                "state": VerificationInspectionState.NOT_STARTED.value,
+                "receipt": _receipt_value(inspection_receipt),
+                "original_receipt": None,
+            })
+            source, source_receipt, _request, workspace = self._fresh_source_for_view(
+                authority, bearer_token, view, "before", recovery_approval,
+            )
+            initial_source = self._stored_source_value(authority, operation_ref)
+            if (source.source_digest != request.expected_source
+                    or _inputs_value(source.inputs) != _inputs_value(request.inputs)
+                    or source.working_tree is not WorkingTreeState.CLEAN
+                    or str(source.repository_id) != initial_source["repository_id"]
+                    or source.base_digest is None):
+                raise VerificationObservationMismatchError("fresh recovery source differs from the original operation")
+            if (source.base_digest.hex != initial_source["base_digest"]
+                    or (None if source.source_revision is None else str(source.source_revision))
+                    != initial_source["source_revision"]
+                    or source.source_digest.hex != recovery_approval.expected_source_digest.hex):
+                raise VerificationObservationMismatchError("fresh recovery source differs from the approved source intent")
+            _receipt_time(source_receipt, now=self._now(), earliest=self._now() - self.max_source_age)
+            source_json = _json({"source": _source_value(source), "receipt": _receipt_value(source_receipt)})
         self._start_and_call(authority, bearer_token, view, request, attempt.run, attempt.assignment,
-                             idempotency_key=idempotency_key)
+                             idempotency_key=idempotency_key, action=action,
+                             recovery_approval=recovery_approval,
+                             recovery_source_json=source_json,
+                             recovery_inspection_json=recovery_inspection_json,
+                             expected_revision=expected_revision if _recovery else None)
         return self.read_operation(authority, operation_ref)
 
     def _effect_inspection_value(self, request: EffectInspectionRequest, receipt: ProviderReceipt,

@@ -22,7 +22,20 @@ from uuid import uuid4
 from todo_orchestrator.contracts import (
     ActorKind, Capability, EntityKind, EntityRef, Project, StableId,
 )
-from todo_orchestrator.model import CommandEffect, CommandEnvelope, CommandResult
+from todo_orchestrator.model import (
+    CHILD_CANDIDATE_SUBMIT_ACTION,
+    CHILD_CANCEL_ACTION,
+    CHILD_DELEGATE_ACTION,
+    CHILD_READ_ACTION,
+    CHILD_REVIEW_ACTION,
+    CHILD_RETRY_ACTION,
+    CHILD_STOP_RECONCILE_ACTION,
+    CHILD_WRITE_ACTION,
+    CHILD_WORKER_ACTIONS,
+    CommandEffect,
+    CommandEnvelope,
+    CommandResult,
+)
 
 from .commands import (
     CommandDispatcher,
@@ -45,6 +58,8 @@ _ATTEMPT_SESSION_ACTIONS = frozenset({
 CONTEXT_READ_ACTION = StableId("todo.context.read")
 CONTEXT_FINDING_PUBLISH_ACTION = StableId("todo.context.finding.publish")
 CONTEXT_FINDING_INVALIDATE_ACTION = StableId("todo.context.finding.invalidate")
+RECOVERY_INSPECT_ACTION = StableId("todo.recovery.inspect")
+RECOVERY_APPLY_ACTION = StableId("todo.recovery.apply")
 _ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
     StableId("todo.verification.execute"), StableId("todo.verification.reconcile"),
     StableId("todo.outcome.report"),
@@ -53,6 +68,10 @@ _ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
     StableId("todo.message.send"), StableId("todo.message.read"),
     StableId("todo.question.answer"),
     CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION, CONTEXT_FINDING_INVALIDATE_ACTION,
+    RECOVERY_INSPECT_ACTION, RECOVERY_APPLY_ACTION,
+    CHILD_DELEGATE_ACTION, CHILD_RETRY_ACTION, CHILD_REVIEW_ACTION, CHILD_CANCEL_ACTION,
+    CHILD_STOP_RECONCILE_ACTION, CHILD_READ_ACTION, CHILD_WRITE_ACTION,
+    CHILD_CANDIDATE_SUBMIT_ACTION,
 })
 
 
@@ -940,6 +959,110 @@ class AuthorityAuthService:
         return changed
 
     @staticmethod
+    def _renew_child_execution_capability_expiries_in_transaction(
+        context: MutationContext,
+        *,
+        attempt_id: StableId,
+        expected_scope: EntityRef,
+        expected_run: EntityRef | None,
+        expected_assignment: EntityRef | None,
+        expected_attempt: EntityRef,
+        expires_at: datetime,
+        now: datetime,
+    ) -> int:
+        """Renew still-live child grants only while their exact parent attempt renews.
+
+        Expired, revoked, cancelled, candidate, stopped, or foreign-incarnation
+        grants are never revived. Each child's immutable stored target/context
+        and action ceiling are checked before extending its bounded expiry.
+        """
+        if (not isinstance(context, MutationContext) or not isinstance(attempt_id, StableId)
+                or not isinstance(expected_scope, EntityRef) or not isinstance(expected_attempt, EntityRef)
+                or expected_attempt.kind is not EntityKind.ATTEMPT):
+            raise TypeError("active context and exact child-parent identity are required")
+        expires_at = _aware(expires_at, "child grant expiry")
+        now = _aware(now, "current time")
+        rows = context._connection.execute(
+            "SELECT execution.execution_id, execution.work_item_id, execution.definition_revision_id, "
+            "execution.child_actor_id, execution.child_incarnation_id, execution.actions_json, "
+            "execution.actions_digest, execution.state, capability.* "
+            "FROM child_executions AS execution JOIN capabilities AS capability USING(capability_id) "
+            "WHERE execution.parent_attempt_id = ? AND execution.state = 'active' "
+            "ORDER BY execution.execution_id",
+            (str(attempt_id),),
+        ).fetchall()
+        changed = 0
+        for row in rows:
+            if (row["work_item_id"] != str(expected_scope.entity_id)
+                    or row["definition_revision_id"] != str(expected_scope.definition_revision_id)
+                    or row["attempt_id"] != str(expected_attempt.entity_id)
+                    or row["run_id"] != (None if expected_run is None else str(expected_run.entity_id))
+                    or row["assignment_id"] != (None if expected_assignment is None else str(expected_assignment.entity_id))
+                    or row["actor_id"] != row["child_actor_id"]
+                    or row["actor_incarnation_id"] != row["child_incarnation_id"]
+                    or row["revoked"] or row["expires_at"] is None):
+                continue
+            current = datetime.fromisoformat(row["expires_at"])
+            if current <= now:
+                continue
+            if (row["scope_kind"] != EntityKind.WORK_ITEM.value
+                    or row["scope_entity_id"] != row["work_item_id"]
+                    or row["scope_definition_revision_id"] != row["definition_revision_id"]
+                    or row["scope_incarnation_id"] is not None):
+                continue
+            try:
+                actions_json = row["actions_json"]
+                if hashlib.sha256(actions_json.encode("utf-8")).hexdigest() != row["actions_digest"]:
+                    continue
+                action_values = json.loads(actions_json)
+                actions = tuple(StableId(item) for item in action_values)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                continue
+            if (len(set(actions)) != len(actions) or not actions
+                    or not set(actions).issubset(set(CHILD_WORKER_ACTIONS))
+                    or set(_stored_actions(context._connection, StableId(row["capability_id"]))) != set(actions)):
+                continue
+
+            lineage_expiry = expires_at
+            parent_id = row["parent_capability_id"]
+            lineage_valid = True
+            direct_parent = True
+            seen = {StableId(row["capability_id"])}
+            while parent_id is not None:
+                parent_ref = StableId(parent_id)
+                if parent_ref in seen or len(seen) >= 64:
+                    lineage_valid = False
+                    break
+                seen.add(parent_ref)
+                parent = _stored_capability(context._connection, parent_ref)
+                if (parent is None or parent["revoked"]
+                        or (direct_parent and (
+                            parent["actor_id"] != str(context.actor.entity_id)
+                            or parent["actor_incarnation_id"] != str(context.actor.incarnation_id)
+                        ))):
+                    lineage_valid = False
+                    break
+                if parent["expires_at"] is not None:
+                    parent_expiry = datetime.fromisoformat(parent["expires_at"])
+                    if parent_expiry <= now:
+                        lineage_valid = False
+                        break
+                    lineage_expiry = min(lineage_expiry, parent_expiry)
+                parent_id = parent["parent_capability_id"]
+                direct_parent = False
+            if not lineage_valid:
+                continue
+            bounded = min(expires_at, lineage_expiry)
+            if bounded <= current:
+                continue
+            changed += context.execute(
+                "UPDATE capabilities SET expires_at = ? WHERE capability_id = ? "
+                "AND expires_at = ? AND revoked = 0",
+                (_iso(bounded), row["capability_id"], row["expires_at"]),
+            ).rowcount
+        return changed
+
+    @staticmethod
     def _revoke_attempt_capability_families_in_transaction(
         context: MutationContext, attempt_id: StableId
     ) -> int:
@@ -960,6 +1083,26 @@ class AuthorityAuthService:
         )
         return context._connection.total_changes - before
 
+    @staticmethod
+    def _revoke_capability_family_in_transaction(
+        context: MutationContext,
+        capability_id: StableId,
+    ) -> int:
+        """Revoke one capability and every descendant in its lineage."""
+        if not isinstance(context, MutationContext) or not isinstance(capability_id, StableId):
+            raise TypeError("active mutation context and capability ID are required")
+        before = context._connection.total_changes
+        context.execute(
+            "WITH RECURSIVE descendants(capability_id) AS ("
+            " SELECT capability_id FROM capabilities WHERE capability_id = ?"
+            " UNION SELECT child.capability_id FROM capabilities AS child"
+            " JOIN descendants AS parent ON child.parent_capability_id = parent.capability_id)"
+            " UPDATE capabilities SET revoked = 1 WHERE revoked = 0"
+            " AND capability_id IN (SELECT capability_id FROM descendants)",
+            (str(capability_id),),
+        )
+        return context._connection.total_changes - before
+
     def execute(self, authority: SQLiteAuthority, bearer_token: str, command: object, *,
                 idempotency_key: StableId, expected_revision: int | None = None) -> CommandResult:
         """Dispatch a registered command under its trusted handler-derived requirement."""
@@ -969,14 +1112,14 @@ class AuthorityAuthService:
                                    self._revision(authority, expected_revision), actor)
 
         def check(connection: sqlite3.Connection, snapshot: object, handler: object,
-                  current_actor: EntityRef) -> None:
+                  current_actor: EntityRef) -> StableId:
             method = getattr(handler, "authorization_requirement", None)
             if not callable(method):
                 raise CapabilityDeniedError("command handler does not declare an authorization requirement")
             requirement = method(snapshot)
             if not isinstance(requirement, AuthorizationRequirement):
                 raise CapabilityDeniedError("command handler returned an invalid authorization requirement")
-            self._authorize_capability(connection, authority.project, digest, current_actor, requirement)
+            return self._authorize_capability(connection, authority.project, digest, current_actor, requirement)
 
         return self.dispatcher._execute_authorized(authority, envelope, check)
 
@@ -1141,4 +1284,5 @@ __all__ = [
     "AuthorityAuthService", "CapabilityDeliveryUncertainError", "CapabilityDeniedError",
     "IssuedCapability", "LOCAL_OWNER_SCRYPT_N", "LOCAL_OWNER_SCRYPT_P", "LOCAL_OWNER_SCRYPT_R",
     "OwnerAlreadyEnrolledError", "OwnerEnrollmentNotAllowedError", "PrincipalAuthenticator",
+    "RECOVERY_APPLY_ACTION", "RECOVERY_INSPECT_ACTION",
 ]

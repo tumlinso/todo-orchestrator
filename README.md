@@ -11,7 +11,7 @@ Development has begun from the preserved bootstrap package. The Python library p
 
 The [standalone development plan](planning/standalone-v1/README.md) tracks 32 deliverables. Project Control integration, cutover, and optional legacy import are excluded. The active Project Control instance, its other tools, the original implementation, and legacy authorities stay unchanged. Only this repository's development Todo authority is used for task tracking; its tracked snapshots and Markdown task files are generated projections.
 
-See the [source baseline](docs/product/reference-baseline.md), [domain model](docs/architecture/domain-model.md), [provider boundary](docs/architecture/provider-contracts.md), [worker context](docs/architecture/worker-context.md), and [SQLite policy](src/todo_orchestrator/authority/README.md). Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review.
+See the [source baseline](docs/product/reference-baseline.md), [domain model](docs/architecture/domain-model.md), [provider boundary](docs/architecture/provider-contracts.md), [worker context](docs/architecture/worker-context.md), [child execution](docs/architecture/child-execution.md), [recovery inspection](docs/architecture/recovery-inspection.md), [recovery transitions](docs/architecture/recovery-transitions.md), and [SQLite policy](src/todo_orchestrator/authority/README.md). Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review.
 
 Python 3.11+ is required; there are no runtime dependencies. The initial `todo` CLI provides help and version only. Run it from source without importing a preinstalled legacy Todo package:
 
@@ -34,6 +34,6 @@ PYTHONPATH=src python -S -m unittest discover -s tests/smoke -t tests -v
 
 Package tests require locally installed pip and setuptools 68+ for an offline wheel build. They build and install only into temporary directories, then verify the installed module paths with site packages disabled. SQLite and Git smoke fixtures also use temporary directories; Git must be available to run its fixture test. For an editable development installation, use a fresh repository-local virtual environment; never install into the active Project Control runtime.
 
-SQLite initialization currently requires a POSIX filesystem supporting hard links and directory synchronization. Schema v18 is the only supported version; reopening accepts v18, while the migration entry point rejects unsupported versions without rewriting them. There is no migration path for v1-v17. Runtime tests use disposable databases, never this repository's development Todo authority.
+SQLite initialization currently requires a POSIX filesystem supporting hard links and directory synchronization. Schema v19 is the only supported version; reopening accepts v19, while the migration entry point rejects unsupported versions without rewriting them. There is no migration path for v1-v18. Runtime tests use disposable databases, never this repository's development Todo authority.
 
 The optional `python scripts/check_reference_baseline.py --verify-external` checks the captured original source/test fingerprints read-only. These checks cover baseline integrity, value contracts, package isolation, and storage behavior. They do not qualify a complete workflow runtime or power-loss recovery.

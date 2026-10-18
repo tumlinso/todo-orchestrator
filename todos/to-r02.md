@@ -3,14 +3,14 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-R02: Apply safe and auditable recovery transitions
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `154`; current project revision is in `todo-status.md`.
 
 ## Objective
 Prepare approved recovery actions, revalidate the exact authority inside the mutation transaction, and preserve state, workspaces and tokens that cannot be safely revoked.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `in_progress`
+- Execution: `claimed`
 - Parallel policy: `serial`
 - Result: `-`
 

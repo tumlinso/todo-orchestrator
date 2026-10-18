@@ -1,4 +1,4 @@
-# SQLite authority v18
+# SQLite authority v19
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v18 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v18
+Schema v19 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v19
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -48,7 +48,7 @@ Reusing an exact definition reference requires identical bundle bytes, digest,
 and normalized projections. Snapshot, membership, and definition corruption
 fails closed; the reader does not repair or infer missing authority state.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v18
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v19
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -74,10 +74,10 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v18 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v17 or any other unsupported version
+Schema v19 is the only implemented version. `migrate()` is an explicit current
+version no-op and rejects schema v1 through v18 or any other unsupported version
 without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v17 migration is provided. A future migration must preserve
+be recreated; no v1-v18 migration is provided. A future migration must preserve
 definition identity and full accepted-snapshot meaning; it cannot infer mixed
 membership from matching revision IDs.
 
@@ -119,13 +119,19 @@ unbound partition, while allowing same-run participants with different
 assignments or attempts to share the run's message stream. Recipients still
 need a current capability for the exact scope and their own context; delivery
 does not grant rights.
-Schema v18 adds append-only contextual finding versions and invalidation events.
+Schema v18 added append-only contextual finding versions and invalidation events.
 Derived context capsules are recomputed from accepted plans and current facts;
 they are not persisted. Readers need an explicit `todo.context.read` grant for
 the exact work and optional run context. Finding publication and invalidation
 use separate action grants and store the current source-manifest digest with
-typed fragment references. Existing v1-v17 fixtures are rejected; this alpha
-has no migration path.
+typed fragment references. At that schema version, v1-v17 fixtures were
+rejected without a migration path.
+
+Schema v19 adds durable child-execution records, immutable candidate and review
+records, cancellation requests, and fresh stop observations. Child execution
+authority is bound to an exact parent attempt, target definition, actor
+incarnation, scope, and action set. These records preserve logical retry
+identity and native occupancy independently of host-reported child activity.
 For a future supported migration, first validate the source identity/version
 read-only, create a non-overwriting adjacent backup with SQLite's online backup
 API, and apply the versioned DDL in one transaction with the version marker

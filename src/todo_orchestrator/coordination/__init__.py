@@ -29,6 +29,11 @@ __all__ = [
     "ContextStaleError", "ContextUnavailableError", "DEFAULT_CONTEXT_MAX_BYTES",
     "MAX_CONTEXT_MAX_BYTES", "MIN_CONTEXT_MAX_BYTES", "serialize_context_capsule",
     "serialize_context_expansion",
+    "CHILD_CANDIDATE_SUBMIT_ACTION", "CHILD_CANCEL_ACTION", "CHILD_DELEGATE_ACTION",
+    "CHILD_READ_ACTION", "CHILD_REVIEW_ACTION", "CHILD_RETRY_ACTION",
+    "CHILD_STOP_RECONCILE_ACTION", "CHILD_WORKER_ACTIONS", "CHILD_WRITE_ACTION",
+    "ChildExecutionDeniedError", "ChildExecutionError", "ChildExecutionNotFoundError",
+    "ChildExecutionObservationError", "ChildExecutionService", "ChildExecutionStateError",
 ]
 
 
@@ -61,4 +66,14 @@ def __getattr__(name: str):
         from . import messaging
 
         return getattr(messaging, name)
+    if name in {
+        "CHILD_CANDIDATE_SUBMIT_ACTION", "CHILD_CANCEL_ACTION", "CHILD_DELEGATE_ACTION",
+        "CHILD_READ_ACTION", "CHILD_REVIEW_ACTION", "CHILD_RETRY_ACTION",
+        "CHILD_STOP_RECONCILE_ACTION", "CHILD_WORKER_ACTIONS", "CHILD_WRITE_ACTION",
+        "ChildExecutionDeniedError", "ChildExecutionError", "ChildExecutionNotFoundError",
+        "ChildExecutionObservationError", "ChildExecutionService", "ChildExecutionStateError",
+    }:
+        from . import children
+
+        return getattr(children, name)
     raise AttributeError(name)

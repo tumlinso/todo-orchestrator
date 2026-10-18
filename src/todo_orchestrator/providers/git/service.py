@@ -18,7 +18,13 @@ from typing import Callable, Mapping
 from todo_orchestrator.authority.auth import (
     AuthorizationRequirement,
     AuthorityAuthService,
+    RECOVERY_APPLY_ACTION,
     _token_digest,
+)
+from todo_orchestrator.authority.recovery_approval import (
+    RecoveryApproval,
+    _is_recovery_approval,
+    _recovery_approval_digest,
 )
 from todo_orchestrator.authority.commands import (
     DuplicateCommandHandlerError,
@@ -147,6 +153,7 @@ class _Transition:
     observation_json: str | None
     provider_receipt_json: str | None
     updated_at: str
+    recovery_approval: RecoveryApproval | None = None
 
 
 def _iso(value: datetime) -> str:
@@ -800,6 +807,10 @@ class _TransitionHandler:
 
     def authorization_requirement(self, command: _Transition) -> AuthorizationRequirement:
         request, _ = _intent_from(command.intent_json)
+        if command.recovery_approval is not None:
+            return AuthorizationRequirement(
+                RECOVERY_APPLY_ACTION, request.target, request.run, request.assignment, request.attempt,
+            )
         if command.observation_json is not None:
             try:
                 payload = json.loads(command.observation_json)
@@ -815,6 +826,8 @@ class _TransitionHandler:
             "expected_state": command.expected_state, "next_state": command.next_state,
             "observation_json": command.observation_json,
             "provider_receipt_json": command.provider_receipt_json, "updated_at": command.updated_at,
+            "recovery_approval_digest": None if command.recovery_approval is None else
+                _recovery_approval_digest(command.recovery_approval),
         }
 
     def apply(self, context: MutationContext, command: _Transition) -> CommandEffect:
@@ -833,6 +846,77 @@ class _TransitionHandler:
             raise GitEffectStateError(
                 f"Git operation is {current['state']}, expected {command.expected_state}"
             )
+        approval = command.recovery_approval
+        approval_digest = None
+        if approval is not None:
+            if not _is_recovery_approval(approval):
+                raise GitEffectDeniedError("recovery transition requires a freshly approved intent")
+            approval_digest = _recovery_approval_digest(approval)
+            if (context.authorized_capability_id != approval.capability_id
+                    or context.actor != approval.actor
+                    or approval.authority_revision > context.starting_revision
+                    or approval.intent_kind not in {"retry_original_operation", "reconcile_observed_effect"}
+                    or approval.target != request.target
+                    or approval.attempt != request.attempt
+                    or approval.run != request.run
+                    or approval.assignment != request.assignment
+                    or approval.operation != EntityRef(
+                        context.project.project_id, EntityKind.EXTERNAL_OPERATION, command.operation_id,
+                    )
+                    or approval.expected_source_digest != request.expected_source):
+                raise GitEffectDeniedError("recovery approval no longer matches the authenticated Git operation")
+            same_revision = approval.authority_revision == context.starting_revision
+            prior_start = False
+            if not same_revision:
+                rows = context._connection.execute(
+                    "SELECT payload_json FROM authority_events WHERE event_kind = 'todo.git.effect.executing' "
+                    "AND semantic_revision > ? ORDER BY semantic_revision DESC LIMIT 64",
+                    (approval.authority_revision,),
+                ).fetchall()
+                for event in rows:
+                    try:
+                        payload = json.loads(event["payload_json"])
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        continue
+                    if (payload.get("operation_id") == str(command.operation_id)
+                            and payload.get("recovery_approval_digest") == approval_digest):
+                        prior_start = True
+                        break
+            if not same_revision and not prior_start:
+                raise GitEffectDeniedError("recovery approval is stale for this Git transition")
+            if request.attempt is not None:
+                attempt, attempt_row = _stored_attempt(context._connection, context.project, request.attempt)
+                if (approval.expected_lease_id != (None if attempt.lease is None else attempt.lease.lease_id)
+                        or approval.expected_lease_expires_at != (
+                            None if attempt.lease is None else attempt.lease.expires_at
+                        )):
+                    raise GitEffectDeniedError("recovery attempt lease changed before the Git transition")
+                from todo_orchestrator.authority.child_store import require_parent_children_resolved
+                try:
+                    require_parent_children_resolved(context._connection, attempt.attempt_id)
+                except ValueError as exc:
+                    raise GitEffectDeniedError("native child execution still blocks Git recovery") from exc
+                if context._connection.execute(
+                    "SELECT 1 FROM outcome_candidates WHERE attempt_id = ? AND state = 'pending' LIMIT 1",
+                    (str(attempt.attempt_id),),
+                ).fetchone() is not None:
+                    raise GitEffectDeniedError("pending outcome review blocks Git recovery")
+                if approval.host_observation is not None:
+                    host = approval.host_observation
+                    if (host.attempt != attempt.ref or host.lease_id != approval.expected_lease_id
+                            or host.observed_lease_expires_at != approval.expected_lease_expires_at
+                            or host.observed_state is not attempt.state
+                            or attempt_row["work_item_id"] != str(approval.target.entity_id)):
+                        raise GitEffectDeniedError("recovery host proof differs from the stored attempt")
+            if command.next_state == GitEffectState.EXECUTING.value:
+                if (approval.intent_kind != "retry_original_operation"
+                        or command.expected_state != GitEffectState.NOT_APPLIED.value
+                        or not same_revision):
+                    raise GitEffectDeniedError("recovery retry must start from the approved NOT_APPLIED revision")
+            elif approval.intent_kind == "retry_original_operation" and not prior_start:
+                raise GitEffectDeniedError("Git retry result has no matching approved start event")
+            elif approval.intent_kind == "reconcile_observed_effect" and command.next_state == GitEffectState.EXECUTING.value:
+                raise GitEffectDeniedError("observed-effect reconciliation cannot start a new Git effect")
         if request.operation is GitOperationKind.INTEGRATE:
             _accepted_identity(context._connection, context.project, request, self.service.source_identity)
         if command.next_state == GitEffectState.EXECUTING.value:
@@ -857,6 +941,10 @@ class _TransitionHandler:
                                  "todo.git.effect.executing", {
                                      "operation_id": str(command.operation_id), "request_digest": current["request_digest"],
                                      "retry": command.expected_state == GitEffectState.NOT_APPLIED.value,
+                                     "recovery_approval_digest": approval_digest,
+                                     "recovery_intent_digest": None if approval is None
+                                         else approval.intent_digest.hex,
+                                     "recovery_intent_kind": None if approval is None else approval.intent_kind,
                                  })
 
         if command.next_state not in {state.value for state in GitEffectState} - {
@@ -1012,6 +1100,10 @@ class _TransitionHandler:
                                  "operation_id": str(command.operation_id), "request_digest": current["request_digest"],
                                  "state": command.next_state, "disposition": disposition,
                                  "receipt_digest": receipt_digest,
+                                 "recovery_approval_digest": approval_digest,
+                                 "recovery_intent_digest": None if approval is None
+                                     else approval.intent_digest.hex,
+                                 "recovery_intent_kind": None if approval is None else approval.intent_kind,
                              })
 
 
@@ -1113,7 +1205,8 @@ class GitEffectService:
         ) if view.state in {GitEffectState.PREPARED, GitEffectState.EXECUTING, GitEffectState.UNKNOWN} else view
 
     def _phase_replay(self, authority: SQLiteAuthority, bearer_token: str, request: GitEffectRequest,
-                      phase: str, *, requirement: AuthorizationRequirement | None = None) -> CommandResult | None:
+                      phase: str, *, requirement: AuthorizationRequirement | None = None,
+                      recovery_approval: RecoveryApproval | None = None) -> CommandResult | None:
         key = _phase_key(request.operation_id, phase)
 
         def matches(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
@@ -1128,6 +1221,10 @@ class GitEffectService:
                 and isinstance(payload, dict)
                 and payload.get("operation_id") == str(request.operation_id)
                 and payload.get("request_digest") == provider_request_digest(request).hex
+                and (recovery_approval is None or (
+                    payload.get("recovery_approval_digest") == _recovery_approval_digest(recovery_approval)
+                    and payload.get("recovery_intent_kind") == recovery_approval.intent_kind
+                ))
             )
 
         return self.auth.replay_authorized(
@@ -1380,11 +1477,12 @@ class GitEffectService:
     def _transition(self, authority: SQLiteAuthority, bearer_token: str, request: GitEffectRequest,
                     intent_json: str, expected_state: GitEffectState, next_state: GitEffectState, *,
                     phase: str, expected_revision: int | None,
-                    observation_json: str | None = None, provider_receipt_json: str | None = None) -> CommandResult:
+                    observation_json: str | None = None, provider_receipt_json: str | None = None,
+                    recovery_approval: RecoveryApproval | None = None) -> CommandResult:
         return self.auth.execute(
             authority, bearer_token,
             _Transition(request.operation_id, intent_json, expected_state.value, next_state.value,
-                        observation_json, provider_receipt_json, _iso(_now(self.clock))),
+                        observation_json, provider_receipt_json, _iso(_now(self.clock)), recovery_approval),
             idempotency_key=_phase_key(request.operation_id, phase), expected_revision=expected_revision,
         )
 
@@ -1476,7 +1574,8 @@ class GitEffectService:
                                intent_json: str, result: ProviderResult[GitEffectObservation], *,
                                expected_revision: int | None, phase: str,
                                inspection_correlation: StableId | None = None,
-                               inspection_request: EffectInspectionRequest | None = None) -> GitEffectOperationView:
+                               inspection_request: EffectInspectionRequest | None = None,
+                               recovery_approval: RecoveryApproval | None = None) -> GitEffectOperationView:
         correlation = inspection_correlation or request.operation_id
         current = self._view(authority, request.operation_id)
         state, observation_json, receipt_json = self._provider_payload(
@@ -1491,18 +1590,24 @@ class GitEffectService:
             final = GitEffectState.FINALIZED
         else:
             final = state
-        phase_key = phase + ":" + _digest(observation_json)[:32]
+        phase_key = (phase if recovery_approval is not None
+                     else phase + ":" + _digest(observation_json)[:32])
         replay_requirement = (
+            AuthorizationRequirement(RECOVERY_APPLY_ACTION, request.target, request.run,
+                                     request.assignment, request.attempt)
+            if recovery_approval is not None else
             AuthorizationRequirement(RECONCILE_ACTION, request.target, request.run, request.assignment)
             if inspection_correlation is not None else None
         )
         if self._phase_replay(authority, bearer_token, request, phase_key,
-                              requirement=replay_requirement) is not None:
+                              requirement=replay_requirement,
+                              recovery_approval=recovery_approval) is not None:
             return self._view(authority, request.operation_id)
         self._transition(
             authority, bearer_token, request, intent_json, current.state, final,
             phase=phase_key, expected_revision=expected_revision,
             observation_json=observation_json, provider_receipt_json=receipt_json,
+            recovery_approval=recovery_approval,
         )
         return self._view(authority, request.operation_id)
 
@@ -1526,6 +1631,87 @@ class GitEffectService:
             self.auth._authorize_capability(connection, authority.project, token_digest, actor, requirement)
         return actor, capability_id
 
+    def _authorize_recovery_request(
+        self,
+        authority: SQLiteAuthority,
+        bearer_token: str,
+        request: GitEffectRequest,
+        approval: RecoveryApproval,
+        intent_kind: str,
+    ) -> tuple[EntityRef, StableId]:
+        if not _is_recovery_approval(approval):
+            raise GitEffectDeniedError("Git recovery requires a freshly approved inspection intent")
+        token_digest = _token_digest(bearer_token)
+        actor, capability_id = self.auth._actor_for_token(authority, token_digest)
+        operation_ref = EntityRef(
+            authority.project.project_id, EntityKind.EXTERNAL_OPERATION, request.operation_id,
+        )
+        if (capability_id != approval.capability_id or actor != approval.actor
+                or approval.intent_kind != intent_kind or approval.operation != operation_ref
+                or approval.target != request.target or approval.attempt != request.attempt
+                or approval.run != request.run or approval.assignment != request.assignment
+                or approval.expected_source_digest != request.expected_source):
+            raise GitEffectDeniedError("Git recovery approval does not match the current principal or effect")
+        requirement = AuthorizationRequirement(
+            RECOVERY_APPLY_ACTION, request.target, request.run, request.assignment, request.attempt,
+        )
+        with authority.read_transaction() as connection:
+            self.auth._authorize_capability(connection, authority.project, token_digest, actor, requirement)
+        return actor, capability_id
+
+    def recovery_replay(
+        self,
+        authority: SQLiteAuthority,
+        bearer_token: str,
+        operation_ref: EntityRef,
+        intent_kind: str,
+        idempotency_key: StableId,
+        intent_digest: Sha256Digest,
+    ) -> GitEffectOperationView | None:
+        """Return a prior exact recovery phase without re-reading the provider."""
+        self._check_authority(authority)
+        if (not isinstance(operation_ref, EntityRef) or operation_ref.kind is not EntityKind.EXTERNAL_OPERATION
+                or operation_ref.project_id != authority.project.project_id
+                or intent_kind not in {"retry_original_operation", "reconcile_observed_effect"}
+                or not isinstance(idempotency_key, StableId)
+                or not isinstance(intent_digest, Sha256Digest)):
+            raise TypeError("recovery replay requires an exact operation, recovery kind, and idempotency key")
+        view = self._view(authority, operation_ref.entity_id)
+        requirement = AuthorizationRequirement(
+            RECOVERY_APPLY_ACTION, view.request.target, view.request.run,
+            view.request.assignment, view.request.attempt,
+        )
+        phases = (
+            (f"recovery-retry-start:{idempotency_key}", f"recovery-retry-result:{idempotency_key}")
+            if intent_kind == "retry_original_operation" else
+            (f"recovery-reconcile-result:{idempotency_key}",)
+        )
+        for phase in phases:
+            key = _phase_key(view.operation_id, phase)
+
+            def matches(_connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+                if row["event_id"] is None or row["event_kind"] is None:
+                    return False
+                try:
+                    payload = json.loads(row["payload_json"])
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    return False
+                return bool(
+                    row["event_kind"].startswith("todo.git.effect.")
+                    and isinstance(payload, dict)
+                    and payload.get("operation_id") == str(view.operation_id)
+                    and payload.get("recovery_intent_kind") == intent_kind
+                    and payload.get("recovery_intent_digest") == intent_digest.hex
+                    and isinstance(payload.get("recovery_approval_digest"), str)
+                )
+
+            replay = self.auth.replay_authorized(
+                authority, bearer_token, key, requirement, _TRANSITION_KIND, matches,
+            )
+            if replay is not None:
+                return self._view(authority, view.operation_id)
+        return None
+
     def read_operation(self, authority: SQLiteAuthority, bearer_token: str,
                        operation_id: StableId) -> GitEffectOperationView:
         self._check_authority(authority)
@@ -1538,8 +1724,14 @@ class GitEffectService:
     def reconcile(self, authority: SQLiteAuthority, bearer_token: str, operation_id: StableId, *,
                   idempotency_key: StableId, expected_revision: int | None = None,
                   _internal_request: GitEffectRequest | None = None,
-                  _internal_intent: str | None = None) -> GitEffectOperationView:
+                  _internal_intent: str | None = None,
+                  _recovery: bool = False,
+                  _recovery_approval: RecoveryApproval | None = None) -> GitEffectOperationView:
         self._check_authority(authority)
+        if type(_recovery) is not bool:
+            raise TypeError("_recovery must be a bool")
+        if _recovery != (_recovery_approval is not None):
+            raise GitEffectDeniedError("recovery transitions require their sealed approval")
         view = self._view(authority, operation_id)
         request = _internal_request or view.request
         intent_json = _internal_intent
@@ -1548,13 +1740,33 @@ class GitEffectService:
             intent_json = row["request_json"]
         if request.operation_id != operation_id:
             raise GitEffectDeniedError("reconcile request identifies another operation")
-        actor, capability_id = self._authorize_inspection(authority, bearer_token, request, RECONCILE_ACTION)
-        recovery_requirement = AuthorizationRequirement(
-            RECONCILE_ACTION, request.target, request.run, request.assignment,
-        )
+        if _recovery:
+            actor, capability_id = self._authorize_recovery_request(
+                authority, bearer_token, request, _recovery_approval, "reconcile_observed_effect",
+            )
+            replayed = self.recovery_replay(
+                authority, bearer_token,
+                EntityRef(authority.project.project_id, EntityKind.EXTERNAL_OPERATION, operation_id),
+                "reconcile_observed_effect", idempotency_key,
+            )
+            if replayed is not None:
+                return replayed
+            if expected_revision != _recovery_approval.authority_revision:
+                raise GitEffectStateError("recovery reconcile revision differs from its approved inspection")
+            recovery_requirement = AuthorizationRequirement(
+                RECOVERY_APPLY_ACTION, request.target, request.run, request.assignment, request.attempt,
+            )
+        else:
+            actor, capability_id = self._authorize_inspection(authority, bearer_token, request, RECONCILE_ACTION)
+            recovery_requirement = AuthorizationRequirement(
+                RECONCILE_ACTION, request.target, request.run, request.assignment,
+            )
+        recovery_phase = f"recovery-reconcile-result:{idempotency_key}" if _recovery else None
+        phase = recovery_phase or ("inspect:" + str(idempotency_key))
         replay = self._phase_replay(
-            authority, bearer_token, request, "inspect:" + str(idempotency_key),
+            authority, bearer_token, request, phase,
             requirement=recovery_requirement,
+            recovery_approval=_recovery_approval,
         )
         if replay is not None:
             return self._view(authority, operation_id)
@@ -1573,22 +1785,60 @@ class GitEffectService:
         result = self.provider.inspect(query)
         return self._store_provider_result(
             authority, bearer_token, request, intent_json, result,
-            expected_revision=self.auth._revision(authority, expected_revision), phase="inspect:" + str(idempotency_key),
+            expected_revision=self.auth._revision(authority, expected_revision), phase=phase,
             inspection_correlation=correlation, inspection_request=query,
+            recovery_approval=_recovery_approval,
         )
 
     def retry_not_applied(self, authority: SQLiteAuthority, bearer_token: str, operation_id: StableId, *,
-                          idempotency_key: StableId, expected_revision: int | None = None) -> GitEffectOperationView:
+                          idempotency_key: StableId, expected_revision: int | None = None,
+                          _recovery: bool = False,
+                          _recovery_approval: RecoveryApproval | None = None) -> GitEffectOperationView:
         self._check_authority(authority)
+        if type(_recovery) is not bool:
+            raise TypeError("_recovery must be a bool")
+        if _recovery != (_recovery_approval is not None):
+            raise GitEffectDeniedError("recovery transitions require their sealed approval")
         view = self._view(authority, operation_id)
         request = view.request
-        self._authorize_request(authority, bearer_token, request)
+        if _recovery:
+            self._authorize_recovery_request(
+                authority, bearer_token, request, _recovery_approval, "retry_original_operation",
+            )
+            replayed = self.recovery_replay(
+                authority, bearer_token,
+                EntityRef(authority.project.project_id, EntityKind.EXTERNAL_OPERATION, operation_id),
+                "retry_original_operation", idempotency_key,
+            )
+            if replayed is not None:
+                return replayed
+            if expected_revision != _recovery_approval.authority_revision:
+                raise GitEffectStateError("recovery retry revision differs from its approved inspection")
+        else:
+            self._authorize_request(authority, bearer_token, request)
+        recovery_phase_start = f"recovery-retry-start:{idempotency_key}"
+        recovery_phase_result = f"recovery-retry-result:{idempotency_key}"
         result_replay = self._phase_replay(authority, bearer_token, request,
-                                           "retry-result:" + str(idempotency_key))
+                                           recovery_phase_result if _recovery else
+                                           "retry-result:" + str(idempotency_key),
+                                           requirement=(AuthorizationRequirement(
+                                               RECOVERY_APPLY_ACTION, request.target, request.run,
+                                               request.assignment, request.attempt,
+                                           ) if _recovery else None),
+                                           recovery_approval=_recovery_approval)
         if result_replay is not None:
             return self._view(authority, operation_id)
-        start_replay = self._phase_replay(authority, bearer_token, request, "retry:" + str(idempotency_key))
+        start_replay = self._phase_replay(
+            authority, bearer_token, request,
+            recovery_phase_start if _recovery else "retry:" + str(idempotency_key),
+            requirement=(AuthorizationRequirement(
+                RECOVERY_APPLY_ACTION, request.target, request.run, request.assignment, request.attempt,
+            ) if _recovery else None),
+            recovery_approval=_recovery_approval,
+        )
         if start_replay is not None:
+            if _recovery:
+                return self._view(authority, operation_id)
             return self.reconcile(
                 authority, bearer_token, operation_id,
                 idempotency_key=_id("grecovery", f"{operation_id}:{idempotency_key}:{self.auth._revision(authority, None)}"),
@@ -1599,16 +1849,22 @@ class GitEffectService:
             raise GitEffectStateError("explicit Git retry requires a durable NOT_APPLIED observation")
         intent_json = self._intent_row(authority, operation_id)["request_json"]
         started = self._transition(authority, bearer_token, request, intent_json, GitEffectState.NOT_APPLIED,
-                                   GitEffectState.EXECUTING, phase="retry:" + str(idempotency_key),
-                                   expected_revision=self.auth._revision(authority, expected_revision))
+                                   GitEffectState.EXECUTING,
+                                   phase=recovery_phase_start if _recovery else "retry:" + str(idempotency_key),
+                                   expected_revision=self.auth._revision(authority, expected_revision),
+                                   recovery_approval=_recovery_approval)
         if started.replayed:
+            if _recovery:
+                return self._view(authority, operation_id)
             return self.reconcile(authority, bearer_token, operation_id,
                                   idempotency_key=_phase_key(operation_id, "retry-recovery"),
                                   expected_revision=started.receipt.semantic_revision)
         result = self.provider.retry_not_applied(request)
         return self._store_provider_result(authority, bearer_token, request, intent_json, result,
                                            expected_revision=started.receipt.semantic_revision,
-                                           phase="retry-result:" + str(idempotency_key))
+                                           phase=recovery_phase_result if _recovery else
+                                           "retry-result:" + str(idempotency_key),
+                                           recovery_approval=_recovery_approval)
 
 
 def _prepare_context(command: _Prepare) -> tuple[GitEffectRequest, dict[str, object]]:

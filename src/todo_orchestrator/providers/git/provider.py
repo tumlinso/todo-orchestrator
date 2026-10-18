@@ -657,7 +657,35 @@ class GitRepositoryProvider:
         if not isinstance(request, SourceObservationRequest):
             raise TypeError("request must be a SourceObservationRequest")
         try:
-            if request.context.project_id != self.config.project_id or request.workspace_id is None or request.target is None:
+            if request.context.project_id != self.config.project_id:
+                raise GitProviderError("source observation belongs to another configured project")
+            if request.base_ref is not None:
+                # A pre-effect retry preview has no attempt or workspace yet. Observe only
+                # the exact configured repository ref and return its immutable commit/tree
+                # identity; do not create a worktree or infer an effect disposition.
+                if any((request.attempt is not None, request.workspace_id is not None,
+                        request.target is not None, request.contract is not None,
+                        bool(request.artifacts))):
+                    raise GitProviderError("base-ref observation must not include workspace-scoped inputs")
+                with self._locked():
+                    revision = self.qualified_revision(request.base_ref)
+                    if (revision.project_id != self.config.project_id
+                            or revision.repository_id != self.config.repository_id):
+                        raise GitProviderError("qualified base ref belongs to another repository")
+                    digest = Sha256Digest(revision.digest)
+                    observation = SourceObservation(
+                        self.config.repository_id, digest, digest, WorkingTreeState.CLEAN,
+                        source_revision=revision.ref,
+                    )
+                    receipt = self._receipt(
+                        request_digest=provider_request_digest(request),
+                        correlation_id=request.correlation_id,
+                        provenance_ref=request.base_ref,
+                        suffix="source-base",
+                    )
+                    return ProviderResult(ProviderStatus.OBSERVED_SUCCESS, request.correlation_id,
+                                          self.identity, observation, receipt)
+            if request.workspace_id is None or request.target is None:
                 raise GitProviderError("source observation requires the exact configured project workspace and target")
             with self._locked():
                 qualification = self._qualification(request.workspace_id, request.target, request.correlation_id)
@@ -743,9 +771,11 @@ class GitRepositoryProvider:
                 raise GitProviderError("fresh workspace qualification has no Git isolation identity")
             _common, head, _index = self._assert_worktree(path, fresh.isolation.head_ref)
             _entries, _index_entries, safety = self._path_state(path, head)
+            source_digest = self._source_digest(_entries, _index_entries)
         except Exception:
             fresh = workspace
             safety = SourceSafety.UNKNOWN
+            source_digest = None
         process = ProcessLiveness.UNKNOWN
         children = ChildActivity.UNKNOWN
         try:
@@ -767,6 +797,7 @@ class GitRepositoryProvider:
                 "lease_expires_at": None if attempt.lease is None else attempt.lease.expires_at.isoformat(),
                 "workspace": str(workspace.workspace_id), "source": safety.value,
                 "process": process.value, "children": children.value,
+                "source_digest": None if source_digest is None else source_digest.hex,
                 "head": None if safety is SourceSafety.UNKNOWN else head,
             }).encode("ascii")).hexdigest()),
             correlation_id=attempt.ref.entity_id, provenance_ref=fresh.common_base.ref, suffix="attempt-safety",
@@ -776,7 +807,7 @@ class GitRepositoryProvider:
             attempt.ref, attempt.state,
             StableId("missing-lease") if lease is None else lease.lease_id,
             self._now() if lease is None else lease.expires_at,
-            fresh, safety, process, children, receipt,
+            fresh, safety, process, children, receipt, source_digest,
         )
 
     def _request_value(self, request: GitEffectRequest) -> dict[str, object]:

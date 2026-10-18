@@ -16,6 +16,8 @@ from .auth import (
     OwnerAlreadyEnrolledError,
     OwnerEnrollmentNotAllowedError,
     PrincipalAuthenticator,
+    RECOVERY_APPLY_ACTION,
+    RECOVERY_INSPECT_ACTION,
 )
 from .attempts import (
     AttemptAdmissionDeniedError,
@@ -108,6 +110,8 @@ __all__ = [
     "RECONCILE_ACTION",
     "RELEASE_ACTION",
     "OUTCOME_REPORT_ACTION",
+    "RECOVERY_APPLY_ACTION",
+    "RECOVERY_INSPECT_ACTION",
     "AuthenticatedPrincipal",
     "AuthenticationFailedError",
     "AuthenticationProviderUnavailableError",

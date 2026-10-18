@@ -42,6 +42,7 @@ from todo_orchestrator.model.eligibility import (
     EligibilityStatus,
     WorkspaceQualification,
 )
+from todo_orchestrator.model.children import ChildScopeOccupancy
 from todo_orchestrator.model.coordination import IsolationPolicy, QueueEntry, QueuePolicy
 from todo_orchestrator.planning import (
     BlockingEdge,
@@ -97,6 +98,7 @@ class EligibilityFacts:
     workspace_qualifications: Mapping[EntityRef, WorkspaceQualification] = field(default_factory=dict)
     approved_participants: Mapping[EntityRef, frozenset[EntityRef]] = field(default_factory=dict)
     attempt_scope_snapshots: Mapping[EntityRef, AttemptScopeSnapshot] = field(default_factory=dict)
+    child_scope_occupancies: tuple[ChildScopeOccupancy, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.project, Project):
@@ -191,6 +193,16 @@ class EligibilityFacts:
             for key in self.attempt_scope_snapshots
         ):
             raise ValueError("attempt scope snapshots must be keyed by same-project attempt references")
+        if not isinstance(self.child_scope_occupancies, tuple) or any(
+            not isinstance(value, ChildScopeOccupancy) for value in self.child_scope_occupancies
+        ):
+            raise TypeError("child_scope_occupancies must be a tuple of ChildScopeOccupancy values")
+        if any(
+            value.parent_attempt.project_id != self.project.project_id
+            or value.target.project_id != self.project.project_id
+            for value in self.child_scope_occupancies
+        ):
+            raise ValueError("child scope occupancy references must belong to the project")
 
 
 def _require_aware(value: datetime, name: str) -> None:
@@ -455,6 +467,40 @@ def _load_attempt_scope_snapshots(connection, project_id: StableId) -> Mapping[E
     return MappingProxyType(snapshots)
 
 
+def _load_child_scope_occupancies(
+    connection,
+    project_id: StableId,
+    workspace_qualifications: Mapping[EntityRef, WorkspaceQualification],
+) -> tuple[ChildScopeOccupancy, ...]:
+    from .child_store import decode_child_scope
+
+    rows = connection.execute(
+        "SELECT execution.execution_id, execution.parent_attempt_id, execution.work_item_id, "
+        "execution.definition_revision_id, execution.scope_json, execution.scope_digest "
+        "FROM child_executions AS execution "
+        "LEFT JOIN child_candidates AS candidate USING(execution_id) "
+        "LEFT JOIN child_candidate_reviews AS review USING(candidate_id) "
+        "WHERE execution.state <> 'stopped' "
+        "OR (candidate.candidate_id IS NOT NULL AND review.review_id IS NULL) "
+        "ORDER BY execution.parent_attempt_id, execution.logical_id, execution.ordinal"
+    ).fetchall()
+    result = []
+    for row in rows:
+        try:
+            scope = decode_child_scope(row["scope_json"], row["scope_digest"])
+            parent = _entity_ref(project_id, "attempt", row["parent_attempt_id"])
+            target = _entity_ref(
+                project_id, "work_item", row["work_item_id"], row["definition_revision_id"]
+            )
+            result.append(ChildScopeOccupancy(
+                StableId(row["execution_id"]), parent, target, scope,
+                workspace_qualifications.get(parent),
+            ))
+        except (TypeError, ValueError) as exc:
+            raise EligibilityAdapterError(f"stored child execution scope is invalid: {exc}") from exc
+    return tuple(result)
+
+
 def _independent_workspaces(
     first: WorkspaceQualification | None,
     second: WorkspaceQualification | None,
@@ -560,6 +606,39 @@ def _evaluate_conflicts(request: EligibilityRequest, facts: EligibilityFacts) ->
             (attempt.ref,),
         )
         (blocked if live else unknown).append(cause)
+
+    # Child scopes are independent durable occupancy records. Their parent's
+    # full source scope may not mention the narrower path, so inspect them
+    # separately. The parent owner may renew its own attempt while children
+    # are running; other requests must respect the child scope itself.
+    from todo_orchestrator.coordination.child_scope import child_scopes_conflict
+    candidate_snapshot = AttemptScopeSnapshot(
+        tuple((path, access) for path, access in candidate_paths if access != "forbidden"),
+        candidate_locks,
+    )
+    for child in facts.child_scope_occupancies:
+        if request.attempt == child.parent_attempt:
+            continue
+        if not child_scopes_conflict(candidate_snapshot, child.scope):
+            continue
+        candidate_workspace = facts.workspace_qualifications.get(request.attempt or request.target)
+        if _independent_workspaces(candidate_workspace, child.parent_workspace, facts.project.project_id):
+            continue
+        related = (child.parent_attempt,)
+        if child.parent_workspace is None:
+            unknown.append(EligibilityCause(
+                "child_scope_workspace_unavailable",
+                "an unresolved child scope has no trusted parent workspace qualification",
+                request.target,
+                related,
+            ))
+        else:
+            blocked.append(EligibilityCause(
+                "child_scope_occupied",
+                "an unresolved subordinate execution owns an overlapping read/write scope",
+                request.target,
+                related,
+            ))
     return blocked, unknown
 
 
@@ -1057,6 +1136,9 @@ def _load_facts(
         outcomes[outcome.work_item] = outcome
 
     attempt_scope_snapshots = _load_attempt_scope_snapshots(connection, project_id)
+    child_scope_occupancies = _load_child_scope_occupancies(
+        connection, project_id, workspace_qualifications,
+    )
 
     authoritative_blockers = dict(blocker_observations)
     authoritative_decisions = dict(decision_observations)
@@ -1090,6 +1172,7 @@ def _load_facts(
         workspace_qualifications=workspace_qualifications,
         approved_participants=approved_participants,
         attempt_scope_snapshots=attempt_scope_snapshots,
+        child_scope_occupancies=child_scope_occupancies,
     )
 
 

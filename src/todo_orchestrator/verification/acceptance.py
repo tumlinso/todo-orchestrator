@@ -129,6 +129,17 @@ class CandidateDeniedError(CandidateError):
     """The current attempt, evidence, policy, or capability refuses the transition."""
 
 
+def _require_children_resolved(connection: sqlite3.Connection, attempt_id: StableId) -> None:
+    # Child occupancy is native authority state and remains binding even when
+    # an injected host cannot report subordinate processes.
+    from todo_orchestrator.authority.child_store import require_parent_children_resolved
+
+    try:
+        require_parent_children_resolved(connection, attempt_id)
+    except ValueError as exc:
+        raise CandidateDeniedError(str(exc)) from exc
+
+
 class CandidateObservationMismatchError(CandidateError):
     """A source or host observation does not bind the finalization request."""
 
@@ -717,6 +728,7 @@ class _ReportHandler:
                 or attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE}
                 or attempt.lease is None):
             raise CandidateDeniedError("only the live attempt owner can report its current candidate")
+        _require_children_resolved(context._connection, attempt.attempt_id)
         if attempt.lease.expires_at <= now:
             raise CandidateDeniedError("attempt lease expired before candidate report")
         _, plan = _fresh_plan(context._connection, context.project, command.target)
@@ -801,6 +813,7 @@ class _FinalizeHandler:
         if row["state"] != "pending" or row["attempt_state"] != AttemptState.REPORTED.value:
             raise CandidateStateError("candidate is not pending on a reported attempt")
         attempt, attempt_row = _stored_attempt(context._connection, context.project, command.attempt)
+        _require_children_resolved(context._connection, attempt.attempt_id)
         now = self.service._now()
         if (attempt.work_item != command.target or attempt.run != command.run or attempt.assignment != command.assignment
                 or row["work_item_id"] != str(command.target.entity_id)

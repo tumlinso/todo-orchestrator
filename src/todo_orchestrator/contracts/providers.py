@@ -14,7 +14,7 @@ from .domain import EntityKind, EntityRef, EvidenceInput, EvidenceResult, Sha256
 from .verification import EvidenceKind, EvidenceRequirement, VerificationContract
 
 
-PROVIDER_CONTRACT_VERSION = 6
+PROVIDER_CONTRACT_VERSION = 8
 T = TypeVar("T")
 
 
@@ -260,6 +260,7 @@ class SourceObservationRequest:
     target: EntityRef | None = None
     contract: VerificationContract | None = None
     artifacts: tuple[ArtifactExpectation, ...] = ()
+    base_ref: StableId | None = None
 
     def __post_init__(self) -> None:
         _id(self.correlation_id, "correlation_id")
@@ -274,6 +275,8 @@ class SourceObservationRequest:
             raise ValueError("attempt must be a project-local attempt reference")
         if self.workspace_id is not None:
             _id(self.workspace_id, "workspace_id")
+        if self.base_ref is not None:
+            _id(self.base_ref, "base_ref")
         if self.target is not None and (
             not isinstance(self.target, EntityRef) or self.target.kind is not EntityKind.WORK_ITEM
             or self.target.project_id != self.context.project_id
@@ -284,9 +287,18 @@ class SourceObservationRequest:
         _tuple(self.artifacts, "artifacts", ArtifactExpectation, unique=True)
         if len({item.artifact_id for item in self.artifacts}) != len(self.artifacts):
             raise ValueError("artifact expectations must not repeat identifiers")
-        bound = (self.attempt, self.workspace_id, self.target)
-        if any(value is not None for value in bound) and any(value is None for value in bound):
-            raise ValueError("attempt, workspace_id, and target must be supplied together")
+        if (self.workspace_id is None) != (self.target is None):
+            raise ValueError("workspace_id and target must be supplied together")
+        if self.attempt is not None and (self.workspace_id is None or self.target is None):
+            raise ValueError("attempt-bound source observation requires workspace_id and target")
+        if self.base_ref is not None and any((
+            self.attempt is not None,
+            self.workspace_id is not None,
+            self.target is not None,
+            self.contract is not None,
+            bool(self.artifacts),
+        )):
+            raise ValueError("base-ref observation cannot be combined with attempt, workspace, target, contract, or artifact expectations")
 
 
 class WorkingTreeState(str, Enum):

@@ -41,3 +41,8 @@ releasing its active claim. The installed `specialist` policy cannot bind
 required gates. The task was reclaimed and its runnable gate bound through the
 workflow API. This is a development-run amendment; the original bootstrap and
 derived initial-import package remain preserved.
+
+At development revision 145, `L-RECOVERY` was likewise changed from `specialist`
+to `implementer` through the coordinator lane API before its first dispatch,
+so recovery tasks can bind required gates. This changes only the development
+run; the preserved initial plan and active Project Control instance are unchanged.

@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-R01: Create unified inspection of interrupted and uncertain operations
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `153`; current project revision is in `todo-status.md`.
 
 ## Objective
 Determine authoritative reconciliation from attempt, lease, workspace, evidence and external-effect records. Distinguish expired, unknown-live, dirty, irrecoverable and safely retryable states.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

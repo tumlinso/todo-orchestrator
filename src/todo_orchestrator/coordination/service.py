@@ -43,6 +43,7 @@ from todo_orchestrator.authority.auth import (
     CONTEXT_FINDING_INVALIDATE_ACTION,
     CONTEXT_FINDING_PUBLISH_ACTION,
     CONTEXT_READ_ACTION,
+    RECOVERY_INSPECT_ACTION,
     _bearer,
     _capability_from_values,
     _context_from_row,
@@ -75,6 +76,14 @@ from todo_orchestrator.contracts import (
     StableId,
 )
 from todo_orchestrator.model import (
+    CHILD_CANDIDATE_SUBMIT_ACTION,
+    CHILD_CANCEL_ACTION,
+    CHILD_DELEGATE_ACTION,
+    CHILD_READ_ACTION,
+    CHILD_REVIEW_ACTION,
+    CHILD_RETRY_ACTION,
+    CHILD_STOP_RECONCILE_ACTION,
+    CHILD_WRITE_ACTION,
     CommandEffect,
     CommandResult,
     EligibilityRequest,
@@ -330,6 +339,10 @@ class _DispatchHandler:
                 MESSAGE_SEND_ACTION, MESSAGE_READ_ACTION, QUESTION_ANSWER_ACTION,
                 CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION,
                 CONTEXT_FINDING_INVALIDATE_ACTION,
+                RECOVERY_INSPECT_ACTION,
+                CHILD_DELEGATE_ACTION, CHILD_RETRY_ACTION, CHILD_REVIEW_ACTION,
+                CHILD_CANCEL_ACTION, CHILD_STOP_RECONCILE_ACTION, CHILD_READ_ACTION,
+                CHILD_WRITE_ACTION, CHILD_CANDIDATE_SUBMIT_ACTION,
             ):
                 try:
                     self.service.auth._authorize_capability(

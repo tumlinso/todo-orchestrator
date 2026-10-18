@@ -138,6 +138,30 @@ class GitRepositoryProviderTests(unittest.TestCase):
             self.provider.workspace_path_for(StableId("workspace-source")), "rev-parse", "HEAD",
         )))
 
+    def test_unattached_workspace_source_observation_distinguishes_clean_and_dirty(self) -> None:
+        self.create_workspace("workspace-unattached-source")
+        workspace = self.provider.qualify_workspace(
+            StableId("workspace-unattached-source"), self.target, StableId("correlation-unattached"),
+        )
+        request = SourceObservationRequest(
+            self.context, StableId("source-observation-unattached"),
+            Sha256Digest(workspace.common_base.digest), attempt=None,
+            workspace_id=workspace.workspace_id, target=self.target,
+        )
+
+        clean = self.provider.observe(request)
+        self.assertEqual(clean.status, ProviderStatus.OBSERVED_SUCCESS, clean)
+        self.assertIsNone(request.attempt)
+        self.assertEqual(clean.value.working_tree, WorkingTreeState.CLEAN)
+        self.assertEqual(clean.value.source_revision, workspace.common_base.ref)
+
+        (self.provider.workspace_path_for(workspace.workspace_id) / "unreviewed.txt").write_text(
+            "preserve this content\n", encoding="utf-8",
+        )
+        dirty = self.provider.observe(request)
+        self.assertEqual(dirty.status, ProviderStatus.OBSERVED_SUCCESS, dirty)
+        self.assertEqual(dirty.value.working_tree, WorkingTreeState.DIRTY)
+
     def test_default_source_policy_includes_authored_todo_orchestrator_files(self) -> None:
         self.assertEqual(self.config.excluded_paths, ())
         self.create_workspace("workspace-authored-config")

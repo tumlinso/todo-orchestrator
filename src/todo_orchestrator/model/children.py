@@ -8,6 +8,18 @@ from enum import Enum
 
 from todo_orchestrator.contracts import EntityKind, EntityRef, Sha256Digest, StableId
 from .eligibility import AttemptScopeSnapshot
+from .eligibility import WorkspaceQualification
+
+
+CHILD_DELEGATE_ACTION = StableId("todo.child.delegate")
+CHILD_RETRY_ACTION = StableId("todo.child.retry")
+CHILD_REVIEW_ACTION = StableId("todo.child.review")
+CHILD_CANCEL_ACTION = StableId("todo.child.cancel")
+CHILD_STOP_RECONCILE_ACTION = StableId("todo.child.stop.reconcile")
+CHILD_READ_ACTION = StableId("todo.child.read")
+CHILD_WRITE_ACTION = StableId("todo.child.write")
+CHILD_CANDIDATE_SUBMIT_ACTION = StableId("todo.child.candidate.submit")
+CHILD_WORKER_ACTIONS = (CHILD_READ_ACTION, CHILD_WRITE_ACTION, CHILD_CANDIDATE_SUBMIT_ACTION)
 
 
 class ChildExecutionState(str, Enum):
@@ -152,7 +164,7 @@ class ChildScopeOccupancy:
     parent_attempt: EntityRef
     target: EntityRef
     scope: AttemptScopeSnapshot
-    parent_workspace: object | None = None
+    parent_workspace: WorkspaceQualification | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.execution_id, StableId):
@@ -163,9 +175,20 @@ class ChildScopeOccupancy:
             raise ValueError("target must identify an exact work-item definition")
         if not isinstance(self.scope, AttemptScopeSnapshot):
             raise TypeError("scope must be an AttemptScopeSnapshot")
+        if self.parent_workspace is not None and not isinstance(self.parent_workspace, WorkspaceQualification):
+            raise TypeError("parent_workspace must be a WorkspaceQualification or None")
 
 
 __all__ = [
+    "CHILD_CANDIDATE_SUBMIT_ACTION",
+    "CHILD_CANCEL_ACTION",
+    "CHILD_DELEGATE_ACTION",
+    "CHILD_READ_ACTION",
+    "CHILD_REVIEW_ACTION",
+    "CHILD_RETRY_ACTION",
+    "CHILD_STOP_RECONCILE_ACTION",
+    "CHILD_WORKER_ACTIONS",
+    "CHILD_WRITE_ACTION",
     "ChildArtifactRef",
     "ChildCandidate",
     "ChildCandidateDecision",

@@ -38,6 +38,7 @@ from todo_orchestrator.contracts import (
     WorkingTreeState,
     provider_request_digest,
 )
+from todo_orchestrator.contracts.providers import PROVIDER_CONTRACT_VERSION
 
 
 def sid(value: str) -> StableId:
@@ -197,6 +198,32 @@ class ProviderEnvelopeTests(unittest.TestCase):
 
 
 class ProviderContractTests(unittest.TestCase):
+    def test_base_ref_source_observation_is_typed_and_cannot_mix_workspace_scope(self) -> None:
+        request = SourceObservationRequest(
+            CONTEXT, sid("source-base-call"), expected_source=DIGEST,
+            base_ref=sid("refs/heads/main"),
+        )
+        self.assertEqual(PROVIDER_CONTRACT_VERSION, 8)
+        self.assertIsNone(request.attempt)
+        self.assertIsNone(request.workspace_id)
+        self.assertIsNone(request.target)
+        self.assertEqual(request.base_ref, sid("refs/heads/main"))
+        self.assertNotEqual(
+            provider_request_digest(request),
+            provider_request_digest(SourceObservationRequest(CONTEXT, request.correlation_id, DIGEST)),
+        )
+
+        with self.assertRaisesRegex(ValueError, "cannot be combined"):
+            SourceObservationRequest(
+                CONTEXT, sid("mixed-base-workspace"), attempt=ATTEMPT,
+                workspace_id=sid("workspace"),
+                target=EntityRef(PROJECT, EntityKind.WORK_ITEM, sid("target"),
+                                 definition_revision_id=sid("definition")),
+                base_ref=sid("refs/heads/main"),
+            )
+        with self.assertRaisesRegex(TypeError, "StableId"):
+            SourceObservationRequest(CONTEXT, sid("bad-base"), base_ref="refs/heads/main")
+
     def test_source_observation_artifact_availability_is_exact_and_typed(self) -> None:
         expectation = ArtifactExpectation(sid("artifact-1"), DIGEST)
         request = SourceObservationRequest(

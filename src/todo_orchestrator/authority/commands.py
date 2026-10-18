@@ -208,7 +208,10 @@ class MutationContext:
     not.
     """
 
-    __slots__ = ("project", "actor", "starting_revision", "authority", "_connection", "_active")
+    __slots__ = (
+        "project", "actor", "starting_revision", "authority", "idempotency_key",
+        "authorized_capability_id", "_connection", "_active",
+    )
 
     def __init__(
         self,
@@ -217,11 +220,19 @@ class MutationContext:
         actor: EntityRef,
         starting_revision: int,
         authority: SQLiteAuthority,
+        idempotency_key: StableId,
+        authorized_capability_id: StableId | None = None,
     ) -> None:
         self.project = project
         self.actor = actor
         self.starting_revision = starting_revision
         self.authority = authority
+        if not isinstance(idempotency_key, StableId):
+            raise TypeError("idempotency_key must be a StableId")
+        self.idempotency_key = idempotency_key
+        if authorized_capability_id is not None and not isinstance(authorized_capability_id, StableId):
+            raise TypeError("authorized_capability_id must be a StableId or None")
+        self.authorized_capability_id = authorized_capability_id
         self._connection = connection
         self._active = True
 
@@ -349,6 +360,7 @@ class CommandDispatcher:
         )
 
         with authority.write_transaction() as connection:
+            authorized_capability_id: StableId | None = None
             if authorization_check is not None:
                 before_authorization = connection.total_changes
                 try:
@@ -358,8 +370,11 @@ class CommandDispatcher:
                     connection.set_authorizer(None)
                 if connection.total_changes != before_authorization:
                     raise CommandHandlerContractError("authorization checks must not mutate authority state")
-                if authorization_result is not None:
-                    raise CommandHandlerContractError("authorization checks must return None or raise on refusal")
+                if authorization_result is not None and not isinstance(authorization_result, StableId):
+                    raise CommandHandlerContractError(
+                        "authorization checks must return None or the authenticated capability ID"
+                    )
+                authorized_capability_id = authorization_result
             existing = connection.execute(
                 "SELECT i.request_digest, r.receipt_id, r.command_kind, r.semantic_revision, r.changed, "
                 "r.event_id, r.actor_id, r.actor_incarnation_id, r.result_json, r.created_at, m.project_id "
@@ -401,7 +416,10 @@ class CommandDispatcher:
                 )
 
             before_changes = connection.total_changes
-            context = MutationContext(connection, authority.project, envelope.actor, current_revision, authority)
+            context = MutationContext(
+                connection, authority.project, envelope.actor, current_revision, authority,
+                envelope.idempotency_key, authorized_capability_id,
+            )
             try:
                 connection.set_authorizer(_handler_authorizer)
                 effect = binding.handler.apply(context, command)

@@ -26,6 +26,14 @@ from todo_orchestrator.contracts.providers import (
     ProviderReceipt,
 )
 from todo_orchestrator.model import (
+    CHILD_CANDIDATE_SUBMIT_ACTION,
+    CHILD_CANCEL_ACTION,
+    CHILD_DELEGATE_ACTION,
+    CHILD_READ_ACTION,
+    CHILD_REVIEW_ACTION,
+    CHILD_RETRY_ACTION,
+    CHILD_STOP_RECONCILE_ACTION,
+    CHILD_WRITE_ACTION,
     AttemptSafetyObservation,
     AttemptScopeSnapshot,
     ChildActivity,
@@ -51,6 +59,8 @@ from .auth import (
     CONTEXT_FINDING_INVALIDATE_ACTION,
     CONTEXT_FINDING_PUBLISH_ACTION,
     CONTEXT_READ_ACTION,
+    RECOVERY_APPLY_ACTION,
+    RECOVERY_INSPECT_ACTION,
 )
 from .commands import MutationContext
 from .eligibility import (
@@ -59,6 +69,11 @@ from .eligibility import (
     _path_overlaps,
     _scope_parts,
     _scope_snapshot_payload,
+)
+from .recovery_approval import (
+    RecoveryApproval,
+    _is_recovery_approval,
+    _recovery_approval_digest,
 )
 from .sqlite import AuthorityError, SQLiteAuthority
 
@@ -91,6 +106,10 @@ _ATTEMPT_SESSION_ACTION_CEILING = frozenset((
     *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
     StableId("todo.message.send"), StableId("todo.message.read"), StableId("todo.question.answer"),
     CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION, CONTEXT_FINDING_INVALIDATE_ACTION,
+    RECOVERY_INSPECT_ACTION,
+    CHILD_DELEGATE_ACTION, CHILD_RETRY_ACTION, CHILD_REVIEW_ACTION, CHILD_CANCEL_ACTION,
+    CHILD_STOP_RECONCILE_ACTION, CHILD_READ_ACTION, CHILD_WRITE_ACTION,
+    CHILD_CANDIDATE_SUBMIT_ACTION,
 ))
 _LIVE_STATES = (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED)
 _TERMINAL_STATES = (AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED)
@@ -291,6 +310,28 @@ def _stored_attempt(connection: sqlite3.Connection, project: Project, attempt_re
     return _attempt_from_row(project, row), row
 
 
+def _require_children_resolved(connection: sqlite3.Connection, attempt_id: StableId) -> None:
+    # Imported lazily to keep the generic attempt service independent of the
+    # optional coordination API while still enforcing its durable occupancy.
+    from .child_store import require_parent_children_resolved
+
+    try:
+        require_parent_children_resolved(connection, attempt_id)
+    except ValueError as exc:
+        raise AttemptTransitionError(str(exc)) from exc
+
+
+def _require_recovery_operations_resolved(connection: sqlite3.Connection, attempt_id: StableId) -> None:
+    """Refuse attempt release while an external operation can still change state."""
+    pending = connection.execute(
+        "SELECT operation_id FROM external_operations WHERE attempt_id = ? "
+        "AND state NOT IN ('finalized', 'failed') ORDER BY operation_id LIMIT 1",
+        (str(attempt_id),),
+    ).fetchone()
+    if pending is not None:
+        raise AttemptTransitionError("external operation must be resolved before attempt recovery")
+
+
 def _stored_workspace(
     connection: sqlite3.Connection, project: Project, attempt_ref: EntityRef
 ) -> WorkspaceQualification:
@@ -348,6 +389,7 @@ def _observation_audit(observation: AttemptSafetyObservation) -> dict[str, objec
     destination = qualification.destination
     return {
         "source": observation.source.value,
+        "source_digest": None if observation.source_digest is None else observation.source_digest.hex,
         "process": observation.process.value,
         "children": observation.children.value,
         "observed_state": observation.observed_state.value,
@@ -454,7 +496,12 @@ class _ReconcileExpired(_ImmutableAttemptCommand):
     attempt_ref: EntityRef
     run: EntityRef | None
     assignment: EntityRef | None
+    expected_lease_id: StableId | None
+    expected_source_digest: Sha256Digest | None
     observation: AttemptSafetyObservation | None
+    recovery: bool = False
+    preserve_dirty_workspace: bool = False
+    recovery_approval: RecoveryApproval | None = None
 
 
 class _AttemptHandlerBase:
@@ -693,10 +740,21 @@ class _HeartbeatHandler(_AttemptHandlerBase):
             expires_at=expires_at,
             now=now,
         )
+        renewed_child_capabilities = self.service.auth._renew_child_execution_capability_expiries_in_transaction(
+            context,
+            attempt_id=attempt.attempt_id,
+            expected_scope=attempt.work_item,
+            expected_run=attempt.run,
+            expected_assignment=attempt.assignment,
+            expected_attempt=attempt.ref,
+            expires_at=expires_at,
+            now=now,
+        )
         payload = self._event_payload(
             attempt.ref, attempt.state, previous_lease_id=str(command.expected_lease_id),
             lease_id=str(command.replacement_lease_id), lease_expires_at=_iso(expires_at),
             renewed_attempt_capabilities=renewed_capabilities,
+            renewed_child_capabilities=renewed_child_capabilities,
         )
         return CommandEffect(
             True,
@@ -735,6 +793,7 @@ class _ReleaseHandler(_AttemptHandlerBase):
             raise AttemptTransitionError(f"cannot release an attempt already {attempt.state.value}")
         if attempt.lease is None or attempt.lease.lease_id != command.expected_lease_id:
             raise AttemptLeaseMismatchError("expected lease ID is no longer current")
+        _require_children_resolved(context._connection, attempt.attempt_id)
         workspace = _stored_workspace(context._connection, context.project, attempt.ref)
         observation = _check_observation(
             command.observation, target=attempt.work_item, attempt_ref=attempt.ref, row=row,
@@ -786,13 +845,29 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
     command_type = _ReconcileExpired
 
     def authorization_requirement(self, command: _ReconcileExpired) -> AuthorizationRequirement:
-        return AuthorizationRequirement(RECONCILE_ACTION, command.target, command.run,
+        action = RECOVERY_APPLY_ACTION if command.recovery else RECONCILE_ACTION
+        return AuthorizationRequirement(action, command.target, command.run,
                                         command.assignment, command.attempt_ref)
 
     def canonical_payload(self, command: _ReconcileExpired) -> dict[str, object]:
         return {"target": str(command.target.entity_id), "attempt_id": str(command.attempt_ref.entity_id),
                 "run": None if command.run is None else str(command.run.entity_id),
-                "assignment": None if command.assignment is None else str(command.assignment.entity_id)}
+                "assignment": None if command.assignment is None else str(command.assignment.entity_id),
+                "expected_lease_id": None if command.expected_lease_id is None else str(command.expected_lease_id),
+                "expected_source_digest": None if command.expected_source_digest is None
+                    else command.expected_source_digest.hex,
+                "recovery": command.recovery,
+                "preserve_dirty_workspace": command.preserve_dirty_workspace,
+                "recovery_approval": None if command.recovery_approval is None else {
+                    "kind": command.recovery_approval.intent_kind,
+                    "actor": str(command.recovery_approval.actor.entity_id),
+                    "actor_incarnation": str(command.recovery_approval.actor.incarnation_id),
+                    "capability": str(command.recovery_approval.capability_id),
+                    "revision": command.recovery_approval.authority_revision,
+                    "lease_expires_at": None if command.recovery_approval.expected_lease_expires_at is None
+                        else _iso(command.recovery_approval.expected_lease_expires_at),
+                    "digest": _recovery_approval_digest(command.recovery_approval),
+                }}
 
     def apply(self, context: MutationContext, command: _ReconcileExpired) -> CommandEffect:
         attempt, row = _stored_attempt(context._connection, context.project, command.attempt_ref)
@@ -800,20 +875,91 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
             raise AttemptObservationMismatchError("reconciliation target differs from the stored attempt")
         if command.run != attempt.run or command.assignment != attempt.assignment:
             raise AttemptObservationMismatchError("reconciliation run or assignment differs from the stored attempt")
+        approval = command.recovery_approval
+        if command.recovery:
+            if not _is_recovery_approval(approval):
+                raise AttemptObservationMismatchError("recovery requires a freshly approved inspection intent")
+            if (context.authorized_capability_id != approval.capability_id
+                    or context.actor != approval.actor
+                    or approval.authority_revision != context.starting_revision
+                    or approval.intent_kind not in {"release_expired_attempt", "handoff_dirty_workspace"}
+                    or approval.target != attempt.work_item
+                    or approval.attempt != attempt.ref
+                    or approval.run != attempt.run
+                    or approval.assignment != attempt.assignment
+                    or approval.operation is not None):
+                raise AttemptObservationMismatchError("recovery approval no longer matches the authenticated command")
         if attempt.state in _TERMINAL_STATES:
+            if command.recovery:
+                raise AttemptTransitionError("terminal attempts cannot be recovered or requeued")
             return CommandEffect(False, {"attempt_id": str(attempt.attempt_id), "state": attempt.state.value})
         if attempt.lease is None:
             raise AttemptLeaseMismatchError("attempt has no lease to reconcile")
+        if command.expected_lease_id is not None and attempt.lease.lease_id != command.expected_lease_id:
+            raise AttemptLeaseMismatchError("recovery lease identity changed")
+        if command.recovery and (
+            approval.expected_lease_id != attempt.lease.lease_id
+            or approval.expected_lease_expires_at != attempt.lease.expires_at
+            or approval.expected_source_digest != command.expected_source_digest
+        ):
+            raise AttemptLeaseMismatchError("recovery approval lease or source binding changed")
         now = self.service._now()
         if attempt.lease.expires_at > now:
             raise AttemptLeaseMismatchError("attempt lease has not expired")
+        _require_children_resolved(context._connection, attempt.attempt_id)
+        if command.recovery:
+            if attempt.state is AttemptState.REPORTED or context._connection.execute(
+                "SELECT 1 FROM outcome_candidates WHERE attempt_id = ? AND state = 'pending' LIMIT 1",
+                (str(attempt.attempt_id),),
+            ).fetchone() is not None:
+                raise AttemptTransitionError("reported work or a pending outcome candidate cannot be released for recovery")
+            _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
         workspace = _stored_workspace(context._connection, context.project, attempt.ref)
         observation = _check_observation(
             command.observation, target=attempt.work_item, attempt_ref=attempt.ref, row=row,
             workspace=workspace, now=now, max_age=self.service.max_observation_age,
         )
+        if command.recovery:
+            approved_observation = approval.host_observation
+            if (approved_observation is None
+                    or approved_observation.attempt != attempt.ref
+                    or approved_observation.lease_id != attempt.lease.lease_id
+                    or approved_observation.observed_state is not attempt.state
+                    or approved_observation.observed_lease_expires_at != attempt.lease.expires_at
+                    or approved_observation.workspace.workspace_id != workspace.workspace_id
+                    or approved_observation.source_digest != command.expected_source_digest
+                    or observation.source_digest != command.expected_source_digest):
+                raise AttemptObservationMismatchError("fresh host proof differs from the approved recovery source")
         state = _ReleaseHandler._safe_disposition(observation)
-        if state is AttemptState.RELEASED:
+        preserved_dirty_workspace = False
+        if command.recovery and command.preserve_dirty_workspace:
+            if not (observation.source is SourceSafety.DIRTY
+                    and observation.process is ProcessLiveness.STOPPED
+                    and observation.children is ChildActivity.NONE):
+                raise AttemptObservationMismatchError(
+                    "dirty workspace handoff requires a fresh dirty source and stopped writer"
+                )
+            if (command.expected_source_digest is None
+                    or observation.source_digest != command.expected_source_digest):
+                raise AttemptObservationMismatchError(
+                    "dirty workspace source identity changed after recovery inspection"
+                )
+            if attempt.state is AttemptState.REPORTED:
+                raise AttemptTransitionError("reported work cannot be handed off for requeue")
+            # Relinquish execution ownership, never source: the exact
+            # provider-owned workspace and all of its bytes remain in place.
+            state = AttemptState.RELEASED
+            preserved_dirty_workspace = True
+        elif command.recovery and state is not AttemptState.RELEASED:
+            raise AttemptObservationMismatchError(
+                "safe recovery release requires a fresh clean source and stopped writer"
+            )
+        elif command.recovery and (
+            command.expected_source_digest is None
+            or observation.source_digest != command.expected_source_digest
+        ):
+            raise AttemptObservationMismatchError("clean source identity changed after recovery inspection")
+        elif state is AttemptState.RELEASED and not command.recovery:
             # Reported attempts are already handed off for acceptance. Their
             # lease expiry cannot erase that boundary; retain an explicit
             # uncertain state until the report is resolved.
@@ -824,21 +970,41 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
             return CommandEffect(False, {"attempt_id": str(attempt.attempt_id), "state": attempt.state.value})
         self._transition(attempt.state, state)
         updated = context.execute(
-            "UPDATE attempts SET state = ? WHERE attempt_id = ? AND state = ? AND lease_id = ? AND lease_expires_at = ?",
-            (state.value, str(attempt.attempt_id), attempt.state.value,
+            "UPDATE attempts SET state = ?, lease_id = CASE WHEN ? = 'released' THEN NULL ELSE lease_id END, "
+            "lease_expires_at = CASE WHEN ? = 'released' THEN NULL ELSE lease_expires_at END "
+            "WHERE attempt_id = ? AND state = ? AND lease_id = ? AND lease_expires_at = ?",
+            (state.value, state.value, state.value, str(attempt.attempt_id), attempt.state.value,
              row["lease_id"], row["lease_expires_at"]),
         ).rowcount
         if updated != 1:
             raise AttemptObservationMismatchError("attempt changed while reconciling its lease")
+        revoked_capabilities = (
+            self.service.auth._revoke_attempt_capability_families_in_transaction(context, attempt.attempt_id)
+            if state is AttemptState.RELEASED else 0
+        )
         payload = self._event_payload(
             attempt.ref, state, previous_state=attempt.state.value,
             lease_id=row["lease_id"], lease_expires_at=row["lease_expires_at"],
             provider_receipt_id=str(observation.receipt.receipt_id),
             safety_observation=_observation_audit(observation),
+            recovery=command.recovery,
+            workspace_preserved=preserved_dirty_workspace,
+            workspace_id=str(workspace.workspace_id) if preserved_dirty_workspace else None,
+            previous_lease_id=row["lease_id"],
+            recovery_approval_digest=(None if approval is None else _recovery_approval_digest(approval)),
+            recovery_intent_digest=(None if approval is None else approval.intent_digest.hex),
+            expected_source_digest=None if command.expected_source_digest is None
+                else command.expected_source_digest.hex,
+            revoked_attempt_capabilities=revoked_capabilities,
         )
         return CommandEffect(
             True, {"attempt_id": str(attempt.attempt_id), "state": state.value,
-                   "lease_id": row["lease_id"], "lease_expires_at": row["lease_expires_at"]},
+                   "lease_id": None if state is AttemptState.RELEASED else row["lease_id"],
+                   "lease_expires_at": None if state is AttemptState.RELEASED else row["lease_expires_at"],
+                   "workspace_preserved": preserved_dirty_workspace,
+                   "workspace_id": str(workspace.workspace_id) if preserved_dirty_workspace else None},
+            "todo.attempt.recovery_workspace_handoff" if preserved_dirty_workspace else
+            "todo.attempt.recovery_released" if command.recovery and state is AttemptState.RELEASED else
             "todo.attempt.expired" if state is AttemptState.EXPIRED else
             "todo.attempt.quarantined" if state is AttemptState.QUARANTINED else "todo.attempt.uncertain",
             payload,
@@ -1107,10 +1273,34 @@ class AttemptService:
         *,
         idempotency_key: StableId,
         expected_revision: int | None = None,
+        _recovery: bool = False,
+        _preserve_dirty_workspace: bool = False,
+        expected_lease_id: StableId | None = None,
+        expected_source_digest: Sha256Digest | None = None,
+        _recovery_approval: RecoveryApproval | None = None,
     ) -> CommandResult:
         if not isinstance(idempotency_key, StableId):
             raise TypeError("idempotency_key must be a StableId")
+        if type(_recovery) is not bool or type(_preserve_dirty_workspace) is not bool:
+            raise TypeError("recovery mode flags must be booleans")
+        if _preserve_dirty_workspace and not _recovery:
+            raise ValueError("dirty workspace handoff is available only through authorized recovery")
         attempt = self._attempt_for_service(authority, attempt_ref)
+        if expected_lease_id is not None and not isinstance(expected_lease_id, StableId):
+            raise TypeError("expected_lease_id must be a StableId")
+        if _recovery and expected_lease_id is None:
+            raise AttemptLeaseMismatchError("recovery requires the exact previously inspected lease ID")
+        if expected_source_digest is not None and not isinstance(expected_source_digest, Sha256Digest):
+            raise TypeError("expected_source_digest must be a Sha256Digest")
+        if _preserve_dirty_workspace and expected_source_digest is None:
+            raise AttemptObservationMismatchError("dirty workspace handoff requires a source digest")
+        if _recovery and not _is_recovery_approval(_recovery_approval):
+            raise AttemptObservationMismatchError("recovery requires an approved recovery intent")
+        if not _recovery and _recovery_approval is not None:
+            raise TypeError("recovery approval is only valid for recovery reconciliation")
+        selected_lease_id = expected_lease_id if _recovery else (
+            None if attempt is None or attempt.lease is None else attempt.lease.lease_id
+        )
         target = attempt.work_item if attempt is not None else attempt_ref
         observation = self._prepare_observation(authority, attempt_ref, idempotency_key)
         return self.auth.execute(
@@ -1118,7 +1308,12 @@ class AttemptService:
                 target, attempt_ref,
                 None if attempt is None else attempt.run,
                 None if attempt is None else attempt.assignment,
+                selected_lease_id,
+                expected_source_digest,
                 observation,
+                _recovery,
+                _preserve_dirty_workspace,
+                _recovery_approval,
             ),
             idempotency_key=idempotency_key, expected_revision=expected_revision,
         )
