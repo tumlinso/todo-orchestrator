@@ -42,6 +42,9 @@ _OWNER_ACTIONS = (StableId("todo.capability.delegate"), StableId("todo.capabilit
 _ATTEMPT_SESSION_ACTIONS = frozenset({
     StableId("todo.attempt.heartbeat"), StableId("todo.attempt.release"), StableId("todo.attempt.finish"),
 })
+CONTEXT_READ_ACTION = StableId("todo.context.read")
+CONTEXT_FINDING_PUBLISH_ACTION = StableId("todo.context.finding.publish")
+CONTEXT_FINDING_INVALIDATE_ACTION = StableId("todo.context.finding.invalidate")
 _ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
     StableId("todo.verification.execute"), StableId("todo.verification.reconcile"),
     StableId("todo.outcome.report"),
@@ -49,6 +52,7 @@ _ATTEMPT_SESSION_ACTION_CEILING = _ATTEMPT_SESSION_ACTIONS | frozenset({
     # authenticated parent's grant; they are not added to ordinary sessions.
     StableId("todo.message.send"), StableId("todo.message.read"),
     StableId("todo.question.answer"),
+    CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION, CONTEXT_FINDING_INVALIDATE_ACTION,
 })
 
 

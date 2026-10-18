@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T21:15:02Z",
+  "generated_at": "2026-10-18T22:30:20Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 127,
+  "project_revision": 138,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 127,
+    "project_revision": 138,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -1307,9 +1307,132 @@
         "revision": 127,
         "seq": 127,
         "timestamp": "2026-10-18T21:15:02Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-C03\"}",
+        "revision": 128,
+        "seq": 128,
+        "timestamp": "2026-10-18T21:35:48Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C03-native-communication-and-sync",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-C03-native-communication-and-sync\"}",
+        "revision": 129,
+        "seq": 129,
+        "timestamp": "2026-10-18T21:51:58Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C03-native-communication-and-sync",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"002c7421-a12e-4140-b40e-491aecdc2835\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 130,
+        "seq": 130,
+        "timestamp": "2026-10-18T21:52:14Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C03",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 131, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 131,
+        "seq": 131,
+        "timestamp": "2026-10-18T21:52:14Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-C04\"}",
+        "revision": 132,
+        "seq": 132,
+        "timestamp": "2026-10-18T21:52:22Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "de7bf7cd-6adf-49bc-ad4f-7e7de214a39a",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 133,
+        "seq": 133,
+        "timestamp": "2026-10-18T21:52:48Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C04-bounded-worker-context",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-C04-bounded-worker-context\"}",
+        "revision": 134,
+        "seq": 134,
+        "timestamp": "2026-10-18T22:27:40Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C04-bounded-worker-context",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"0700e9b8-fc93-4eba-acfa-92212a5f6469\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 135,
+        "seq": 135,
+        "timestamp": "2026-10-18T22:28:19Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-C04",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 136, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 136,
+        "seq": 136,
+        "timestamp": "2026-10-18T22:28:19Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-COORDINATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-COORDINATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-C05\"}",
+        "revision": 137,
+        "seq": 137,
+        "timestamp": "2026-10-18T22:29:45Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "08e53d9a-8614-423e-9d70-46ce54630c97",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 138,
+        "seq": 138,
+        "timestamp": "2026-10-18T22:30:20Z"
       }
     ],
     "evidence": [
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T21:52:14Z",
+        "gate_id": "TO-C03-native-communication-and-sync",
+        "id": "002c7421-a12e-4140-b40e-491aecdc2835",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"3f2296c63a7559c889cf968090e51d5f53196b708d2efe59130b1c3a27b501b2\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/communication-and-declarations.md\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/declarations.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"tests/contracts/test_verification_bindings.py\", \"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\", \"tests/planning/test_package.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 129}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/002c7421-a12e-4140-b40e-491aecdc2835",
+        "revision": 130,
+        "status": "passed"
+      },
       {
         "checkpoint_id": null,
         "claim_id": null,
@@ -1321,6 +1444,19 @@
         "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"593fd28037242ebb40485204b45d90ce736a8abddd22df3299b264546b5bcbe0\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/verification\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"c69ea4b3ddf8d35d7103e3bb41b230ae88cda332de2bab9a9e4c044eae874d65\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/authority-authentication.md\", \"docs/architecture/git-effects.md\", \"docs/architecture/provider-contracts.md\", \"docs/product/parity-fixture-corpus.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/domain.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/model/eligibility.py\", \"src/todo_orchestrator/providers/__init__.py\", \"src/todo_orchestrator/providers/git.py\", \"src/todo_orchestrator/providers/git/__init__.py\", \"src/todo_orchestrator/providers/git/provider.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\", \"tests/coordination/test_scheduling.py\", \"tests/coordination/test_scheduling_independent.py\", \"tests/verification/test_git.py\", \"tests/verification/test_git_independent.py\", \"tests/verification/test_git_service.py\", \"tests/verification/test_git_service_independent.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/providers/git\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/verification\", \"sha256\": \"missing\"}, {\"path\": \"tests/verification\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"495f4e50086d9e994f4a9aa9082e37b49beca472\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 121}",
         "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/0272530f-1ae0-4478-8e5d-f8244c8d99b6",
         "revision": 122,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-18T22:28:19Z",
+        "gate_id": "TO-C04-bounded-worker-context",
+        "id": "0700e9b8-fc93-4eba-acfa-92212a5f6469",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"c8c7cb3684ccf4290bef17c46e32569aea66f1e842ae68f0f5ebed6ccdfb45bb\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/communication-and-declarations.md\", \"docs/architecture/provider-contracts.md\", \"docs/architecture/worker-context.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/declarations.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/context.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/context.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_verification_bindings.py\", \"tests/coordination/test_context_independent.py\", \"tests/coordination/test_context_refresh.py\", \"tests/coordination/test_context_structural_guard.py\", \"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\", \"tests/planning/test_package.py\", \"todo-status.md\", \"todos.md\", \"todos/to-c03.md\", \"todos/to-c04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 134}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/0700e9b8-fc93-4eba-acfa-92212a5f6469",
+        "revision": 135,
         "status": "passed"
       },
       {
@@ -1693,12 +1829,38 @@
         "checkpoint_id": null,
         "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
         "id": "TO-C03-native-communication-and-sync",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "last_run_at": "2026-10-18T21:52:14Z",
+        "required": 1,
+        "revision": 130,
+        "status": "passed",
+        "task_id": "TO-C03",
+        "type": "command",
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
+        "id": "TO-C04-bounded-worker-context",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "last_run_at": "2026-10-18T22:28:19Z",
+        "required": 1,
+        "revision": 135,
+        "status": "passed",
+        "task_id": "TO-C04",
+        "type": "command",
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/coordination\", \"tests/coordination\"]}",
+        "id": "TO-C05-restricted-child-execution",
         "input_fingerprint": null,
         "last_run_at": null,
         "required": 1,
-        "revision": 127,
+        "revision": 138,
         "status": "pending",
-        "task_id": "TO-C03",
+        "task_id": "TO-C05",
         "type": "command",
         "valid": 0
       },
@@ -2058,6 +2220,16 @@
       },
       {
         "claim_id": null,
+        "created_at": "2026-10-18T22:28:19Z",
+        "id": "95889e17-d96f-4ccf-81db-b1fd409a6d08",
+        "kind": "complete",
+        "note": "Implemented bounded provenance-aware worker context. Derived exact plan/work/run/assignment/attempt capsules cite canonical declaration fact identity/version and decision rationale; deterministic manifests compare changed/invalidated refs. Append-only separately versioned findings retain exact work/context ownership and selected-source freshness, with authorized independent read scopes. Canonical wire byte budgets include metadata; 4KiB partial envelopes, version-bound base64 expansion pages and actionable required_bytes fallback are qualified. Message bodies remain behind messaging grants; rendered/structural credentials fail closed. Root full isolated suite passed323 tests (113.183s; /tmp/todo-orchestrator-c04-full-tests.log). Added3 independent structural-ID/context regressions passed separately and are included in the required coordination gate. Independent final review/probes found no blocker; native schema18, provider contract6. No original implementation, active Project Control, legacy authority, or service changes.",
+        "payload_json": "{\"authority_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"changed_owned_paths\": [\"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/context.py\", \"src/todo_orchestrator/coordination/service.py\", \"tests/coordination/test_context_independent.py\", \"tests/coordination/test_context_refresh.py\", \"tests/coordination/test_context_structural_guard.py\", \"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\"], \"checkpoints\": [], \"completion_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"completion_gates\": [{\"evidence_id\": \"0700e9b8-fc93-4eba-acfa-92212a5f6469\", \"evidence_revision\": 135, \"id\": \"TO-C04-bounded-worker-context\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\"}], \"completion_revision\": 136, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-C04-bounded-worker-context\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"last_run_at\": \"2026-10-18T22:28:19Z\", \"revision\": 135, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json           | 159 +++++++--\\n README.md                                        |   6 +-\\n docs/architecture/provider-contracts.md          |   8 +-\\n src/todo_orchestrator/authority/README.md        |  39 ++-\\n src/todo_orchestrator/authority/attempts.py      |   4 +\\n src/todo_orchestrator/authority/auth.py          |   4 +\\n src/todo_orchestrator/authority/declarations.py  | 238 ++++++++++++--\\n src/todo_orchestrator/authority/sqlite.py        |  72 +++-\\n src/todo_orchestrator/contracts/providers.py     |   5 +-\\n src/todo_orchestrator/coordination/__init__.py   |  17 +-\\n src/todo_orchestrator/coordination/service.py    |   5 +\\n src/todo_orchestrator/model/__init__.py          |  24 ++\\n src/todo_orchestrator/planning/package.py        |  28 ++\\n src/todo_orchestrator/verification/acceptance.py |  13 +-\\n tests/authority/test_sqlite.py                   |  10 +-\\n tests/contracts/test_verification_bindings.py    |   1 +\\n tests/coordination/test_declarations.py          | 397 +++++++++++++++++++++--\\n tests/planning/test_package.py                   |  36 ++\\n todo-status.md                                   |   6 +-\\n todos.md                                         |   6 +-\\n todos/to-c03.md                                  |   8 +-\\n todos/to-c04.md                                  |   6 +-\\n 22 files changed, 974 insertions(+), 118 deletions(-)\", \"git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented bounded provenance-aware worker context. Derived exact plan/work/run/assignment/attempt capsules cite canonical declaration fact identity/version and decision rationale; deterministic manifests compare changed/invalidated refs. Append-only separately versioned findings retain exact work/context ownership and selected-source freshness, with authorized independent read scopes. Canonical wire byte budgets include metadata; 4KiB partial envelopes, version-bound base64 expansion pages and actionable required_bytes fallback are qualified. Message bodies remain behind messaging grants; rendered/structural credentials fail closed. Root full isolated suite passed323 tests (113.183s; /tmp/todo-orchestrator-c04-full-tests.log). Added3 independent structural-ID/context regressions passed separately and are included in the required coordination gate. Independent final review/probes found no blocker; native schema18, provider contract6. No original implementation, active Project Control, legacy authority, or service changes.\", \"producer_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-C04\"}",
+        "revision": 136,
+        "task_id": "TO-C04"
+      },
+      {
+        "claim_id": null,
         "created_at": "2026-10-18T21:11:15Z",
         "id": "a29e600e-89f7-40fa-807a-f29b1bd328b0",
         "kind": "complete",
@@ -2075,6 +2247,16 @@
         "payload_json": "{\"authority_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"changed_owned_paths\": [\"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"tests/authority/__init__.py\", \"tests/authority/test_sqlite.py\"], \"checkpoints\": [], \"completion_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"completion_gates\": [{\"evidence_id\": \"f8969bce-284f-4266-b925-4ef43f57e152\", \"evidence_revision\": 34, \"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\"}], \"completion_revision\": 35, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-A01-SQLITE-AUTHORITY\", \"input_fingerprint\": \"7ad319a06e6a3c833a44c7c5cc20d9d42e63ca60bb012fc96d5c6b38e308973c\", \"last_run_at\": \"2026-10-18T16:17:43Z\", \"revision\": 34, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 242 +++++++++++++++++++++++-----\\n src/todo_orchestrator/contracts/__init__.py |   6 +-\\n todo-status.md                              |   8 +-\\n todos.md                                    |   8 +-\\n todos/to-a01.md                             |   8 +-\\n todos/to-f04.md                             |   8 +-\\n todos/to-foundation.md                      |  10 +-\\n 7 files changed, 229 insertions(+), 61 deletions(-)\", \"git_head\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"SQLite schema-v1 foundation accepted after independent review and adversarial corrections. 24 disposable authority tests pass; integrated source61 and reference4 pass. Explicit init atomically publishes and syncs directory, preserving valid DB on uncertain sync. Existing opens validate identity, WAL, frozen structural schema and FULL writer mode; missing/foreign/unsupported/malformed authorities rejected without repair. Cross-project target identity preserved. Reader snapshots, writer serialization and rollback qualified in temp DBs. Semantic commands/receipt execution remain A02; no live/legacy authority, service/config/source modification.\", \"producer_commit\": \"e4537408a0202cb01e978025725dc45341ac3319\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-A01\"}",
         "revision": 35,
         "task_id": "TO-A01"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-18T21:52:14Z",
+        "id": "b5f13c86-f660-4860-b0dd-cda2b5a04cb6",
+        "kind": "complete",
+        "note": "Implemented C03 typed durable communication and native declaration synchronization. Exact recipient/scope/run inbox partitions, deterministic durable read/delivery cursors and retry receipts, bounded guarded payloads, informational decision/interface notices separate from authorized canonical facts. Native facts drive shared advisory/transactional admission and V03 writer acceptance. Barriers require exact accepted participant outcomes under shared all/any/quorum semantics; compiler rejects identity collisions and duplicate participants. Action-bound provider contract v6 permits separately authorized approvers/readers and fails closed on missing rights/action. Root full isolated source suite: 314 passed (65.386s; /tmp/todo-orchestrator-c03-full-tests.log). Independent reviewer found no remaining blocker; separate approver/read-only/report-only probes passed. Development claims remain globally serial; original source and active Project Control untouched.",
+        "payload_json": "{\"authority_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"changed_owned_paths\": [\"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\"], \"checkpoints\": [], \"completion_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"completion_gates\": [{\"evidence_id\": \"002c7421-a12e-4140-b40e-491aecdc2835\", \"evidence_revision\": 130, \"id\": \"TO-C03-native-communication-and-sync\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\"}], \"completion_revision\": 131, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-C03-native-communication-and-sync\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"last_run_at\": \"2026-10-18T21:52:14Z\", \"revision\": 130, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json           |  16 +-\\n README.md                                        |   4 +-\\n docs/architecture/provider-contracts.md          |   8 +-\\n src/todo_orchestrator/authority/README.md        |  18 +-\\n src/todo_orchestrator/authority/declarations.py  | 238 ++++++++++++--\\n src/todo_orchestrator/contracts/providers.py     |   5 +-\\n src/todo_orchestrator/planning/package.py        |  28 ++\\n src/todo_orchestrator/verification/acceptance.py |  13 +-\\n tests/contracts/test_verification_bindings.py    |   1 +\\n tests/coordination/test_declarations.py          | 397 +++++++++++++++++++++--\\n tests/planning/test_package.py                   |  36 ++\\n todo-status.md                                   |   2 +-\\n todos.md                                         |   2 +-\\n 13 files changed, 702 insertions(+), 66 deletions(-)\", \"git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented C03 typed durable communication and native declaration synchronization. Exact recipient/scope/run inbox partitions, deterministic durable read/delivery cursors and retry receipts, bounded guarded payloads, informational decision/interface notices separate from authorized canonical facts. Native facts drive shared advisory/transactional admission and V03 writer acceptance. Barriers require exact accepted participant outcomes under shared all/any/quorum semantics; compiler rejects identity collisions and duplicate participants. Action-bound provider contract v6 permits separately authorized approvers/readers and fails closed on missing rights/action. Root full isolated source suite: 314 passed (65.386s; /tmp/todo-orchestrator-c03-full-tests.log). Independent reviewer found no remaining blocker; separate approver/read-only/report-only probes passed. Development claims remain globally serial; original source and active Project Control untouched.\", \"producer_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-C03\"}",
+        "revision": 131,
+        "task_id": "TO-C03"
       },
       {
         "claim_id": null,
@@ -2723,6 +2905,32 @@
         "task_id": "TO-C02",
         "valid": 1,
         "validation_git_head": "d6cf85f364626b5b5f89349826b0871b43e8bc42"
+      },
+      {
+        "completion_git_head": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_revision": 131,
+        "evidence_id": "002c7421-a12e-4140-b40e-491aecdc2835",
+        "evidence_revision": 130,
+        "gate_id": "TO-C03-native-communication-and-sync",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "provenance_json": "{\"claim_id\": \"a886cd22-52e6-4b4d-9890-3de3c1b20497\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"3f2296c63a7559c889cf968090e51d5f53196b708d2efe59130b1c3a27b501b2\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/communication-and-declarations.md\", \"docs/architecture/provider-contracts.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/declarations.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"tests/contracts/test_verification_bindings.py\", \"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\", \"tests/planning/test_package.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 129}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/002c7421-a12e-4140-b40e-491aecdc2835\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-C03",
+        "valid": 1,
+        "validation_git_head": "a49549e1012657c69f849b3682d35b6284193b66"
+      },
+      {
+        "completion_git_head": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_revision": 136,
+        "evidence_id": "0700e9b8-fc93-4eba-acfa-92212a5f6469",
+        "evidence_revision": 135,
+        "gate_id": "TO-C04-bounded-worker-context",
+        "input_fingerprint": "b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951",
+        "provenance_json": "{\"claim_id\": \"de7bf7cd-6adf-49bc-ad4f-7e7de214a39a\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"c8c7cb3684ccf4290bef17c46e32569aea66f1e842ae68f0f5ebed6ccdfb45bb\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/communication-and-declarations.md\", \"docs/architecture/provider-contracts.md\", \"docs/architecture/worker-context.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/declarations.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/contracts/providers.py\", \"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/context.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/context.py\", \"src/todo_orchestrator/planning/package.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"tests/authority/test_sqlite.py\", \"tests/contracts/test_verification_bindings.py\", \"tests/coordination/test_context_independent.py\", \"tests/coordination/test_context_refresh.py\", \"tests/coordination/test_context_structural_guard.py\", \"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\", \"tests/planning/test_package.py\", \"todo-status.md\", \"todos.md\", \"todos/to-c03.md\", \"todos/to-c04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 134}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/0700e9b8-fc93-4eba-acfa-92212a5f6469\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-C04",
+        "valid": 1,
+        "validation_git_head": "a49549e1012657c69f849b3682d35b6284193b66"
       },
       {
         "completion_git_head": "9100f82384ab3099057b272ca5504a64e651aad0",
@@ -3829,9 +4037,9 @@
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_git_head": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_revision": 131,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-C03",
         "kind": "task",
@@ -3843,20 +4051,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-COORDINATION",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 126,
-        "status": "in_progress",
+        "revision": 131,
+        "status": "done",
         "tags_json": "[]",
         "title": "Provide typed durable communication and decision synchronization",
-        "updated_at": "2026-10-18T21:12:27Z",
-        "version": 2
+        "updated_at": "2026-10-18T21:52:14Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_git_head": "a49549e1012657c69f849b3682d35b6284193b66",
+        "completion_revision": 136,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-C04",
         "kind": "task",
@@ -3868,14 +4076,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-COORDINATION",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 136,
+        "status": "done",
         "tags_json": "[]",
         "title": "Derive bounded, provenance-aware worker context",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T22:28:19Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -3895,12 +4103,12 @@
         "priority": 40,
         "result": null,
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 137,
+        "status": "in_progress",
         "tags_json": "[]",
         "title": "Support restricted delegation and parent-mediated acceptance",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-18T22:29:45Z",
+        "version": 2
       },
       {
         "attention_reason": null,
@@ -5589,32 +5797,32 @@
       },
       {
         "activated_at": "2026-10-18T21:12:27Z",
-        "completed_at": null,
+        "completed_at": "2026-10-18T21:52:14Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 2,
-        "revision": 126,
-        "state": "active",
+        "revision": 131,
+        "state": "completed",
         "task_id": "TO-C03"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T21:52:22Z",
+        "completed_at": "2026-10-18T22:28:19Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 3,
-        "revision": 2,
-        "state": "queued",
+        "revision": 136,
+        "state": "completed",
         "task_id": "TO-C04"
       },
       {
-        "activated_at": null,
+        "activated_at": "2026-10-18T22:29:45Z",
         "completed_at": null,
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-COORDINATION",
         "position": 4,
-        "revision": 2,
-        "state": "queued",
+        "revision": 137,
+        "state": "active",
         "task_id": "TO-C05"
       },
       {
@@ -5936,11 +6144,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-COORDINATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 126,
+        "revision": 137,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
         "state": "active",
-        "updated_at": "2026-10-18T21:12:27Z",
+        "updated_at": "2026-10-18T22:29:45Z",
         "workspace_mode": "exclusive"
       },
       {

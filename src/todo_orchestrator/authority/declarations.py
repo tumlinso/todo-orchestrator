@@ -49,7 +49,16 @@ from todo_orchestrator.planning import (
 from todo_orchestrator.planning.package import CompiledPlan, _compatible_interface_version
 from todo_orchestrator.planning.snapshot import decode_accepted_plan
 
-from .auth import AuthorizationRequirement, AuthorityAuthService
+from .auth import (
+    AuthorizationRequirement,
+    AuthorityAuthService,
+    _context_covers,
+    _context_from_row,
+    _scope_from_row,
+    _scope_covers,
+    _stored_actions,
+    _verified_scope_membership,
+)
 from .commands import MutationContext
 from .sqlite import (
     AuthorityError,
@@ -101,6 +110,8 @@ _FACTS_FOR_OPERATION = {
     "blocker.clear": (None, "blocker_cleared"),
 }
 _MAX_NOTE_CHARS = 1000
+_OUTCOME_ACCEPT_ACTION = StableId("todo.outcome.accept")
+_OUTCOME_READ_ACTION = StableId("todo.outcome.read")
 
 
 class DeclarationError(AuthorityError):
@@ -282,6 +293,112 @@ def _blocker_row(connection: sqlite3.Connection, declaration: DeclarationRecord)
     return _latest_fact(connection, declaration, ("blocker_opened", "blocker_cleared"))
 
 
+def _accepted_plan_for_declaration(
+    connection: sqlite3.Connection,
+    declaration: DeclarationRecord,
+) -> CompiledPlan:
+    """Load the canonical accepted plan owning a declaration fact."""
+
+    meta = connection.execute(
+        "SELECT project_id, authority_id FROM authority_meta WHERE singleton = 1"
+    ).fetchone()
+    if meta is None:
+        raise InvalidAuthorityError("authority identity is missing while evaluating a declaration")
+    project = Project(StableId(meta["project_id"]), StableId(meta["authority_id"]))
+    if project.project_id != declaration.target.project_id:
+        raise InvalidAuthorityError("declaration belongs to a different project authority")
+    row = connection.execute(
+        "SELECT sequence, state FROM plan_revisions WHERE plan_revision_id = ?",
+        (str(declaration.plan_revision_id),),
+    ).fetchone()
+    if row is None or row["state"] != "accepted":
+        raise InvalidAuthorityError("declaration does not belong to an accepted plan")
+    snapshot = load_plan_revision_snapshot(connection, project, declaration.plan_revision_id)
+    if snapshot.sequence is None or snapshot.sequence != row["sequence"]:
+        raise InvalidAuthorityError("accepted declaration plan sequence is inconsistent")
+    return decode_accepted_plan(snapshot.canonical_json, project, sequence=snapshot.sequence)
+
+
+def _barrier_participants_result(
+    connection: sqlite3.Connection,
+    declaration: DeclarationRecord,
+    plan: CompiledPlan,
+) -> ConditionResult:
+    """Evaluate exact accepted work outcomes using the shared group semantics."""
+
+    planned_by_id = {str(item.definition.work_item_id): item for item in plan.work_items}
+    participants = declaration.payload.get("participants", ())
+    if not participants:
+        return ConditionResult(ConditionStatus.UNAVAILABLE, (ConditionCause(
+            "barrier_participants_unavailable", str(declaration.target.entity_id),
+            "the accepted barrier has no participants",
+        ),))
+
+    results: list[ConditionResult] = []
+    for participant in participants:
+        if not isinstance(participant, Mapping):
+            return ConditionResult(ConditionStatus.UNAVAILABLE, (ConditionCause(
+                "barrier_participant_invalid", str(declaration.target.entity_id),
+                "the accepted barrier contains an invalid participant reference",
+            ),))
+        try:
+            participant_project = StableId(participant["project_id"])
+            participant_kind = EntityKind(participant["kind"])
+            participant_id = StableId(participant["entity_id"])
+            raw_revision = participant.get("revision_id", participant.get("definition_revision_id"))
+            participant_revision = None if raw_revision is None else StableId(raw_revision)
+        except (KeyError, TypeError, ValueError):
+            return ConditionResult(ConditionStatus.UNAVAILABLE, (ConditionCause(
+                "barrier_participant_invalid", str(declaration.target.entity_id),
+                "the accepted barrier contains an invalid participant reference",
+            ),))
+        subject = str(participant_id)
+        if participant_project != plan.project.project_id or participant_kind is not EntityKind.WORK_ITEM:
+            results.append(ConditionResult(ConditionStatus.UNAVAILABLE, (ConditionCause(
+                "barrier_participant_unavailable", subject,
+                "the barrier participant is not a local work-item definition",
+            ),)))
+            continue
+        item = planned_by_id.get(subject)
+        if item is None or (participant_revision is not None
+                            and item.definition.definition_revision_id != participant_revision):
+            results.append(ConditionResult(ConditionStatus.UNAVAILABLE, (ConditionCause(
+                "barrier_participant_definition_unavailable", subject,
+                "the exact participant definition is absent from the accepted plan",
+            ),)))
+            continue
+        outcome = connection.execute(
+            "SELECT disposition FROM outcomes WHERE work_item_id = ? AND definition_revision_id = ? "
+            "ORDER BY version DESC LIMIT 1",
+            (str(item.definition.work_item_id), str(item.definition.definition_revision_id)),
+        ).fetchone()
+        if outcome is None:
+            results.append(ConditionResult(ConditionStatus.UNSATISFIED, (ConditionCause(
+                "work_item_incomplete", subject,
+                "no accepted outcome exists for this exact barrier participant definition",
+            ),)))
+            continue
+        disposition = str(outcome["disposition"])
+        allowed = item.context.acceptance.get("allowed_dispositions", ())
+        accepted = disposition in allowed
+        results.append(ConditionResult(
+            ConditionStatus.SATISFIED if accepted else ConditionStatus.UNSATISFIED,
+            (ConditionCause(
+                "work_item_outcome" if accepted else "work_item_outcome_not_accepted",
+                subject,
+                f"accepted outcome is {disposition}" if accepted else
+                f"accepted outcome {disposition!r} is not allowed by this definition",
+            ),),
+        ))
+
+    try:
+        mode = RequirementMode(str(declaration.payload["mode"]))
+        quorum = declaration.payload.get("quorum")
+        return evaluate_results(mode, quorum, tuple(results))
+    except (KeyError, TypeError, ValueError) as exc:
+        raise InvalidAuthorityError("stored barrier participant mode is invalid") from exc
+
+
 def declaration_condition(
     connection: sqlite3.Connection,
     declaration: DeclarationRecord,
@@ -357,8 +474,14 @@ def declaration_condition(
         return ConditionResult(status), None, None
 
     if declaration.kind == "barrier":
-        status = ConditionStatus.SATISFIED if fact is not None else ConditionStatus.UNRESOLVED
-        return ConditionResult(status), None, None
+        if fact is None:
+            return ConditionResult(ConditionStatus.UNRESOLVED, (ConditionCause(
+                "barrier_unreleased", str(declaration.target.entity_id),
+                "the barrier has not been explicitly released",
+            ),)), None, None
+        plan = _accepted_plan_for_declaration(connection, declaration)
+        participants = _barrier_participants_result(connection, declaration, plan)
+        return participants, None, None
 
     if declaration.kind == "rendezvous":
         participants = declaration.payload.get("participants", ())
@@ -548,6 +671,16 @@ class _DeclarationHandler:
             previous = _latest_fact(connection, record, ("barrier_released",))
             if previous is not None:
                 return _noop(record, fact_kind, payload)
+            blocker = _blocker_row(connection, record)
+            if blocker is not None and blocker["fact_kind"] == "blocker_opened":
+                raise DeclarationMutationDeniedError("an open blocker prevents barrier release")
+            participant_result = _barrier_participants_result(connection, record, plan)
+            if participant_result.status is not ConditionStatus.SATISFIED:
+                causes = "; ".join(cause.message for cause in participant_result.causes)
+                raise DeclarationMutationDeniedError(
+                    "barrier participants do not satisfy the authored release condition"
+                    + (f": {causes}" if causes else "")
+                )
         elif fact_kind == "rendezvous_arrived":
             participant_json = payload.get("participant")
             participant = _parse_ref_value(participant_json, context.project.project_id)
@@ -965,22 +1098,29 @@ class SQLiteDeclarationObserver(DeclarationObserver):
                 if declaration is None or declaration.target != request.target or declaration.digest != request.declaration_digest.hex:
                     return unknown("declaration_payload_mismatch")
                 attempt = connection.execute(
-                    "SELECT a.actor_id, a.actor_incarnation_id, a.work_item_id, a.definition_revision_id, "
+                    "SELECT a.attempt_id, a.actor_id, a.actor_incarnation_id, a.work_item_id, a.definition_revision_id, "
                     "a.state, a.lease_expires_at, a.run_id, a.assignment_id, w.workspace_id "
                     "FROM attempts AS a LEFT JOIN attempt_workspace_qualifications AS w USING(attempt_id) "
                     "WHERE a.attempt_id = ?", (str(request.attempt.entity_id),),
                 ).fetchone()
                 if attempt is None or attempt["workspace_id"] != str(request.workspace_id):
                     return unknown("declaration_attempt_workspace_unknown")
-                if (attempt["actor_id"] != str(request.context.actor.entity_id)
-                        or attempt["actor_incarnation_id"] != str(request.context.actor.incarnation_id)
-                        or attempt["state"] not in {AttemptState.ADMITTED.value, AttemptState.ACTIVE.value, AttemptState.REPORTED.value}
-                        or attempt["lease_expires_at"] is None
-                        or datetime.fromisoformat(attempt["lease_expires_at"]) <= _now(self.clock)):
-                    return unknown("declaration_attempt_not_live")
+                requested_action = request.authorization_action
+                if requested_action not in {_OUTCOME_ACCEPT_ACTION, _OUTCOME_READ_ACTION}:
+                    return unknown("declaration_authorization_action_missing")
+                if requested_action == _OUTCOME_ACCEPT_ACTION:
+                    if (attempt["state"] not in {
+                            AttemptState.ADMITTED.value, AttemptState.ACTIVE.value, AttemptState.REPORTED.value,
+                        }
+                            or attempt["lease_expires_at"] is None
+                            or datetime.fromisoformat(attempt["lease_expires_at"]) <= _now(self.clock)):
+                        return unknown("declaration_attempt_not_live")
+                elif attempt["state"] not in {state.value for state in AttemptState}:
+                    return unknown("declaration_attempt_state_unknown")
                 if (attempt["run_id"] is not None):
                     run = connection.execute("SELECT plan_revision_id, state FROM runs WHERE run_id = ?", (attempt["run_id"],)).fetchone()
-                    if run is None or run["state"] != "open" or run["plan_revision_id"] != str(request.plan_revision_id):
+                    if (run is None or run["plan_revision_id"] != str(request.plan_revision_id)
+                            or (requested_action == _OUTCOME_ACCEPT_ACTION and run["state"] != "open")):
                         return unknown("declaration_attempt_run_mismatch")
                 membership = connection.execute(
                     "SELECT 1 FROM plan_revision_work_items WHERE plan_revision_id = ? AND work_item_id = ? "
@@ -988,24 +1128,70 @@ class SQLiteDeclarationObserver(DeclarationObserver):
                 ).fetchone()
                 if membership is None:
                     return unknown("declaration_attempt_definition_mismatch")
+                capability_id = request.context.capability.entity_id
                 capability = connection.execute(
-                    "SELECT c.actor_id, c.actor_incarnation_id, c.scope_kind, c.scope_entity_id, "
-                    "c.scope_definition_revision_id, c.attempt_id, c.run_id, c.assignment_id, c.expires_at, c.revoked "
-                    "FROM capabilities AS c JOIN attempt_capabilities AS ac USING(capability_id) "
-                    "WHERE c.capability_id = ? AND ac.attempt_id = ?",
-                    (str(request.context.capability.entity_id), str(request.attempt.entity_id)),
+                    "SELECT c.* FROM capabilities AS c JOIN capability_tokens AS t USING(capability_id) "
+                    "WHERE c.capability_id = ?",
+                    (str(capability_id),),
                 ).fetchone()
-                if capability is None or bool(capability["revoked"]):
+                if capability is None:
                     return unknown("declaration_capability_unknown")
-                if (capability["actor_id"] != attempt["actor_id"]
-                        or capability["actor_incarnation_id"] != attempt["actor_incarnation_id"]
-                        or capability["scope_kind"] != EntityKind.WORK_ITEM.value
-                        or capability["scope_entity_id"] != attempt["work_item_id"]
-                        or capability["scope_definition_revision_id"] != attempt["definition_revision_id"]
-                        or capability["attempt_id"] != str(request.attempt.entity_id)
-                        or (capability["run_id"] is not None and capability["run_id"] != attempt["run_id"])
-                        or (capability["assignment_id"] is not None and capability["assignment_id"] != attempt["assignment_id"])
-                        or (capability["expires_at"] is not None and datetime.fromisoformat(capability["expires_at"]) <= _now(self.clock))):
+                now = _now(self.clock)
+                lineage_id: str | None = str(capability_id)
+                seen: set[str] = set()
+                lineage_valid = True
+                for _ in range(64):
+                    if lineage_id is None:
+                        break
+                    if lineage_id in seen:
+                        lineage_valid = False
+                        break
+                    seen.add(lineage_id)
+                    ancestor = connection.execute(
+                        "SELECT parent_capability_id, revoked, expires_at FROM capabilities WHERE capability_id = ?",
+                        (lineage_id,),
+                    ).fetchone()
+                    if (ancestor is None or bool(ancestor["revoked"])
+                            or (ancestor["expires_at"] is not None
+                                and datetime.fromisoformat(ancestor["expires_at"]) <= now)):
+                        lineage_valid = False
+                        break
+                    lineage_id = ancestor["parent_capability_id"]
+                else:
+                    lineage_valid = False
+                if not lineage_valid:
+                    return unknown("declaration_capability_revoked_or_expired")
+
+                actor = request.context.actor
+                if (capability["actor_id"] != str(actor.entity_id)
+                        or capability["actor_incarnation_id"] != str(actor.incarnation_id)
+                        or requested_action not in _stored_actions(connection, capability_id)
+                        or request.context.capability.project_id != request.context.project_id):
+                    return unknown("declaration_capability_identity_or_action_mismatch")
+                target = EntityRef(
+                    self.authority.project.project_id, EntityKind.WORK_ITEM,
+                    StableId(attempt["work_item_id"]), StableId(attempt["definition_revision_id"]),
+                )
+                scope = _scope_from_row(self.authority.project, capability)
+                scope_membership = (
+                    _verified_scope_membership(connection, self.authority.project, scope)
+                    if scope.kind is EntityKind.PLAN_REVISION else None
+                )
+                if (scope.kind is EntityKind.PLAN_REVISION
+                        and scope != EntityRef(self.authority.project.project_id, EntityKind.PLAN_REVISION,
+                                               request.plan_revision_id)):
+                    return unknown("declaration_capability_plan_mismatch")
+                if not _scope_covers(scope, target, plan_membership=scope_membership):
+                    return unknown("declaration_capability_scope_mismatch")
+                granted_context = _context_from_row(self.authority.project, capability)
+                target_context = tuple(
+                    EntityRef(self.authority.project.project_id, kind, StableId(attempt[column]))
+                    if attempt[column] is not None else None
+                    for kind, column in ((EntityKind.RUN, "run_id"),
+                                         (EntityKind.ASSIGNMENT, "assignment_id"),
+                                         (EntityKind.ATTEMPT, "attempt_id"))
+                )
+                if not _context_covers(granted_context, target_context):
                     return unknown("declaration_capability_mismatch")
                 result, version, _option = declaration_condition(
                     connection, declaration, expected_version=request.expected_version,

@@ -3,14 +3,14 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-C05: Support restricted delegation and parent-mediated acceptance
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `137`; current project revision is in `todo-status.md`.
 
 ## Objective
 Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `in_progress`
+- Execution: `claimed`
 - Parallel policy: `serial`
 - Result: `-`
 

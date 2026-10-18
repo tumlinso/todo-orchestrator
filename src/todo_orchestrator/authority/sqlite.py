@@ -26,7 +26,7 @@ from todo_orchestrator.contracts.verification import EvidenceRequirement, Verifi
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 17
+SCHEMA_VERSION = 19
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -519,6 +519,127 @@ _SCHEMA_STATEMENTS = (
     """CREATE TRIGGER attempt_scope_snapshots_no_delete
         BEFORE DELETE ON attempt_scope_snapshots
         BEGIN SELECT RAISE(ABORT, 'attempt scope snapshots are append-only'); END""",
+    """CREATE TABLE child_executions (
+        execution_id TEXT PRIMARY KEY,
+        parent_attempt_id TEXT NOT NULL,
+        logical_id TEXT NOT NULL,
+        ordinal INTEGER NOT NULL CHECK (ordinal BETWEEN 1 AND 3),
+        retry_of_execution_id TEXT,
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        child_actor_id TEXT NOT NULL,
+        child_incarnation_id TEXT NOT NULL,
+        capability_id TEXT NOT NULL UNIQUE,
+        scope_json TEXT NOT NULL,
+        scope_digest TEXT NOT NULL CHECK (length(scope_digest) = 64 AND scope_digest NOT GLOB '*[^0-9a-f]*'),
+        actions_json TEXT NOT NULL,
+        actions_digest TEXT NOT NULL CHECK (length(actions_digest) = 64 AND actions_digest NOT GLOB '*[^0-9a-f]*'),
+        state TEXT NOT NULL CHECK (state IN ('active', 'candidate', 'cancel_requested', 'stopped')),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (parent_attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (retry_of_execution_id) REFERENCES child_executions(execution_id),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id),
+        FOREIGN KEY (child_actor_id, child_incarnation_id) REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (capability_id) REFERENCES capabilities(capability_id),
+        UNIQUE (parent_attempt_id, logical_id, ordinal)
+    )""",
+    """CREATE INDEX child_executions_by_parent_state
+        ON child_executions(parent_attempt_id, state, logical_id, ordinal)""",
+    """CREATE TRIGGER child_execution_identity_immutable
+        BEFORE UPDATE ON child_executions
+        WHEN OLD.execution_id IS NOT NEW.execution_id OR OLD.parent_attempt_id IS NOT NEW.parent_attempt_id
+          OR OLD.logical_id IS NOT NEW.logical_id OR OLD.ordinal IS NOT NEW.ordinal
+          OR OLD.retry_of_execution_id IS NOT NEW.retry_of_execution_id
+          OR OLD.work_item_id IS NOT NEW.work_item_id OR OLD.definition_revision_id IS NOT NEW.definition_revision_id
+          OR OLD.child_actor_id IS NOT NEW.child_actor_id OR OLD.child_incarnation_id IS NOT NEW.child_incarnation_id
+          OR OLD.capability_id IS NOT NEW.capability_id OR OLD.scope_json IS NOT NEW.scope_json
+          OR OLD.scope_digest IS NOT NEW.scope_digest OR OLD.actions_json IS NOT NEW.actions_json
+          OR OLD.actions_digest IS NOT NEW.actions_digest OR OLD.created_at IS NOT NEW.created_at
+        BEGIN SELECT RAISE(ABORT, 'child execution identity and authority are immutable'); END""",
+    """CREATE TRIGGER child_execution_state_transition_guard
+        BEFORE UPDATE ON child_executions
+        WHEN NOT (
+            (OLD.state = 'active' AND NEW.state IN ('candidate', 'cancel_requested', 'stopped'))
+            OR (OLD.state = 'candidate' AND NEW.state IN ('cancel_requested', 'stopped'))
+            OR (OLD.state = 'cancel_requested' AND NEW.state = 'stopped')
+        )
+        BEGIN SELECT RAISE(ABORT, 'child execution state transition is invalid'); END""",
+    """CREATE TRIGGER child_executions_no_delete
+        BEFORE DELETE ON child_executions
+        BEGIN SELECT RAISE(ABORT, 'child executions are durable records'); END""",
+    """CREATE TABLE child_candidates (
+        candidate_id TEXT PRIMARY KEY,
+        execution_id TEXT NOT NULL UNIQUE,
+        summary TEXT NOT NULL CHECK (length(summary) BETWEEN 1 AND 4096),
+        artifacts_json TEXT NOT NULL,
+        artifacts_digest TEXT NOT NULL CHECK (length(artifacts_digest) = 64 AND artifacts_digest NOT GLOB '*[^0-9a-f]*'),
+        submitted_by_actor_id TEXT NOT NULL,
+        submitted_by_incarnation_id TEXT NOT NULL,
+        submitted_at TEXT NOT NULL,
+        FOREIGN KEY (execution_id) REFERENCES child_executions(execution_id),
+        FOREIGN KEY (submitted_by_actor_id, submitted_by_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE TRIGGER child_candidates_no_update
+        BEFORE UPDATE ON child_candidates
+        BEGIN SELECT RAISE(ABORT, 'child candidates are append-only'); END""",
+    """CREATE TRIGGER child_candidates_no_delete
+        BEFORE DELETE ON child_candidates
+        BEGIN SELECT RAISE(ABORT, 'child candidates are append-only'); END""",
+    """CREATE TABLE child_candidate_reviews (
+        review_id TEXT PRIMARY KEY,
+        candidate_id TEXT NOT NULL UNIQUE,
+        decision TEXT NOT NULL CHECK (decision IN ('accepted', 'rejected')),
+        reviewer_actor_id TEXT NOT NULL,
+        reviewer_incarnation_id TEXT NOT NULL,
+        reason TEXT CHECK (reason IS NULL OR length(reason) <= 2048),
+        reviewed_at TEXT NOT NULL,
+        FOREIGN KEY (candidate_id) REFERENCES child_candidates(candidate_id),
+        FOREIGN KEY (reviewer_actor_id, reviewer_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE TRIGGER child_candidate_reviews_no_update
+        BEFORE UPDATE ON child_candidate_reviews
+        BEGIN SELECT RAISE(ABORT, 'child candidate reviews are append-only'); END""",
+    """CREATE TRIGGER child_candidate_reviews_no_delete
+        BEFORE DELETE ON child_candidate_reviews
+        BEGIN SELECT RAISE(ABORT, 'child candidate reviews are append-only'); END""",
+    """CREATE TABLE child_cancellations (
+        cancellation_id TEXT PRIMARY KEY,
+        execution_id TEXT NOT NULL UNIQUE,
+        requested_by_actor_id TEXT NOT NULL,
+        requested_by_incarnation_id TEXT NOT NULL,
+        reason TEXT CHECK (reason IS NULL OR length(reason) <= 2048),
+        requested_at TEXT NOT NULL,
+        FOREIGN KEY (execution_id) REFERENCES child_executions(execution_id),
+        FOREIGN KEY (requested_by_actor_id, requested_by_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE TRIGGER child_cancellations_no_update
+        BEFORE UPDATE ON child_cancellations
+        BEGIN SELECT RAISE(ABORT, 'child cancellation requests are append-only'); END""",
+    """CREATE TRIGGER child_cancellations_no_delete
+        BEFORE DELETE ON child_cancellations
+        BEGIN SELECT RAISE(ABORT, 'child cancellation requests are append-only'); END""",
+    """CREATE TABLE child_stop_observations (
+        execution_id TEXT PRIMARY KEY,
+        parent_attempt_id TEXT NOT NULL,
+        lease_id TEXT NOT NULL,
+        lease_expires_at TEXT NOT NULL,
+        observation_json TEXT NOT NULL,
+        receipt_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        FOREIGN KEY (execution_id) REFERENCES child_executions(execution_id),
+        FOREIGN KEY (parent_attempt_id) REFERENCES attempts(attempt_id)
+    )""",
+    """CREATE TRIGGER child_stop_observations_no_update
+        BEFORE UPDATE ON child_stop_observations
+        BEGIN SELECT RAISE(ABORT, 'child stop observations are append-only'); END""",
+    """CREATE TRIGGER child_stop_observations_no_delete
+        BEFORE DELETE ON child_stop_observations
+        BEGIN SELECT RAISE(ABORT, 'child stop observations are append-only'); END""",
     """CREATE TABLE artifacts (
         artifact_id TEXT PRIMARY KEY,
         provider_id TEXT NOT NULL,
@@ -1114,6 +1235,67 @@ _SCHEMA_STATEMENTS = (
     """CREATE TRIGGER outcome_provenance_no_delete
         BEFORE DELETE ON outcome_provenance
         BEGIN SELECT RAISE(ABORT, 'outcome provenance is immutable'); END""",
+    """CREATE TABLE context_finding_versions (
+        finding_id TEXT NOT NULL,
+        version INTEGER NOT NULL CHECK (version > 0),
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        plan_revision_id TEXT NOT NULL,
+        run_id TEXT,
+        assignment_id TEXT,
+        attempt_id TEXT,
+        summary TEXT NOT NULL,
+        source_manifest_digest TEXT NOT NULL CHECK (
+            length(source_manifest_digest) = 64 AND source_manifest_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        source_fragments_json TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
+        semantic_revision INTEGER NOT NULL CHECK (semantic_revision > 0),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (finding_id, version),
+        CHECK ((run_id IS NULL AND assignment_id IS NULL AND attempt_id IS NULL)
+            OR (run_id IS NOT NULL AND assignment_id IS NOT NULL AND attempt_id IS NOT NULL)),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id),
+        FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id),
+        FOREIGN KEY (assignment_id) REFERENCES assignments(assignment_id),
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (actor_id, actor_incarnation_id) REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE INDEX context_finding_versions_scope
+        ON context_finding_versions(work_item_id, definition_revision_id, run_id, assignment_id, attempt_id,
+                                    finding_id, version)""",
+    """CREATE TABLE context_finding_invalidations (
+        finding_id TEXT NOT NULL,
+        finding_version INTEGER NOT NULL,
+        reason TEXT NOT NULL,
+        source_manifest_digest TEXT NOT NULL CHECK (
+            length(source_manifest_digest) = 64 AND source_manifest_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        source_fragments_json TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
+        semantic_revision INTEGER NOT NULL CHECK (semantic_revision > 0),
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (finding_id, finding_version),
+        FOREIGN KEY (finding_id, finding_version)
+            REFERENCES context_finding_versions(finding_id, version),
+        FOREIGN KEY (actor_id, actor_incarnation_id) REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE TRIGGER context_finding_versions_no_update
+        BEFORE UPDATE ON context_finding_versions
+        BEGIN SELECT RAISE(ABORT, 'context finding versions are append-only'); END""",
+    """CREATE TRIGGER context_finding_versions_no_delete
+        BEFORE DELETE ON context_finding_versions
+        BEGIN SELECT RAISE(ABORT, 'context finding versions are append-only'); END""",
+    """CREATE TRIGGER context_finding_invalidations_no_update
+        BEFORE UPDATE ON context_finding_invalidations
+        BEGIN SELECT RAISE(ABORT, 'context finding invalidations are append-only'); END""",
+    """CREATE TRIGGER context_finding_invalidations_no_delete
+        BEFORE DELETE ON context_finding_invalidations
+        BEGIN SELECT RAISE(ABORT, 'context finding invalidations are append-only'); END""",
 )
 
 
@@ -1136,7 +1318,7 @@ def _compile_schema_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v17 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v19 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
 _SCHEMA_SIGNATURE = _compile_schema_signature()
 
@@ -1147,11 +1329,14 @@ _REQUIRED_TABLES = frozenset({
     "attempts", "capabilities", "capability_tokens",
     "local_owner_credentials", "capability_actions",
     "attempt_capabilities", "attempt_workspace_qualifications", "attempt_scope_snapshots",
+    "child_executions", "child_candidates", "child_candidate_reviews", "child_cancellations",
+    "child_stop_observations",
     "artifacts", "evidence", "evidence_inputs", "evidence_artifacts", "evidence_facts",
     "outcomes", "outcome_evidence", "outcome_candidates", "outcome_provenance",
     "external_operations", "git_effect_operations", "verification_attempts", "authority_events",
     "declaration_facts", "coordination_messages", "coordination_message_recipients",
     "coordination_message_cursors",
+    "context_finding_versions", "context_finding_invalidations",
     "command_receipts", "command_idempotency",
 })
 
@@ -1814,7 +1999,7 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
 
     try:
         if _schema_signature(connection) != _SCHEMA_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v17 definition")
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v19 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -1878,7 +2063,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v17 authority without replacing an existing path.
+        """Create a new schema-v19 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -2030,7 +2215,7 @@ class SQLiteAuthority:
     ) -> MigrationResult:
         """Validate the current schema; no schema migration is implemented yet.
 
-        Schema v17 is the only supported version. A current v17 authority is a
+        Schema v18 is the only supported version. A current v18 authority is a
         no-op. Older versions and every other unsupported version are rejected
         without opening the file writable; this method never guesses a
         conversion or restores a backup.

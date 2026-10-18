@@ -14,7 +14,7 @@ from .domain import EntityKind, EntityRef, EvidenceInput, EvidenceResult, Sha256
 from .verification import EvidenceKind, EvidenceRequirement, VerificationContract
 
 
-PROVIDER_CONTRACT_VERSION = 5
+PROVIDER_CONTRACT_VERSION = 6
 T = TypeVar("T")
 
 
@@ -352,6 +352,7 @@ class DeclarationObservationRequest:
     declaration_kind: DeclarationKind
     declaration_digest: Sha256Digest
     expected_version: str | None = None
+    authorization_action: StableId | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -377,6 +378,8 @@ class DeclarationObservationRequest:
             raise TypeError("declaration_digest must be a Sha256Digest")
         if self.expected_version is not None:
             _text(self.expected_version, "expected_version")
+        if self.authorization_action is not None:
+            _id(self.authorization_action, "authorization_action")
 
 
 @dataclass(frozen=True)

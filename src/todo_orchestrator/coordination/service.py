@@ -40,6 +40,9 @@ from todo_orchestrator.authority.auth import (
     CapabilityDeniedError,
     CapabilityDeliveryUncertainError,
     AuthorityAuthService,
+    CONTEXT_FINDING_INVALIDATE_ACTION,
+    CONTEXT_FINDING_PUBLISH_ACTION,
+    CONTEXT_READ_ACTION,
     _bearer,
     _capability_from_values,
     _context_from_row,
@@ -325,6 +328,8 @@ class _DispatchHandler:
             for optional_action in (
                 VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
                 MESSAGE_SEND_ACTION, MESSAGE_READ_ACTION, QUESTION_ANSWER_ACTION,
+                CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION,
+                CONTEXT_FINDING_INVALIDATE_ACTION,
             ):
                 try:
                     self.service.auth._authorize_capability(

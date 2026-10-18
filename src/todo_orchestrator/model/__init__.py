@@ -37,6 +37,29 @@ from .coordination import (
     RunScheduleView,
     ScheduledWork,
 )
+from .context import (
+    ContextCapsule,
+    ContextCapsuleStatus,
+    ContextChangeKind,
+    ContextExpansion,
+    ContextExpansionStatus,
+    ContextFinding,
+    ContextFragment,
+    ContextFragmentChange,
+    ContextFragmentKind,
+    ContextFragmentRef,
+    ContextManifest,
+)
+from .children import (
+    ChildArtifactRef,
+    ChildCandidate,
+    ChildCandidateDecision,
+    ChildExecutionGrant,
+    ChildExecutionState,
+    ChildExecutionView,
+    ChildReview,
+    ChildScopeOccupancy,
+)
 
 __all__ = [
     "AuthorityDelta",
@@ -68,4 +91,23 @@ __all__ = [
     "RunSchedule",
     "RunScheduleView",
     "ScheduledWork",
+    "ContextCapsule",
+    "ContextCapsuleStatus",
+    "ContextChangeKind",
+    "ContextExpansion",
+    "ContextExpansionStatus",
+    "ContextFinding",
+    "ContextFragment",
+    "ContextFragmentChange",
+    "ContextFragmentKind",
+    "ContextFragmentRef",
+    "ContextManifest",
+    "ChildArtifactRef",
+    "ChildCandidate",
+    "ChildCandidateDecision",
+    "ChildExecutionGrant",
+    "ChildExecutionState",
+    "ChildExecutionView",
+    "ChildReview",
+    "ChildScopeOccupancy",
 ]

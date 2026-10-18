@@ -812,6 +812,22 @@ def _validate_declaration(raw: dict[str, Any], path: str, kind: str, allowed: se
             _validate_reference(item, f"{path}/participants/{index}", project_id)
             for index, item in enumerate(participants)
         ]
+        participant_refs = [
+            (
+                item["project_id"], item["kind"], item["entity_id"],
+                item.get("revision_id"), item.get("incarnation_id"),
+            )
+            for item in result["participants"]
+        ]
+        seen_participants: set[tuple[Any, ...]] = set()
+        for index, participant_ref in enumerate(participant_refs):
+            if participant_ref in seen_participants:
+                _fail(
+                    "duplicate_participant",
+                    f"{path}/participants/{index}",
+                    "participants must be distinct qualified references",
+                )
+            seen_participants.add(participant_ref)
         if not result["participants"]:
             _fail("empty_participants", f"{path}/participants", "participants must not be empty")
         mode = _string(raw["mode"], f"{path}/mode")
@@ -946,6 +962,18 @@ def parse_plan_json(
         ))
         for kind, allowed in record_specs.items():
             records[kind] = _id_records(top.get(kind, []), f"$/{kind}", allowed, project["project_id"])
+
+        # Both declaration kinds currently use EntityKind.BARRIER as their
+        # canonical identity. Reject collisions rather than allowing one
+        # declaration's trusted observation to satisfy the other's ref.
+        rendezvous_ids = {item["id"] for item in records["rendezvous"]}
+        for index, barrier in enumerate(records["barriers"]):
+            if barrier["id"] in rendezvous_ids:
+                _fail(
+                    "duplicate_id",
+                    f"$/barriers/{index}/id",
+                    f"identifier {barrier['id']!r} is shared by a barrier and rendezvous",
+                )
 
         # Keep authored field presence separately from normalized defaults. Preview
         # uses these masks to distinguish an omitted field from an explicit value.

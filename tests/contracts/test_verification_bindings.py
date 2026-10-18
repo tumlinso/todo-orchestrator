@@ -190,6 +190,7 @@ class VerificationBindingContractTests(unittest.TestCase):
             replace(request, target=EntityRef(self.project, EntityKind.INTERFACE, sid("other-api"))),
             replace(request, declaration_digest=digest("e")),
             replace(request, expected_version="3.0"),
+            replace(request, authorization_action=sid("todo.outcome.accept")),
         ):
             with self.subTest(changed=changed):
                 self.assertNotEqual(provider_request_digest(changed), original)

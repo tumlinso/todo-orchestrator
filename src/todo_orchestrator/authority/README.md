@@ -1,4 +1,4 @@
-# SQLite authority v17
+# SQLite authority v18
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v17 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v17
+Schema v18 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v18
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -48,7 +48,7 @@ Reusing an exact definition reference requires identical bundle bytes, digest,
 and normalized projections. Snapshot, membership, and definition corruption
 fails closed; the reader does not repair or infer missing authority state.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v17
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v18
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -74,10 +74,10 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v17 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v16 or any other unsupported version
+Schema v18 is the only implemented version. `migrate()` is an explicit current
+version no-op and rejects schema v1 through v17 or any other unsupported version
 without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v16 migration is provided. A future migration must preserve
+be recreated; no v1-v17 migration is provided. A future migration must preserve
 definition identity and full accepted-snapshot meaning; it cannot infer mixed
 membership from matching revision IDs.
 
@@ -107,12 +107,25 @@ receipts; missing execution receipts are never reconstructed as historical fact.
 Schema v16 adds append-only decision, interface, checkpoint, barrier, rendezvous,
 and blocker facts keyed to the exact accepted declaration digest, plus scoped
 coordination messages, recipient-incarnation delivery, one-answer constraints,
-and monotonic delivered/read cursors. Messages never create authoritative
-workflow facts. Native declaration observations return unknown when the exact
-accepted declaration or required attempt context is unavailable. Schema v17
-partitions inbox cursors by exact run context, including a separate unbound
-partition, while allowing same-run participants with different assignments or
-attempts to share the run's message stream.
+and monotonic delivered/read cursors. `MessagingService` supports questions,
+answers, status, artifact, conflict, handoff, and informational decision and
+interface-change messages. Messages never create authoritative workflow facts;
+resolution, publication, acceptance, arrival, release, and blocker changes use
+the separately authorized `DeclarationService`. Native declaration
+observations return unknown when the exact accepted declaration or required
+attempt context is unavailable. Schema v17 partitions inbox cursor identity,
+reads, and monotonic watermarks by exact run context, including a separate
+unbound partition, while allowing same-run participants with different
+assignments or attempts to share the run's message stream. Recipients still
+need a current capability for the exact scope and their own context; delivery
+does not grant rights.
+Schema v18 adds append-only contextual finding versions and invalidation events.
+Derived context capsules are recomputed from accepted plans and current facts;
+they are not persisted. Readers need an explicit `todo.context.read` grant for
+the exact work and optional run context. Finding publication and invalidation
+use separate action grants and store the current source-manifest digest with
+typed fragment references. Existing v1-v17 fixtures are rejected; this alpha
+has no migration path.
 For a future supported migration, first validate the source identity/version
 read-only, create a non-overwriting adjacent backup with SQLite's online backup
 API, and apply the versioned DDL in one transaction with the version marker

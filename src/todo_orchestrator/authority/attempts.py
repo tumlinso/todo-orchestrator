@@ -48,6 +48,9 @@ from .auth import (
     AuthorizationRequirement,
     AuthorityAuthService,
     CapabilityDeniedError,
+    CONTEXT_FINDING_INVALIDATE_ACTION,
+    CONTEXT_FINDING_PUBLISH_ACTION,
+    CONTEXT_READ_ACTION,
 )
 from .commands import MutationContext
 from .eligibility import (
@@ -87,6 +90,7 @@ ATTEMPT_SESSION_VERIFICATION_REPORT_ACTIONS = (
 _ATTEMPT_SESSION_ACTION_CEILING = frozenset((
     *ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION, VERIFICATION_RECONCILE_ACTION, OUTCOME_REPORT_ACTION,
     StableId("todo.message.send"), StableId("todo.message.read"), StableId("todo.question.answer"),
+    CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION, CONTEXT_FINDING_INVALIDATE_ACTION,
 ))
 _LIVE_STATES = (AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.REPORTED)
 _TERMINAL_STATES = (AttemptState.ACCEPTED, AttemptState.REJECTED, AttemptState.RELEASED)

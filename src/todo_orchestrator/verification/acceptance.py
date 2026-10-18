@@ -625,7 +625,7 @@ def _current_dependency_failures(connection, plan: CompiledPlan, target: EntityR
             if requirement is None or requirement.target is None:
                 results.append(ConditionResult(ConditionStatus.UNAVAILABLE))
                 continue
-            target_ref = requirement.target.reference
+            target_ref = requirement.target
             if target_ref.kind is EntityKind.WORK_ITEM:
                 result = _accepted_work_outcome(connection, plan, target_ref)[0]
             else:
@@ -1021,7 +1021,8 @@ class OutcomeAcceptanceService:
         )
 
     def _observe_declarations(self, plan, target, attempt_ref, workspace, plan_revision_id,
-                              actor, capability_id, correlation_prefix, now, *, authority=None):
+                              actor, capability_id, correlation_prefix, now, *, authority=None,
+                              authorization_action=ACCEPT_OUTCOME_ACTION):
         observer = self.declaration_observer
         if observer is None:
             if authority is None:
@@ -1040,10 +1041,10 @@ class OutcomeAcceptanceService:
                 continue
             declaration_digest = _digest(_json(_plain_json_value(declaration)))
             correlation = _id("declaration-status", correlation_prefix + ":" + _declaration_key(reference, kind))
-            context = self._provider_context(actor, "", ACCEPT_OUTCOME_ACTION, target, capability_id, correlation)
+            context = self._provider_context(actor, "", authorization_action, target, capability_id, correlation)
             request = DeclarationObservationRequest(
                 context, correlation, attempt_ref, workspace.workspace_id, plan_revision_id,
-                reference, kind, declaration_digest, expected_version,
+                reference, kind, declaration_digest, expected_version, authorization_action,
             )
             try:
                 result = observer.observe_declaration(request)
@@ -1330,6 +1331,7 @@ class OutcomeAcceptanceService:
         declaration_records = self._observe_declarations(
             plan, target, attempt_ref, workspace, current_revision, actor,
             capability_id, str(outcome_ref.entity_id), self._now(), authority=authority,
+            authorization_action=READ_OUTCOME_ACTION,
         )
         with authority.read_transaction() as connection:
             # Re-read plan and all evidence after the external observation so
@@ -1672,8 +1674,7 @@ class OutcomeAcceptanceService:
                 requirement = requirements.get(req_id)
                 if requirement is None or requirement.target is None:
                     raise CandidateDeniedError("prerequisite definition is unavailable")
-                target = requirement.target
-                ref = target.reference
+                ref = requirement.target
                 outcome_id = None
                 if ref.kind is EntityKind.WORK_ITEM:
                     result, outcome_id = _accepted_work_outcome(context._connection, plan, ref)

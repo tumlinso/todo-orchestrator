@@ -10,6 +10,7 @@ from todo_orchestrator.authority import (
     DeclarationMutationDeniedError,
     DeclarationService,
 )
+from todo_orchestrator.authority.attempts import AttemptAdmissionDeniedError, CLAIM_ACTION
 from todo_orchestrator.authority.declarations import (
     BARRIER_RELEASE_ACTION,
     BLOCKER_CLEAR_ACTION,
@@ -28,13 +29,24 @@ from todo_orchestrator.contracts import (
     DeclarationStatus,
     EntityKind,
     EntityRef,
+    OutcomeDisposition,
     ProviderCallContext,
+    ProviderIdentity,
     ProviderStatus,
     Sha256Digest,
     StableId,
 )
+from todo_orchestrator.model import EligibilityRequest, EligibilityStatus
+from todo_orchestrator.planning import ConditionResult, ConditionStatus
+from todo_orchestrator.verification.acceptance import (
+    ACCEPT_OUTCOME_ACTION,
+    REPORT_CANDIDATE_ACTION,
+    READ_OUTCOME_ACTION,
+    CandidateDeniedError,
+    OutcomeAcceptanceService,
+)
 
-from tests.verification.test_execution_independent import PROJECT
+from tests.verification.test_execution_independent import PROJECT, SOURCE_IDENTITY
 
 
 class DeclarationServiceTests(unittest.TestCase):
@@ -53,7 +65,8 @@ class DeclarationServiceTests(unittest.TestCase):
                 authority, OWNER_PASSWORD,
                 actions=(*OWNER_ACTIONS, DECISION_RESOLVE_ACTION, INTERFACE_PUBLISH_ACTION,
                          CHECKPOINT_ACCEPT_ACTION, BARRIER_RELEASE_ACTION, RENDEZVOUS_ARRIVE_ACTION,
-                         BLOCKER_OPEN_ACTION, BLOCKER_CLEAR_ACTION),
+                         BLOCKER_OPEN_ACTION, BLOCKER_CLEAR_ACTION, REPORT_CANDIDATE_ACTION,
+                         ACCEPT_OUTCOME_ACTION, READ_OUTCOME_ACTION),
                 scope=PROJECT.ref, expires_at=self.fixture.clock() + timedelta(hours=1),
                 idempotency_key=StableId("declaration-owner-token"),
                 expected_revision=self.fixture.revision(),
@@ -144,15 +157,9 @@ class DeclarationServiceTests(unittest.TestCase):
                 )
         self.assertEqual(f.revision(), before)
 
-    def test_interface_barrier_rendezvous_and_explicit_blocker_feed_native_facts(self):
+    def test_interface_rendezvous_and_explicit_blocker_feed_native_facts(self):
         f = self.fixture
         source = json.loads(self.package_with_decision())
-        source["barriers"] = [{
-            "id": "release-point", "title": "Release point",
-            "participants": [{
-                "project_id": str(PROJECT.project_id), "kind": "work_item", "entity_id": "verify",
-            }], "mode": "all",
-        }]
         source["rendezvous"] = [{
             "id": "owner-sync", "title": "Owner synchronization",
             "participants": [{
@@ -162,7 +169,6 @@ class DeclarationServiceTests(unittest.TestCase):
         plan, _ = self.commit_package(json.dumps(source, sort_keys=True), "declaration-all-plan")
         decision = EntityRef(PROJECT.project_id, EntityKind.DECISION, StableId("runtime-choice"))
         interface = EntityRef(PROJECT.project_id, EntityKind.INTERFACE, StableId("runtime-api"))
-        barrier = EntityRef(PROJECT.project_id, EntityKind.BARRIER, StableId("release-point"))
         rendezvous = EntityRef(PROJECT.project_id, EntityKind.BARRIER, StableId("owner-sync"))
 
         with f.open_writer() as authority:
@@ -176,12 +182,6 @@ class DeclarationServiceTests(unittest.TestCase):
                 authority, f.owner.bearer_token, plan.revision.ref, interface,
                 "1.1.0", "Publish the compatible interface revision.",
                 idempotency_key=StableId("declaration-all-interface"), expected_revision=f.revision(),
-            )
-        with f.open_writer() as authority:
-            self.service.release_barrier(
-                authority, f.owner.bearer_token, plan.revision.ref, barrier,
-                "Release after the coordinator reviewed the declared gate.",
-                idempotency_key=StableId("declaration-all-barrier"), expected_revision=f.revision(),
             )
         with f.open_writer() as authority:
             dispatched = f.coordination.dispatch(
@@ -201,7 +201,7 @@ class DeclarationServiceTests(unittest.TestCase):
         with f.open_reader() as authority:
             conditions, decisions = native_declaration_facts(authority.connection, plan)
             self.assertEqual(decisions["runtime-choice"].status.value, "satisfied")
-            for target in (interface, barrier, rendezvous):
+            for target in (interface, rendezvous):
                 self.assertEqual(conditions[target].status.value, "satisfied")
             published, version, _ = declaration_condition(
                 authority.connection,
@@ -232,6 +232,178 @@ class DeclarationServiceTests(unittest.TestCase):
             conditions, decisions = native_declaration_facts(authority.connection, plan)
             self.assertEqual(conditions[decision].status.value, "satisfied")
             self.assertEqual(decisions["runtime-choice"].status.value, "satisfied")
+
+    def test_barrier_release_requires_exact_accepted_participant_outcomes_and_quorum(self):
+        from tests.verification.test_acceptance_independent import BenchmarkVerifier, HOST_IDENTITY
+
+        f = self.fixture
+        document = json.loads(self.package_with_decision())
+        participant_ids = ("barrier-a", "barrier-b", "barrier-c")
+        for identifier in participant_ids:
+            work = {
+                "id": identifier,
+                "title": identifier,
+                "objective": "Satisfy an authored barrier participant.",
+                "outcome": "The participant has an accepted outcome.",
+                "scope": {"paths": [{"path": f"barriers/{identifier}", "access": "write"}],
+                          "concepts": [], "locks": []},
+                "ownership": {"mode": "any", "actors": []},
+                "acceptance": {"assertions": ["outcome accepted"], "required_evidence": [],
+                               "allowed_dispositions": ["completed"]},
+            }
+            if identifier == "barrier-c":
+                work["requirement_groups"] = [{"kind": "check", "mode": "all",
+                                                "members": ["barrier-benchmark"]}]
+                work["acceptance"]["allowed_dispositions"] = ["evaluated_not_promoted"]
+            document["work_items"].append(work)
+        document["work_items"].append({
+            "id": "barrier-dependent", "title": "Barrier dependent",
+            "objective": "Wait for the authored all-participant barrier.",
+            "outcome": "The barrier has been released after all participant outcomes.",
+            "scope": {"paths": [{"path": "barriers/dependent", "access": "write"}],
+                      "concepts": [], "locks": []},
+            "ownership": {"mode": "any", "actors": []},
+            "acceptance": {"assertions": ["barrier released"], "required_evidence": [],
+                           "allowed_dispositions": ["completed"]},
+            "requirement_groups": [{"kind": "prerequisite", "mode": "all",
+                                    "members": ["needs-barrier"]}],
+        })
+        document["requirements"].append({
+            "id": "barrier-benchmark", "work_item_id": "barrier-c", "kind": "check",
+            "description": "A definitive benchmark result is accepted by this participant's policy.",
+            "check_key": "barrier-benchmark",
+            "verification": {"kind": "benchmark", "version": 1, "config": {
+                "metric": "latency", "operator": "lte", "threshold": 10.0,
+                "unit": "ms", "minimum_samples": 2,
+            }},
+            "required_evidence": [{"name": "barrier-benchmark-report",
+                                    "kind": "benchmark_sample", "version": 1}],
+        })
+        document["requirements"].append({
+            "id": "needs-barrier", "work_item_id": "barrier-dependent", "kind": "prerequisite",
+            "description": "All barrier participants must have an accepted outcome.",
+            "target": {"project_id": str(PROJECT.project_id), "kind": "barrier", "entity_id": "all-three"},
+        })
+        def participant(identifier):
+            return {"project_id": str(PROJECT.project_id), "kind": "work_item", "entity_id": identifier}
+
+        document["barriers"] = [
+            {"id": "all-three", "title": "All participants", "participants": [
+                participant(identifier) for identifier in participant_ids
+            ], "mode": "all"},
+            {"id": "quorum-two", "title": "Two participants", "participants": [
+                participant(identifier) for identifier in participant_ids
+            ], "mode": "quorum", "quorum": 2},
+        ]
+        plan, _ = self.commit_package(json.dumps(document, sort_keys=True), "declaration-barrier-outcome-plan")
+        f.plan = plan
+        all_barrier = EntityRef(PROJECT.project_id, EntityKind.BARRIER, StableId("all-three"))
+        quorum_barrier = EntityRef(PROJECT.project_id, EntityKind.BARRIER, StableId("quorum-two"))
+        acceptance = OutcomeAcceptanceService(
+            f.auth, source_observer=f.source, source_identity=SOURCE_IDENTITY,
+            host=f.host, host_identity=HOST_IDENTITY, clock=f.clock,
+        )
+
+        def release(target, key):
+            with f.open_writer() as authority:
+                return self.service.release_barrier(
+                    authority, f.owner.bearer_token, plan.revision.ref, target,
+                    "The participant outcome condition has been met.",
+                    idempotency_key=StableId(key), expected_revision=f.revision(),
+                )
+
+        before = f.revision()
+        for target, key in ((all_barrier, "declaration-barrier-all-premature"),
+                            (quorum_barrier, "declaration-barrier-quorum-premature")):
+            with self.subTest(barrier=str(target.entity_id)):
+                with self.assertRaises(DeclarationMutationDeniedError):
+                    release(target, key)
+                self.assertEqual(f.revision(), before)
+
+        def accept_participant(identifier):
+            ref = next(item.definition.ref for item in plan.work_items
+                       if str(item.definition.work_item_id) == identifier)
+            with f.open_writer() as authority:
+                dispatched = f.coordination.dispatch(
+                    authority, f.owner.bearer_token, plan,
+                    workspace_id=StableId("barrier-workspace-" + identifier),
+                    idempotency_key=StableId("barrier-dispatch-" + identifier),
+                    expected_revision=f.revision(), work_item=ref,
+                )
+            disposition = OutcomeDisposition.COMPLETED
+            if identifier == "barrier-c":
+                requirement = next(item.definition.ref for item in plan.requirements
+                                   if str(item.definition.requirement_id) == "barrier-benchmark")
+                f.verification.provider = BenchmarkVerifier(f.ledger_path, f.clock)
+                with f.open_writer() as authority:
+                    checked = f.verification.execute(
+                        authority, dispatched.bearer_token, dispatched.attempt.ref, requirement,
+                        idempotency_key=StableId("barrier-verify-" + identifier),
+                        expected_revision=f.revision(),
+                    )
+                self.assertEqual(checked.state, "rejected")
+                disposition = OutcomeDisposition.EVALUATED_NOT_PROMOTED
+            with f.open_writer() as authority:
+                _reported, candidate = acceptance.report_candidate(
+                    authority, dispatched.bearer_token, dispatched.attempt.ref,
+                    disposition,
+                    idempotency_key=StableId("barrier-report-" + identifier),
+                    expected_revision=f.revision(),
+                )
+            with f.open_writer() as authority:
+                acceptance.accept_candidate(
+                    authority, f.owner.bearer_token, dispatched.attempt.ref, candidate,
+                    idempotency_key=StableId("barrier-accept-" + identifier),
+                    expected_revision=f.revision(),
+                )
+
+        accept_participant("barrier-a")
+        accept_participant("barrier-b")
+        release(quorum_barrier, "declaration-barrier-quorum-success")
+        with f.open_reader() as authority:
+            conditions, _ = native_declaration_facts(authority.connection, plan)
+            self.assertIs(conditions[quorum_barrier].status, ConditionStatus.SATISFIED)
+            self.assertIs(conditions[all_barrier].status, ConditionStatus.UNRESOLVED)
+        dependent = next(item.definition.ref for item in plan.work_items
+                         if str(item.definition.work_item_id) == "barrier-dependent")
+        before_blocked_admission = f.revision()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptAdmissionDeniedError):
+                f.attempts.claim(
+                    authority, f.owner.bearer_token, dependent, plan,
+                    idempotency_key=StableId("declaration-barrier-dependent-before-all"),
+                    expected_revision=before_blocked_admission,
+                    workspace_id=StableId("declaration-barrier-dependent-workspace"),
+                )
+        self.assertEqual(f.revision(), before_blocked_admission)
+        with self.assertRaises(DeclarationMutationDeniedError):
+            release(all_barrier, "declaration-barrier-all-short")
+        accept_participant("barrier-c")
+        release(all_barrier, "declaration-barrier-all-success")
+
+        with f.open_writer() as authority:
+            admitted = f.attempts.claim(
+                authority, f.owner.bearer_token, dependent, plan,
+                idempotency_key=StableId("declaration-barrier-dependent-after-all"),
+                expected_revision=f.revision(),
+                workspace_id=StableId("declaration-barrier-dependent-workspace"),
+            )
+        self.assertEqual(admitted.receipt.result["state"], "admitted")
+
+        with f.open_reader() as authority:
+            all_record = load_plan_declaration(
+                authority.connection, PROJECT, plan.revision.plan_revision_id, "barrier", StableId("all-three"),
+            )
+            quorum_record = load_plan_declaration(
+                authority.connection, PROJECT, plan.revision.plan_revision_id, "barrier", StableId("quorum-two"),
+            )
+            self.assertEqual(declaration_condition(authority.connection, all_record)[0].status,
+                             ConditionStatus.SATISFIED)
+            self.assertEqual(declaration_condition(authority.connection, quorum_record)[0].status,
+                             ConditionStatus.SATISFIED)
+            observed_conditions, _ = native_declaration_facts(authority.connection, plan)
+            self.assertIs(observed_conditions[all_barrier].status, ConditionStatus.SATISFIED)
+            self.assertIs(observed_conditions[quorum_barrier].status, ConditionStatus.SATISFIED)
 
     def test_checkpoint_requires_finalized_named_evidence_and_observer_is_fail_closed(self):
         f = self.fixture
@@ -278,7 +450,7 @@ class DeclarationServiceTests(unittest.TestCase):
         reader = f.open_reader()
         self.addCleanup(reader.close)
         observer = self.service.observer(reader)
-        request = DeclarationObservationRequest(
+        worker_request = DeclarationObservationRequest(
             ProviderCallContext(PROJECT.project_id, dispatched.attempt.actor,
                                 dispatched.capability.ref, StableId("native-declaration-context"),
                                 StableId("native-declaration-scope")),
@@ -286,8 +458,27 @@ class DeclarationServiceTests(unittest.TestCase):
             StableId("declaration-checkpoint-workspace"), plan.revision.plan_revision_id,
             checkpoint, DeclarationKind.CHECKPOINT, Sha256Digest(declaration.digest),
         )
-        missing = observer.observe_declaration(request)
+        # Native observation never treats a capability reference as authority
+        # by itself. The worker grant cannot impersonate the approver.
+        self.assertEqual(observer.observe_declaration(worker_request).status, ProviderStatus.UNKNOWN)
+        missing = observer.observe_declaration(replace(
+            worker_request, authorization_action=ACCEPT_OUTCOME_ACTION,
+        ))
         self.assertEqual(missing.status, ProviderStatus.UNKNOWN)
+
+        owner_capability = f.owner.capability
+        request = DeclarationObservationRequest(
+            ProviderCallContext(
+                PROJECT.project_id, owner_capability.actor,
+                EntityRef(PROJECT.project_id, EntityKind.CAPABILITY, owner_capability.capability_id),
+                StableId("native-declaration-owner-context"), StableId("native-declaration-owner-scope"),
+            ),
+            StableId("native-declaration-owner-before"), dispatched.attempt.ref,
+            StableId("declaration-checkpoint-workspace"), plan.revision.plan_revision_id,
+            checkpoint, DeclarationKind.CHECKPOINT, Sha256Digest(declaration.digest),
+            authorization_action=ACCEPT_OUTCOME_ACTION,
+        )
+        self.assertEqual(observer.observe_declaration(request).status, ProviderStatus.UNKNOWN)
 
         with f.open_writer() as authority:
             self.service.accept_checkpoint(
@@ -329,6 +520,174 @@ class DeclarationServiceTests(unittest.TestCase):
         with f.open_reader() as authority:
             facts = authority.connection.execute("SELECT count(*) FROM declaration_facts").fetchone()[0]
         self.assertEqual(facts, 0)
+
+    def test_canonical_decision_fact_controls_advisory_and_attempt_admission(self):
+        f = self.fixture
+        document = json.loads(self.package_with_decision())
+        verify = next(item for item in document["work_items"] if item["id"] == "verify")
+        verify["requirement_groups"].append({
+            "kind": "prerequisite", "mode": "all", "members": ["needs-decision"],
+        })
+        document["requirements"].append({
+            "id": "needs-decision", "work_item_id": "verify", "kind": "prerequisite",
+            "description": "The decision must be authoritatively resolved",
+            "target": {"project_id": str(PROJECT.project_id), "kind": "decision", "entity_id": "runtime-choice"},
+        })
+        plan, _ = self.commit_package(json.dumps(document, sort_keys=True), "declaration-admission-plan")
+        target = next(item.definition.ref for item in plan.work_items
+                      if str(item.definition.work_item_id) == "verify")
+        decision = EntityRef(PROJECT.project_id, EntityKind.DECISION, StableId("runtime-choice"))
+        request = EligibilityRequest(target, f.owner.capability.actor, CLAIM_ACTION, f.revision())
+
+        # A caller-provided SATISFIED observation cannot replace unresolved
+        # canonical state from the accepted declaration snapshot.
+        with f.open_reader() as authority:
+            advisory = f.attempts.eligibility.evaluate_read(
+                authority, request, plan,
+                blocker_observations={decision: ConditionResult(ConditionStatus.SATISFIED)},
+            )
+        self.assertIs(advisory.status, EligibilityStatus.UNKNOWN)
+        before_denied = f.revision()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptAdmissionDeniedError):
+                f.attempts.claim(
+                    authority, f.owner.bearer_token, target, plan,
+                    idempotency_key=StableId("declaration-admission-before-resolution"),
+                    expected_revision=before_denied, workspace_id=StableId("declaration-admission-workspace"),
+                )
+        self.assertEqual(f.revision(), before_denied)
+
+        with f.open_writer() as authority:
+            self.service.resolve_decision(
+                authority, f.owner.bearer_token, plan.revision.ref, decision,
+                StableId("one"), "Select the declared option before admission.",
+                idempotency_key=StableId("declaration-admission-resolution"),
+                expected_revision=f.revision(),
+            )
+        request = replace(request, expected_revision=f.revision())
+        with f.open_reader() as authority:
+            advisory = f.attempts.eligibility.evaluate_read(
+                authority, request, plan,
+                blocker_observations={decision: ConditionResult(ConditionStatus.UNRESOLVED)},
+            )
+        self.assertIs(advisory.status, EligibilityStatus.ALLOWED)
+        with f.open_writer() as authority:
+            admitted = f.attempts.claim(
+                authority, f.owner.bearer_token, target, plan,
+                idempotency_key=StableId("declaration-admission-after-resolution"),
+                expected_revision=f.revision(), workspace_id=StableId("declaration-admission-workspace"),
+            )
+        self.assertEqual(admitted.receipt.result["state"], "admitted")
+
+    def test_v03_acceptance_rechecks_native_checkpoint_facts_in_writer(self):
+        f = self.fixture
+        document = json.loads(self.package_with_decision())
+        document["checkpoints"] = [{
+            "id": "release-check", "title": "Release check",
+            "acceptance": {"assertions": ["the gate is accepted"], "required_evidence": [],
+                           "allowed_dispositions": ["completed"]},
+            "unknowns": [], "producers": [],
+        }]
+        verify = next(item for item in document["work_items"] if item["id"] == "verify")
+        verify["requirement_groups"].append({
+            "kind": "prerequisite", "mode": "all", "members": ["needs-checkpoint"],
+        })
+        document["requirements"].append({
+            "id": "needs-checkpoint", "work_item_id": "verify", "kind": "prerequisite",
+            "description": "The checkpoint must be accepted",
+            "target": {"project_id": str(PROJECT.project_id), "kind": "checkpoint", "entity_id": "release-check"},
+        })
+        plan, _ = self.commit_package(json.dumps(document, sort_keys=True), "declaration-v03-plan")
+        f.plan = plan
+        target = next(item.definition.ref for item in plan.work_items
+                      if str(item.definition.work_item_id) == "verify")
+        checkpoint = EntityRef(PROJECT.project_id, EntityKind.CHECKPOINT, StableId("release-check"))
+
+        before_denied = f.revision()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptAdmissionDeniedError):
+                f.attempts.claim(
+                    authority, f.owner.bearer_token, target, plan,
+                    idempotency_key=StableId("declaration-v03-claim-before-gate"),
+                    expected_revision=before_denied, workspace_id=StableId("declaration-v03-workspace"),
+                )
+        self.assertEqual(f.revision(), before_denied)
+
+        with f.open_writer() as authority:
+            self.service.accept_checkpoint(
+                authority, f.owner.bearer_token, plan.revision.ref, checkpoint, (),
+                "The empty-evidence checkpoint is explicitly accepted.",
+                idempotency_key=StableId("declaration-v03-gate-accept"), expected_revision=f.revision(),
+            )
+        with f.open_writer() as authority:
+            dispatched = f.coordination.dispatch(
+                authority, f.owner.bearer_token, plan,
+                workspace_id=StableId("declaration-v03-workspace"), work_item=target,
+                idempotency_key=StableId("declaration-v03-dispatch"), expected_revision=f.revision(),
+            )
+        with f.open_writer() as authority:
+            verified = f.verification.execute(
+                authority, dispatched.bearer_token, dispatched.attempt.ref,
+                f.requirement_ref("check-verify"), idempotency_key=StableId("declaration-v03-verify"),
+                expected_revision=f.revision(),
+            )
+        self.assertEqual(verified.state, "finalized")
+
+        from tests.verification.test_execution_independent import SOURCE_IDENTITY
+        acceptance = OutcomeAcceptanceService(
+            f.auth, source_observer=f.source, source_identity=SOURCE_IDENTITY,
+            host=f.host, host_identity=ProviderIdentity(StableId("v02-attempt-host"), "1"),
+            clock=f.clock, max_observation_age=timedelta(minutes=5),
+        )
+        with f.open_writer() as authority:
+            _reported, candidate = acceptance.report_candidate(
+                authority, dispatched.bearer_token, dispatched.attempt.ref,
+                OutcomeDisposition.COMPLETED, idempotency_key=StableId("declaration-v03-report"),
+                expected_revision=f.revision(),
+            )
+
+        with f.open_writer() as authority:
+            self.service.open_blocker(
+                authority, f.owner.bearer_token, plan.revision.ref, checkpoint,
+                "The checkpoint is under renewed review.",
+                idempotency_key=StableId("declaration-v03-gate-block"), expected_revision=f.revision(),
+            )
+        before_refusal = f.revision()
+        with f.open_writer() as authority:
+            with self.assertRaises(CandidateDeniedError):
+                acceptance.accept_candidate(
+                    authority, f.owner.bearer_token, dispatched.attempt.ref, candidate,
+                    idempotency_key=StableId("declaration-v03-refuse-open-gate"),
+                    expected_revision=before_refusal,
+                )
+        self.assertEqual(f.revision(), before_refusal)
+        with f.open_reader() as authority:
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM outcomes").fetchone()[0], 0)
+            self.assertEqual(authority.connection.execute(
+                "SELECT state FROM outcome_candidates WHERE candidate_id = ?", (str(candidate.entity_id),)
+            ).fetchone()[0], "pending")
+
+        with f.open_writer() as authority:
+            self.service.clear_blocker(
+                authority, f.owner.bearer_token, plan.revision.ref, checkpoint,
+                "Review completed; the accepted checkpoint remains current.",
+                idempotency_key=StableId("declaration-v03-gate-clear"), expected_revision=f.revision(),
+            )
+        with f.open_writer() as authority:
+            accepted = acceptance.accept_candidate(
+                authority, f.owner.bearer_token, dispatched.attempt.ref, candidate,
+                idempotency_key=StableId("declaration-v03-accept-after-clear"), expected_revision=f.revision(),
+            )
+        self.assertEqual(accepted.receipt.result["state"], "accepted")
+        with f.open_reader() as authority:
+            self.assertEqual(authority.connection.execute("SELECT count(*) FROM outcomes").fetchone()[0], 1)
+            outcome_id = authority.connection.execute("SELECT outcome_id FROM outcomes").fetchone()[0]
+            applicability = acceptance.read_outcome_applicability(
+                authority,
+                EntityRef(PROJECT.project_id, EntityKind.OUTCOME, StableId(outcome_id)),
+                bearer_token=f.owner.bearer_token,
+            )
+        self.assertEqual(applicability.status, "applicable")
 
 
 if __name__ == "__main__":

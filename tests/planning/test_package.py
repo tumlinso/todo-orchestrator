@@ -404,6 +404,42 @@ class PlanPackageTests(unittest.TestCase):
         parsed = self.parse(document)
         self.assertTrue(parsed.ok, parsed.diagnostics)
 
+    def test_barrier_and_rendezvous_share_one_identity_namespace(self):
+        document = package_document()
+        document["rendezvous"][0]["id"] = document["barriers"][0]["id"]
+        parsed = self.parse(document)
+        self.assertFalse(parsed.ok)
+        self.assertEqual(parsed.diagnostics[0].code, "duplicate_id")
+
+    def test_barrier_and_rendezvous_quorums_reject_duplicate_qualified_participants(self):
+        for section in ("barriers", "rendezvous"):
+            with self.subTest(section=section):
+                document = package_document()
+                declaration = document[section][0]
+                declaration["mode"] = "quorum"
+                declaration["quorum"] = 2
+                declaration["participants"] = [
+                    {"project_id": "project-a", "kind": "work_item", "entity_id": "build"},
+                    {"project_id": "project-a", "kind": "work_item", "entity_id": "build"},
+                    {"project_id": "project-a", "kind": "work_item", "entity_id": "verify"},
+                ]
+                parsed = self.parse(document)
+                self.assertFalse(parsed.ok)
+                self.assertEqual(parsed.diagnostics[0].code, "duplicate_participant")
+
+    def test_participant_identity_keeps_distinct_qualified_references(self):
+        document = package_document()
+        document["barriers"][0]["participants"] = [
+            {"project_id": "project-b", "kind": "work_item", "entity_id": "same", "revision_id": "rev-a",
+             "adoption_receipt": {"receipt_id": "receipt-a", "authority_id": "authority-b", "contract_digest": "a" * 64}},
+            {"project_id": "project-b", "kind": "work_item", "entity_id": "same", "revision_id": "rev-b",
+             "adoption_receipt": {"receipt_id": "receipt-b", "authority_id": "authority-b", "contract_digest": "b" * 64}},
+        ]
+        parsed = self.parse(document)
+        self.assertTrue(parsed.ok, parsed.diagnostics)
+        participants = parsed.package.document["barriers"][0]["participants"]
+        self.assertEqual([item["revision_id"] for item in participants], ["rev-a", "rev-b"])
+
 
 if __name__ == "__main__":
     unittest.main()
