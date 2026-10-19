@@ -1,17 +1,15 @@
 # Recovery transitions
 
-Checkpoint status: R02 is in progress and has not passed final acceptance.
-The verification recovery path currently fails when an observation has no
-workspace isolation value (`_recovery_approval_digest` dereferences `None`).
-The dedicated verification recovery tests and observed-effect reconciliation
-qualification are unfinished. The behavior described below is the intended
-contract for the saved implementation, not a claim of completed qualification.
+R02 was accepted at development authority revision 160 after required gate
+revision 159 passed. The isolated source suite passed all 370 tests in
+131.022 seconds; independent recovery discovery passed 21 tests. Qualification
+uses temporary SQLite/Git authorities and trusted injected providers, not a
+live external host runtime.
 
-The checkpoint source suite ran 366 tests: 364 passed, one failed, and one
-errored. In addition to the isolation error above,
-`test_expired_safe_attempt_has_preview_intent_without_reconciliation` received
-no intent where it expected one. That regression remains unresolved in this
-checkpoint. `git diff --check` passed.
+Focused coverage includes exact release/requeue intents, stale and forged
+previews, distinct authenticated recovery principals, Git and verification
+retry after trusted not-started observations, observed-effect reconcile and
+replay, and dirty workspace preservation.
 
 R02 applies recovery intents from the read-only inspection API. Inspection
 describes an observed state; it does not authorize or perform a transition.
@@ -26,9 +24,12 @@ idempotency key, and optionally the expected authority revision. The service
 rechecks authorization, current revision, and a fresh inspection, then requires
 the complete intent to match. This binds the action to the inspected attempt,
 lease, workspace, source identity, operation references, and preconditions.
-Stale or altered previews are refused before the transition. The existing
-attempt, verification, and Git services perform their own guarded mutation;
-each accepted transition retains its durable command receipt and audit event.
+Attempt release and dirty handoff also compare the approved source digest with
+a second trusted host observation inside the writer path. Verification and Git
+retries obtain a fresh provider proof at the guarded transition; an inspection
+view by itself does not authorize blind re-execution. Stale or altered previews
+are refused before the transition. Each accepted transition retains its
+durable command receipt and audit event.
 
 The supported transitions are:
 

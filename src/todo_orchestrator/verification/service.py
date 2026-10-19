@@ -82,7 +82,6 @@ from todo_orchestrator.authority.attempts import (
     VERIFICATION_RECONCILE_ACTION,
 )
 from todo_orchestrator.authority.commands import (
-    IdempotencyConflictError,
     MutationContext,
     StaleAuthorityRevisionError,
 )
@@ -275,8 +274,16 @@ def _recovery_approval_digest(approval: RecoveryApproval) -> str:
             "base_ref": str(workspace.common_base.ref),
             "base_digest": workspace.common_base.digest,
             "destination": str(workspace.destination.ref),
-            "isolation": workspace.isolation.value,
+            "isolation": None if workspace.isolation is None else {
+                "repository_storage": workspace.isolation.repository_storage.hex,
+                "workspace_root": workspace.isolation.workspace_root.hex,
+                "index_file": workspace.isolation.index_file.hex,
+                "head_ref": str(workspace.isolation.head_ref),
+                "worktree_admin": None if workspace.isolation.worktree_admin is None
+                    else workspace.isolation.worktree_admin.hex,
+            },
             "source": observation.source.value,
+            "source_digest": None if observation.source_digest is None else observation.source_digest.hex,
             "process": observation.process.value,
             "children": observation.children.value,
             "receipt": _receipt_value(observation.receipt),
@@ -375,7 +382,8 @@ def _load_plan(connection: sqlite3.Connection, project: Project, plan_revision_i
 def _plan_for_attempt(connection: sqlite3.Connection, project: Project, attempt) -> tuple[StableId, CompiledPlan]:
     if attempt.run is not None:
         row = connection.execute(
-            "SELECT plan_revision_id FROM run_schedules WHERE run_id = ?",
+            "SELECT r.plan_revision_id FROM runs AS r "
+            "JOIN run_schedules AS s USING (run_id) WHERE s.run_id = ?",
             (str(attempt.run.entity_id),),
         ).fetchone()
         if row is None:
@@ -654,7 +662,8 @@ class _TransitionHandler:
 
     def apply(self, context: MutationContext, command: _Transition) -> CommandEffect:
         row = context._connection.execute(
-            "SELECT v.*, o.idempotency_key AS external_idempotency_key, o.request_digest AS external_digest "
+            "SELECT v.*, o.idempotency_key AS external_idempotency_key, o.request_digest AS external_digest, "
+            "o.state AS external_state "
             "FROM verification_attempts AS v JOIN external_operations AS o USING(operation_id) "
             "WHERE v.operation_id = ?",
             (str(command.operation_id),),
@@ -732,6 +741,22 @@ class _TransitionHandler:
         receipt_json = command.receipt_json or row["provider_receipt_json"]
         if receipt_json is not None:
             receipt_digest = _digest(receipt_json).hex
+        retry_reinspection = (
+            recovery and command.recovery_approval is not None
+            and command.recovery_approval.intent_kind == "retry_original_operation"
+            and command.state == VerificationState.EXECUTING
+        )
+        if retry_reinspection and row["external_state"] == "executing":
+            # The provider-ledger proof says this original operation never
+            # started. Record the existing external-operation FSM's unknown
+            # boundary inside this writer transaction, then advance to the
+            # one authorized execution below. Neither intermediate state is
+            # visible unless this exact approved transition commits.
+            context.execute(
+                "UPDATE external_operations SET state = 'unknown', updated_at = ? "
+                "WHERE operation_id = ? AND state = 'executing'",
+                (command.occurred_at, str(command.operation_id)),
+            )
         context.execute(
             "UPDATE external_operations SET state = ?, updated_at = ?, receipt_digest = COALESCE(?, receipt_digest) "
             "WHERE operation_id = ?",
@@ -1014,12 +1039,18 @@ class VerificationService:
         permitted = retry_transitions if approval.intent_kind == "retry_original_operation" else reconcile_transitions
         if command.action != RECOVERY_APPLY_ACTION or (command.expected_state, command.state) not in permitted:
             raise VerificationDeniedError("recovery intent does not authorize this verification transition")
+        recovery_source_digest = approval.expected_source_digest
+        if (recovery_source_digest is None
+                and approval.intent_kind == "reconcile_observed_effect"):
+            # An observed-effect intent may omit a separate source snapshot;
+            # the typed host proof still has to match the durable request.
+            recovery_source_digest = Sha256Digest(row["source_digest"])
         if (attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.EXPIRED}
                 or attempt.lease is None
                 or approval.expected_lease_id != attempt.lease.lease_id
                 or approval.expected_lease_expires_at != attempt.lease.expires_at
-                or approval.expected_source_digest is None
-                or approval.expected_source_digest.hex != row["source_digest"]):
+                or recovery_source_digest is None
+                or recovery_source_digest.hex != row["source_digest"]):
             raise VerificationDeniedError("recovery approval lease, state, or source binding changed")
 
         # R01's approval is collected at a fixed authority revision. The first
@@ -1039,6 +1070,8 @@ class VerificationService:
                 previous_payload = json.loads(prior["payload_json"]) if prior is not None else {}
             except (TypeError, ValueError):
                 previous_payload = {}
+            if not isinstance(previous_payload, dict):
+                previous_payload = {}
             if (prior is None
                     or prior["actor_id"] != str(approval.actor.entity_id)
                     or prior["actor_incarnation_id"] != str(approval.actor.incarnation_id)
@@ -1048,6 +1081,7 @@ class VerificationService:
                     or previous_payload.get("request_digest") != row["request_digest"]
                     or previous_payload.get("source_digest") != row["source_digest"]
                     or previous_payload.get("recovery_intent_kind") != approval.intent_kind
+                    or previous_payload.get("recovery_intent_digest") != approval.intent_digest.hex
                     or previous_payload.get("recovery_approval_digest") != approval_digest
                     or previous_payload.get("state") != command.expected_state):
                 raise VerificationDeniedError("recovery transition is not linked to its immediately preceding approved event")
@@ -1077,7 +1111,7 @@ class VerificationService:
             raise VerificationDeniedError(f"recovery host observation is no longer current: {exc}") from exc
         if (observation.lease_id != approval.expected_lease_id
                 or observation.observed_lease_expires_at != approval.expected_lease_expires_at
-                or observation.source_digest != approval.expected_source_digest):
+                or observation.source_digest != recovery_source_digest):
             raise VerificationDeniedError("recovery host observation differs from its approved source and lease")
 
         try:
@@ -1130,14 +1164,22 @@ class VerificationService:
     ) -> None:
         try:
             document = json.loads(command.inspection_json or "")
+            if not isinstance(document, dict):
+                raise TypeError("inspection document must be an object")
             provider_receipt = document["receipt"]
+            if not isinstance(provider_receipt, dict):
+                raise TypeError("inspection receipt must be an object")
             provider = provider_receipt["provider"]
+            if not isinstance(provider, dict):
+                raise TypeError("inspection provider identity must be an object")
             observed_at = datetime.fromisoformat(provider_receipt["observed_at"])
+            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                raise ValueError("inspection receipt time must be timezone-aware")
             if document.get("state") != VerificationInspectionState.NOT_STARTED.value:
                 raise ValueError("provider operation is not NOT_STARTED")
             if document.get("original_receipt") is not None:
                 raise ValueError("NOT_STARTED inspection must not contain an execution receipt")
-            expected_context = self.service._context(
+            expected_context = self._context(
                 context.actor, context.authorized_capability_id,
                 command.operation_id, command.target,
             )
@@ -1148,15 +1190,15 @@ class VerificationService:
                 expected_context, command.operation_id, request.idempotency_key,
                 Sha256Digest(row["request_digest"]), correlation,
             )
-            now = self.service._now()
-            if (provider.get("provider_id") != str(self.service.provider_identity.provider_id)
-                    or provider.get("version") != self.service.provider_identity.version
-                    or provider.get("contract_version") != self.service.provider_identity.contract_version
+            now = self._now()
+            if (provider.get("provider_id") != str(self.provider_identity.provider_id)
+                    or provider.get("version") != self.provider_identity.version
+                    or provider.get("contract_version") != self.provider_identity.contract_version
                     or provider_receipt.get("correlation_id") != str(correlation)
                     or provider_receipt.get("request_digest") != provider_request_digest(inspection_request).hex
                     or provider_receipt.get("provenance_ref") != str(command.operation_id)
                     or observed_at > now
-                    or now - observed_at.astimezone(timezone.utc) > self.service.max_source_age):
+                    or now - observed_at.astimezone(timezone.utc) > self.max_source_age):
                 raise ValueError("inspection receipt differs from the current exact recovery request")
             StableId(provider_receipt["receipt_id"])
         except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
@@ -1168,12 +1210,18 @@ class VerificationService:
     ) -> None:
         try:
             document = json.loads(command.recovery_source_json or "")
+            if not isinstance(document, dict):
+                raise TypeError("source document must be an object")
             source = document["source"]
             receipt = document["receipt"]
-            provider = receipt["provider"]
-            observed_at = datetime.fromisoformat(receipt["observed_at"])
             if not isinstance(source, dict) or not isinstance(receipt, dict):
                 raise TypeError("source observation and receipt must be objects")
+            provider = receipt["provider"]
+            if not isinstance(provider, dict):
+                raise TypeError("source provider identity must be an object")
+            observed_at = datetime.fromisoformat(receipt["observed_at"])
+            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                raise ValueError("source receipt time must be timezone-aware")
             expected_request = _source_request(
                 self._context(context.actor, context.authorized_capability_id,
                               command.operation_id, command.target),
@@ -1206,7 +1254,8 @@ class VerificationService:
         del project
         if attempt.run is not None:
             schedule = connection.execute(
-                "SELECT plan_revision_id FROM run_schedules WHERE run_id = ?",
+                "SELECT r.plan_revision_id FROM runs AS r "
+                "JOIN run_schedules AS s USING (run_id) WHERE s.run_id = ?",
                 (str(attempt.run.entity_id),),
             ).fetchone()
             revision_id = None if schedule is None else schedule[0]
@@ -1636,7 +1685,9 @@ class VerificationService:
             or recovery_approval.operation != view.operation
             or recovery_approval.attempt != view.attempt
             or recovery_approval.target != view.target
-            or recovery_approval.expected_source_digest != view.source_digest
+            or recovery_approval.expected_source_digest not in {None, view.source_digest}
+            or (recovery_approval.expected_source_digest is None
+                and recovery_approval.intent_kind != "reconcile_observed_effect")
         ):
             raise VerificationDeniedError("fresh-source request differs from the approved recovery operation")
         source_request = _source_request(
@@ -1777,13 +1828,17 @@ class VerificationService:
             ).fetchone() is not None:
                 raise VerificationDeniedError("recovery is blocked by a pending outcome candidate")
             observation = approval.host_observation
+            recovery_source_digest = approval.expected_source_digest
+            if (recovery_source_digest is None
+                    and intent_kind == "reconcile_observed_effect"):
+                recovery_source_digest = view.source_digest
             if (current.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE, AttemptState.EXPIRED}
                     or current.lease is None
                     or approval.expected_lease_id != current.lease.lease_id
                     or approval.expected_lease_expires_at != current.lease.expires_at
                     or observation is None
-                    or observation.source_digest != approval.expected_source_digest
-                    or approval.expected_source_digest != view.source_digest):
+                    or observation.source_digest != recovery_source_digest
+                    or recovery_source_digest != view.source_digest):
                 raise VerificationDeniedError("recovery approval lease or source is no longer current")
             try:
                 _check_observation(
@@ -1799,8 +1854,12 @@ class VerificationService:
                     and observation.source not in {SourceSafety.CLEAN, SourceSafety.DIRTY}):
                 raise VerificationDeniedError("recovery host observation does not establish the required safe state")
         request = self._load_stored_request(authority, view.operation)
+        approved_source_digest = approval.expected_source_digest
+        if (approved_source_digest is None
+                and intent_kind == "reconcile_observed_effect"):
+            approved_source_digest = view.source_digest
         if (request.operation_id != view.operation.entity_id or request.attempt != view.attempt
-                or request.expected_source != approval.expected_source_digest
+                or request.expected_source != approved_source_digest
                 or request.contract_digest != view.contract_digest
                 or request.verifier_id != view.verifier.provider_id
                 or request.verifier_version != view.verifier.version

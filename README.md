@@ -13,12 +13,14 @@ The [standalone development plan](planning/standalone-v1/README.md) tracks 32 de
 
 See the [source baseline](docs/product/reference-baseline.md), [domain model](docs/architecture/domain-model.md), [provider boundary](docs/architecture/provider-contracts.md), [worker context](docs/architecture/worker-context.md), [child execution](docs/architecture/child-execution.md), [recovery inspection](docs/architecture/recovery-inspection.md), [recovery transitions](docs/architecture/recovery-transitions.md), and [SQLite policy](src/todo_orchestrator/authority/README.md). Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review.
 
-Python 3.11+ is required; there are no runtime dependencies. The initial `todo` CLI provides help and version only. Run it from source without importing a preinstalled legacy Todo package:
+Python 3.11+ is required; there are no runtime dependencies. The `todo` CLI exposes explicit initialization, authentication, plan review, work coordination, recovery, read-model, and backup/restore commands. Run it from source without importing a preinstalled legacy Todo package:
 
 ```sh
 PYTHONPATH=src python -S -m todo_orchestrator --help
 PYTHONPATH=src python -S -m todo_orchestrator --version
 ```
+
+The CLI uses `--root` to select a project-local `.todo-orchestrator/` authority. Provide bearer credentials through `--token-file` or `TODO_BEARER_TOKEN`; owner credentials can be read from a private file or `TODO_OWNER_CREDENTIAL`, with an interactive prompt as fallback. Tokens issued by `init` or `dispatch` are written only to a new mode-0600 file reserved before the state-changing command. The CLI does not discover provider code from a project. Provider-backed operations remain unavailable unless a trusted provider composition is supplied through the application API or an explicitly selected installed `--provider-factory package.module:callable`; the latter is executable trusted configuration. See [SKILL.md](SKILL.md) and the [command guide](references/command-guide.md) for syntax and safety boundaries.
 
 Run the checks:
 

@@ -505,7 +505,18 @@ def preview_changes(
                 None, None, _freeze({"source_manifests": before_manifests}),
                 _freeze({"source_manifests": after_manifests}), relation="source_manifests",
             ))
-    resulting_refs = _revise_owned_definition_bundles(proposal, accepted, operations, resulting_refs)
+    accepted_refs = _accepted_definition_refs(accepted)
+    valid_retired_requirement_refs = {
+        item.reference
+        for item in explicit_retirements
+        if item.reference.project_id == snapshot.project_id
+        and item.reference.kind is EntityKind.REQUIREMENT
+        and item.reference in accepted_refs
+    }
+    resulting_refs = _revise_owned_definition_bundles(
+        proposal, accepted, operations, resulting_refs,
+        explicitly_retired_requirements=valid_retired_requirement_refs,
+    )
 
     for operation in operations:
         if operation.entity_kind == EntityKind.WORK_ITEM.value:
@@ -548,7 +559,7 @@ def preview_changes(
     # retirements. A prior validation of the pre-retirement proposal could
     # otherwise approve references that become dangling in the committed plan.
     effective_graph = _effective_graph_plan(proposal, accepted, resulting_refs, operations)
-    effective_graph = _without_retired_definitions(effective_graph, operations)
+    effective_graph = _without_retired_definitions(effective_graph, operations, proposal)
     from .graph import validate_plan_graph
     graph_validation = validate_plan_graph(effective_graph)
     diagnostics = list(graph_validation.diagnostics)
@@ -581,7 +592,20 @@ def preview_changes(
             if attempt.state in _IN_FLIGHT:
                 conflicts.append(ChangeConflict("active_attempt_requires_transition", operation.before, f"attempt in state {attempt.state.value} binds the exact prior definition", attempt.ref))
         for outcome in terminal:
-            conflicts.append(ChangeConflict("accepted_outcome_preserved", operation.before, "accepted outcome remains bound to the prior exact definition", outcome.ref))
+            # A completed definition may leave current membership only through
+            # explicit supersession. Its outcome and evidence remain attached
+            # to the immutable predecessor; supersession does not rewrite or
+            # transfer that provenance to the successor.
+            preserved_by_successor = (
+                operation.kind is ChangeKind.RETIRE
+                and any(
+                    item.definition.ref != operation.before
+                    and operation.before in item.definition.supersedes
+                    for item in effective_graph.work_items
+                )
+            )
+            if not preserved_by_successor:
+                conflicts.append(ChangeConflict("accepted_outcome_preserved", operation.before, "accepted outcome remains bound to the prior exact definition", outcome.ref))
 
     affected = _impacts(accepted, proposal, changed_work, snapshot, attempts_by_work, outcomes_by_work)
     # Retiring a frozen interface is never treated as a simple deletion.
@@ -769,8 +793,11 @@ def _revise_owned_definition_bundles(
     accepted: CompiledPlan,
     operations: list[ChangeOperation],
     resulting_refs: dict[str, EntityRef],
+    *,
+    explicitly_retired_requirements: set[EntityRef] | None = None,
 ) -> dict[str, EntityRef]:
     """Bind work, its requirements, and outgoing gates to one definition revision."""
+    explicitly_retired_requirements = explicitly_retired_requirements or set()
     old_work, new_work = _work_by_id(accepted), _work_by_id(proposal)
     owners: set[str] = set()
     for operation in operations:
@@ -788,6 +815,13 @@ def _revise_owned_definition_bundles(
         return resulting_refs
 
     old_req, new_req = _requirements_by_id(accepted), _requirements_by_id(proposal)
+    explicitly_retired_requirements = {
+        str(operation.before.entity_id)
+        for operation in operations
+        if operation.kind is ChangeKind.RETIRE
+        and operation.before is not None
+        and operation.before.kind is EntityKind.REQUIREMENT
+    }
     old_group_values = _blocking_members(
         accepted,
         {(EntityKind.WORK_ITEM.value, str(item.definition.work_item_id)): item.definition.ref for item in accepted.work_items},
@@ -825,7 +859,8 @@ def _revise_owned_definition_bundles(
 
         requirements = {}
         for requirement_id, item in old_req.items():
-            if str(item.definition.work_item_id) == identifier:
+            if (str(item.definition.work_item_id) == identifier
+                    and item.definition.ref not in explicitly_retired_requirements):
                 requirements[requirement_id] = _requirement_value(
                     item,
                     {(EntityKind.WORK_ITEM.value, key): ref for key, ref in resulting_refs.items()},
@@ -1124,17 +1159,39 @@ def _effective_graph_plan(
     )
 
 
-def _without_retired_definitions(plan: CompiledPlan, operations: list[ChangeOperation]) -> CompiledPlan:
+def _without_retired_definitions(
+    plan: CompiledPlan,
+    operations: list[ChangeOperation],
+    proposal: CompiledPlan,
+) -> CompiledPlan:
     retired = {operation.before for operation in operations if operation.kind is ChangeKind.RETIRE and operation.before is not None}
     if not retired:
         return plan
+    retired_requirements = {
+        ref.entity_id for ref in retired if ref.kind is EntityKind.REQUIREMENT
+    }
+    # An explicitly retired exact requirement may be re-authored as a new
+    # version in the same proposal. Otherwise, owner-bundle rebinding must not
+    # accidentally resurrect it with the successor owner's revision.
+    replacement_requirements = {
+        item.definition.requirement_id for item in proposal.requirements
+        if item.definition.requirement_id in retired_requirements
+    }
     return replace(
         plan,
         revision=replace(plan.revision, work_items=tuple(
             item.definition.ref for item in plan.work_items if item.definition.ref not in retired
         )),
         work_items=tuple(item for item in plan.work_items if item.definition.ref not in retired),
-        requirements=tuple(item for item in plan.requirements if item.definition.ref not in retired),
+        requirements=tuple(
+            item for item in plan.requirements
+            if item.definition.ref not in retired
+            and not (
+                item.definition.ref.kind is EntityKind.REQUIREMENT
+                and item.definition.ref.entity_id in retired_requirements
+                and item.definition.ref.entity_id not in replacement_requirements
+            )
+        ),
         declarations=tuple(
             item for item in plan.declarations
             if EntityRef(plan.project.project_id, _entity_kind_for_decl(item.kind), item.declaration_id) not in retired
@@ -1154,6 +1211,11 @@ def _retirement_diagnostics(graph_validation: Any, project_id: StableId, retired
         for ref in retired_refs
     }
     for edge in (*graph_validation.edges, *graph_validation.lineage_edges):
+        # A successor's exact supersedes edge is the durable lineage that
+        # preserves a retired predecessor in history; it is not a dangling
+        # dependency that must be retargeted.
+        if edge.relation == "supersedes":
+            continue
         for node in (edge.source, edge.target):
             if node.project_id != str(project_id) or node.kind == "evidence":
                 continue

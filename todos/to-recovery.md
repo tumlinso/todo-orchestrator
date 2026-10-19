@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-RECOVERY: Recovery and lifecycle
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `174`; current project revision is in `todo-status.md`.
 
 ## Objective
 Reconcile interruptions and preserve work, evidence, and authoritative provenance.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._

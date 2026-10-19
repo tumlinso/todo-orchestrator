@@ -502,12 +502,18 @@ class RecoveryInspectionService:
             ),)
         elif (operation.status is RecoveryOperationStatus.EFFECT_OBSERVED and not pending_candidates
               and not reported_unresolved):
-            intents = (RecoveryIntent(
+            reconcile_source = (
+                operation.source_observation.source_digest
+                if operation.source_observation is not None else
+                host_observation.source_digest if host_observation is not None else None
+            )
+            if reconcile_source is not None:
+                intents = (RecoveryIntent(
                 RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT, attempt_ref, target, (operation_ref,), revision,
                 None if host_observation is None else host_observation.lease_id,
-                None if operation.source_observation is None else operation.source_observation.source_digest,
+                reconcile_source,
                 workspace_id, preconditions,
-            ),)
+                ),)
         state = "unattached"
         lease_id = lease_expires_at = lease_expired = None
         children: tuple[RecoveryChild, ...] = ()
@@ -1208,17 +1214,24 @@ class RecoveryInspectionService:
                 ))
             elif (operation.status is RecoveryOperationStatus.EFFECT_OBSERVED and consistent
                   and not pending_candidates and attempt.state is not AttemptState.REPORTED):
-                intents.append(RecoveryIntent(
+                reconcile_source = (
+                    operation.source_observation.source_digest
+                    if operation.source_observation is not None else
+                    source.source_digest if source is not None else
+                    host.source_digest if host is not None else None
+                )
+                if reconcile_source is not None:
+                    intents.append(RecoveryIntent(
                     RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT, attempt.ref, attempt.work_item,
                     (operation.operation,), snapshot.revision,
                     None if lease is None else lease.lease_id,
-                    None if operation.source_observation is None else operation.source_observation.source_digest,
+                    reconcile_source,
                     None if snapshot.workspace is None else snapshot.workspace.workspace_id,
                     tuple(preconditions) + (
                         RecoveryPrecondition("effect_receipt_matches_intent",
                             operation.inspection_receipt is not None, operation.operation),
                     ),
-                ))
+                    ))
         status = self._classify_attempt(attempt, lease is not None and expired is True, host,
                                         host_blockers, operations, snapshot.children, consistent,
                                         pending_candidates)

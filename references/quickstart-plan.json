@@ -1,0 +1,49 @@
+{
+  "format": "todo-orchestrator.plan",
+  "schema_version": 1,
+  "package_id": "two-task-quickstart",
+  "project": {
+    "project_id": "example-project",
+    "authority_id": "example-authority"
+  },
+  "work_items": [
+    {
+      "id": "write",
+      "title": "Write the quickstart",
+      "objective": "Draft the quickstart guide",
+      "outcome": "A reviewed quickstart draft exists",
+      "scope": {"paths": [], "concepts": ["quickstart"], "locks": []},
+      "acceptance": {
+        "assertions": ["The draft is complete"],
+        "required_evidence": [],
+        "allowed_dispositions": ["completed"]
+      },
+      "ownership": {"mode": "any", "actors": []}
+    },
+    {
+      "id": "review",
+      "title": "Review the quickstart",
+      "objective": "Check the quickstart for accuracy",
+      "outcome": "The guide is reviewed after the draft is written",
+      "scope": {"paths": [], "concepts": ["quickstart-review"], "locks": []},
+      "acceptance": {
+        "assertions": ["The review is recorded"],
+        "required_evidence": [],
+        "allowed_dispositions": ["completed"]
+      },
+      "ownership": {"mode": "any", "actors": []}
+    }
+  ],
+  "dependencies": [
+    {
+      "source": {"project_id": "example-project", "kind": "work_item", "entity_id": "review"},
+      "mode": "all",
+      "members": [
+        {
+          "relation": "completion",
+          "target": {"project_id": "example-project", "kind": "work_item", "entity_id": "write"}
+        }
+      ]
+    }
+  ]
+}

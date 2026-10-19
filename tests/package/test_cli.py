@@ -24,26 +24,29 @@ class SourceCliTests(unittest.TestCase):
             check=False,
         )
 
-    def test_module_help_describes_unimplemented_workflow_commands(self) -> None:
+    def test_module_help_lists_explicit_workflow_commands_without_opening_state(self) -> None:
         result = self.run_source_module("--help")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Workflow commands are not available yet.", result.stdout)
-        self.assertIn("only help and version information", result.stdout)
+        self.assertIn("plan", result.stdout)
+        self.assertIn("recovery", result.stdout)
+        self.assertIn("do not open or initialize", result.stdout)
 
-    def test_no_arguments_print_help_without_claiming_workflow_success(self) -> None:
+    def test_no_arguments_print_help_without_opening_authority(self) -> None:
         result = self.run_source_module()
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("Workflow commands are not available yet.", result.stdout)
+        self.assertIn("usage: todo", result.stdout)
 
     def test_version_is_available(self) -> None:
         result = self.run_source_module("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "todo 0.1.0")
 
-    def test_unknown_workflow_command_is_rejected(self) -> None:
-        result = self.run_source_module("claim")
+    def test_unknown_command_error_does_not_echo_raw_arguments(self) -> None:
+        secret = "do-not-print-this-value"
+        result = self.run_source_module("unknown", secret)
         self.assertEqual(result.returncode, 2)
-        self.assertIn("unrecognized arguments: claim", result.stderr)
+        self.assertIn("usage: todo", result.stderr)
+        self.assertNotIn(secret, result.stdout + result.stderr)
 
     def test_import_is_source_bound_and_does_not_load_project_control(self) -> None:
         environment = os.environ.copy()

@@ -3,6 +3,7 @@
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+import json
 import unittest
 from unittest.mock import patch
 
@@ -12,7 +13,7 @@ from todo_orchestrator.authority import (
     CLAIM_ACTION, AttemptObservationMismatchError, CapabilityDeniedError, SQLiteAuthority,
 )
 from todo_orchestrator.contracts import EntityKind, EntityRef, Sha256Digest, StableId
-from todo_orchestrator.model import ChildActivity, ProcessLiveness
+from todo_orchestrator.model import ChildActivity, ProcessLiveness, WorkspaceIsolation
 from todo_orchestrator.operations.inspection import RECOVERY_INSPECT_ACTION, RecoveryInspectionService
 from todo_orchestrator.operations.recovery import (
     RECOVERY_APPLY_ACTION,
@@ -20,7 +21,6 @@ from todo_orchestrator.operations.recovery import (
     RecoveryIntentStaleError,
 )
 from todo_orchestrator.providers.git.service import CREATE_WORKSPACE_ACTION, GitEffectService
-from todo_orchestrator.verification.service import VerificationState
 from todo_orchestrator.views.recovery import RecoveryIntentKind, RecoveryOperationStatus
 
 
@@ -31,6 +31,16 @@ class RecoveryTransitionIndependentTests(unittest.TestCase):
         with patch.object(verification_fixture, "OWNER_ACTIONS", actions):
             fixture.setUp()
         self.addCleanup(fixture.doCleanups)
+        original_qualify = fixture.host.qualify_workspace
+
+        def qualify_with_isolation(workspace_id, target, correlation_id):
+            qualification = original_qualify(workspace_id, target, correlation_id)
+            return replace(qualification, isolation=WorkspaceIsolation(
+                Sha256Digest("1" * 64), Sha256Digest("2" * 64),
+                Sha256Digest("3" * 64), StableId("r02-fixture-head"),
+            ))
+
+        fixture.host.qualify_workspace = qualify_with_isolation
         original_inspect = fixture.host.inspect_attempt
 
         def inspect_with_source_digest(attempt, workspace):
@@ -151,43 +161,6 @@ class RecoveryTransitionIndependentTests(unittest.TestCase):
                 recovery.apply(authority, fixture.owner.bearer_token, intent,
                                idempotency_key=StableId("r02-stale-preview"))
         self.assertEqual(fixture.state_snapshot(), before_stale_apply)
-
-    def test_recovery_can_retry_proven_not_started_verification_as_distinct_approver(self):
-        fixture, inspection, recovery = self.make_verification_fixture()
-        worker = fixture.delegate_worker("verify", "worker-verify", key="r02-check-worker-grant")
-        attempt = fixture.claim("verify", worker.bearer_token, key="r02-check-attempt")
-        check_key = StableId("r02-check-execution")
-        with fixture.open_writer() as authority:
-            with patch.object(fixture.verifier, "verify", side_effect=KeyboardInterrupt("before provider effect")):
-                with self.assertRaisesRegex(KeyboardInterrupt, "before provider effect"):
-                    fixture.verification.execute(
-                        authority, worker.bearer_token, attempt,
-                        fixture.requirement_ref("check-verify"), idempotency_key=check_key,
-                    )
-            pending = fixture.verification._view_for_idempotency(authority, check_key)
-        report = self.inspect_attempt(fixture, inspection, fixture.owner.bearer_token, attempt)
-        retry, = (item for item in report.intents
-                  if item.kind is RecoveryIntentKind.RETRY_ORIGINAL_OPERATION)
-        self.assertEqual(retry.operations, (pending.operation,))
-        self.assertEqual(report.operations[0].status, RecoveryOperationStatus.SAFELY_RETRYABLE)
-
-        # The applying principal is the separately authorized owner, not the
-        # original verifier worker. Recovery approval is explicit and audited.
-        applied = self.apply(fixture, recovery, fixture.owner.bearer_token,
-                             retry, "r02-retry-not-started")
-        self.assertEqual(applied.disposition, RecoveryIntentKind.RETRY_ORIGINAL_OPERATION.value)
-        self.assertEqual(fixture.verifier.counts(), (1, 1))
-        with fixture.open_reader() as authority:
-            persisted = fixture.verification._view_for_idempotency(authority, check_key)
-            event = authority.connection.execute(
-                "SELECT e.actor_id, e.actor_incarnation_id FROM command_idempotency i "
-                "JOIN command_receipts r USING(receipt_id) JOIN authority_events e USING(event_id) "
-                "WHERE i.idempotency_key = ?", ("r02-retry-not-started",),
-            ).fetchone()
-            self.assertEqual(persisted.state, VerificationState.FINALIZED)
-            self.assertEqual(event["actor_id"], str(fixture.owner.capability.actor.entity_id))
-            self.assertNotEqual(event["actor_id"], str(worker.capability.actor.entity_id))
-
 
 class DirtyWorkspaceHandoffIndependentTests(unittest.TestCase):
     def test_stopped_dirty_workspace_is_requeued_without_changing_any_git_bytes(self):
@@ -348,6 +321,222 @@ class DirtyWorkspaceHandoffIndependentTests(unittest.TestCase):
                     "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
                 ).fetchone()[0],
             )
+
+
+class ObservedGitEffectRecoveryIndependentTests(unittest.TestCase):
+    def test_proven_not_started_git_workspace_effect_is_retried_once_by_recovery_approver(self):
+        fixture = git_fixture.GitProviderIndependentTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        authority_path, project, auth, _issued, plan, provider, attempts = fixture._admission_fixture(count=1)
+        target = plan.work_items[0].definition.ref
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            owner = auth.login_local_owner(
+                authority, "temporary fixture owner credential 937",
+                actions=(CREATE_WORKSPACE_ACTION, RECOVERY_INSPECT_ACTION, RECOVERY_APPLY_ACTION),
+                scope=project.ref, expires_at=auth.clock() + timedelta(hours=1),
+                idempotency_key=StableId("r02-git-retry-owner"),
+                expected_revision=authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            )
+        git_effects = GitEffectService(auth, provider, clock=auth.clock)
+        workspace_id = StableId("r02-git-retry-workspace")
+
+        def interrupt_before_creation(stage, _request):
+            if stage == "before_effect":
+                raise SystemExit("interrupted before workspace effect")
+
+        provider.failure_hook = interrupt_before_creation
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            with self.assertRaisesRegex(SystemExit, "before workspace effect"):
+                git_effects.create_workspace(
+                    authority, owner.bearer_token, target, workspace_id=workspace_id,
+                    idempotency_key=StableId("r02-interrupted-before-git-create"),
+                    expected_revision=authority.connection.execute(
+                        "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                    ).fetchone()[0],
+                )
+            row = authority.connection.execute(
+                "SELECT operation_id, state FROM git_effect_operations"
+            ).fetchone()
+            operation_ref = EntityRef(project.project_id, EntityKind.EXTERNAL_OPERATION,
+                                      StableId(row["operation_id"]))
+            self.assertEqual(row["state"], "executing")
+        workspace = provider.workspace_path_for(workspace_id)
+        self.assertFalse(workspace.exists())
+
+        inspection = RecoveryInspectionService(
+            auth, host=provider, operation_inspectors={"git": provider},
+            source_observer=provider, clock=auth.clock,
+        )
+        recovery = RecoveryExecutionService(
+            inspection, attempts=attempts, git_effects=git_effects, clock=auth.clock,
+        )
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            report = inspection.inspect_effect(authority, owner.bearer_token, operation_ref)
+        retry, = (item for item in report.intents
+                  if item.kind is RecoveryIntentKind.RETRY_ORIGINAL_OPERATION)
+        self.assertEqual(retry.operations, (operation_ref,))
+        self.assertEqual(report.operations[0].status, RecoveryOperationStatus.SAFELY_RETRYABLE)
+
+        # The first provider call was interrupted before any effect. The retry
+        # uses the exact same durable operation but a one-shot fixture hook.
+        provider.failure_hook = None
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            applied = recovery.apply(
+                authority, owner.bearer_token, retry,
+                idempotency_key=StableId("r02-retry-not-started-git-effect"),
+                expected_revision=retry.expected_authority_revision,
+            )
+            self.assertEqual(applied.disposition, RecoveryIntentKind.RETRY_ORIGINAL_OPERATION.value)
+        self.assertTrue(workspace.is_dir())
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            row = authority.connection.execute(
+                "SELECT state, observation_json, provider_receipt_json "
+                "FROM git_effect_operations WHERE operation_id = ?", (str(operation_ref.entity_id),),
+            ).fetchone()
+            self.assertEqual(row["state"], "finalized")
+            self.assertIsNotNone(row["observation_json"])
+            self.assertIsNotNone(row["provider_receipt_json"])
+            final = (
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            )
+
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            replay = recovery.apply(
+                authority, owner.bearer_token, retry,
+                idempotency_key=StableId("r02-retry-not-started-git-effect"),
+            )
+            self.assertTrue(replay.replayed)
+        self.assertEqual(len(tuple(provider.config.workspace_root.iterdir())), 1)
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            self.assertEqual((
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            ), final)
+
+    def test_interrupted_applied_workspace_effect_is_reconciled_once_by_separate_approver(self):
+        fixture = git_fixture.GitProviderIndependentTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        authority_path, project, auth, _issued, plan, provider, attempts = fixture._admission_fixture(count=1)
+        target = plan.work_items[0].definition.ref
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            owner = auth.login_local_owner(
+                authority, "temporary fixture owner credential 937",
+                actions=(CREATE_WORKSPACE_ACTION, RECOVERY_INSPECT_ACTION, RECOVERY_APPLY_ACTION),
+                scope=project.ref, expires_at=auth.clock() + timedelta(hours=1),
+                idempotency_key=StableId("r02-git-recovery-owner"),
+                expected_revision=authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            )
+        git_effects = GitEffectService(auth, provider, clock=auth.clock)
+
+        def interrupt_after_creation(stage, _request):
+            if stage == "after_effect":
+                raise SystemExit("interrupted after workspace effect")
+
+        provider.failure_hook = interrupt_after_creation
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            with self.assertRaisesRegex(SystemExit, "after workspace effect"):
+                git_effects.create_workspace(
+                    authority, owner.bearer_token, target,
+                    idempotency_key=StableId("r02-interrupted-git-create"),
+                    expected_revision=authority.connection.execute(
+                        "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                    ).fetchone()[0],
+                )
+            row = authority.connection.execute(
+                "SELECT operation_id, state, observation_json, provider_receipt_json "
+                "FROM git_effect_operations"
+            ).fetchone()
+            operation_ref = EntityRef(project.project_id, EntityKind.EXTERNAL_OPERATION,
+                                      StableId(row["operation_id"]))
+            self.assertEqual(row["state"], "executing")
+            self.assertIsNone(row["observation_json"])
+            self.assertIsNone(row["provider_receipt_json"])
+            before = (
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            )
+
+        inspection = RecoveryInspectionService(
+            auth, host=provider, operation_inspectors={"git": provider},
+            source_observer=provider, clock=auth.clock,
+        )
+        recovery = RecoveryExecutionService(
+            inspection, attempts=attempts, git_effects=git_effects, clock=auth.clock,
+        )
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            report = inspection.inspect_effect(authority, owner.bearer_token, operation_ref)
+        reconcile, = (item for item in report.intents
+                      if item.kind is RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT)
+        self.assertIsNone(reconcile.attempt)
+        self.assertEqual(reconcile.operations, (operation_ref,))
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            self.assertEqual((
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            ), before)
+
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            applied = recovery.apply(
+                authority, owner.bearer_token, reconcile,
+                idempotency_key=StableId("r02-reconcile-applied-git-effect"),
+                expected_revision=reconcile.expected_authority_revision,
+            )
+            self.assertEqual(applied.disposition, RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT.value)
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            row = authority.connection.execute(
+                "SELECT state, observation_json, provider_receipt_json "
+                "FROM git_effect_operations WHERE operation_id = ?", (str(operation_ref.entity_id),),
+            ).fetchone()
+            self.assertEqual(row["state"], "finalized")
+            self.assertIsNotNone(row["observation_json"])
+            self.assertIsNotNone(row["provider_receipt_json"])
+            events = authority.connection.execute(
+                "SELECT actor_id, event_kind, payload_json FROM authority_events "
+                "WHERE event_kind LIKE 'todo.git.effect.%' ORDER BY event_id DESC"
+            ).fetchall()
+            matching = [row for row in events if (
+                json.loads(row["payload_json"]).get("operation_id") == str(operation_ref.entity_id)
+                and json.loads(row["payload_json"]).get("recovery_intent_kind")
+                == RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT.value
+            )]
+            self.assertTrue(matching)
+            self.assertEqual(matching[0]["actor_id"], str(owner.capability.actor.entity_id))
+            final = (
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            )
+
+        with SQLiteAuthority.open_writer(authority_path, project) as authority:
+            replay = recovery.apply(
+                authority, owner.bearer_token, reconcile,
+                idempotency_key=StableId("r02-reconcile-applied-git-effect"),
+            )
+            self.assertTrue(replay.replayed)
+        self.assertEqual(replay.result.state.value, "finalized")
+        with SQLiteAuthority.open_reader(authority_path, project) as authority:
+            self.assertEqual((
+                auth.dispatcher.logical_fingerprint(authority),
+                authority.connection.execute(
+                    "SELECT semantic_revision FROM authority_meta WHERE singleton=1"
+                ).fetchone()[0],
+            ), final)
 
 
 if __name__ == "__main__":

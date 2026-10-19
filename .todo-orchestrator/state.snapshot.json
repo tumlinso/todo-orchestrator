@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-18T23:28:01Z",
+  "generated_at": "2026-10-19T00:30:14Z",
   "project": {
     "configuration": {
       "busy_timeout_ms": 5000,
@@ -19,13 +19,13 @@
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "schema_version": 2
   },
-  "project_revision": 156,
+  "project_revision": 180,
   "schema_version": 2,
   "semantic_context": {
     "declarations": [],
     "invalidations": [],
     "orientation": [],
-    "project_revision": 156,
+    "project_revision": 180,
     "project_uuid": "cf341339-9e52-4e91-aa2f-4c80aa6a5cb3",
     "skill_uses": []
   },
@@ -1597,6 +1597,246 @@
         "revision": 156,
         "seq": 156,
         "timestamp": "2026-10-18T23:28:01Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-R02\"}",
+        "revision": 157,
+        "seq": 157,
+        "timestamp": "2026-10-18T23:47:31Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R02-approved-recovery-transitions",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-R02-approved-recovery-transitions\"}",
+        "revision": 158,
+        "seq": 158,
+        "timestamp": "2026-10-18T23:55:59Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R02-approved-recovery-transitions",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"10cc6c6f-e9b7-430a-8172-9ea7375eb5de\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 159,
+        "seq": 159,
+        "timestamp": "2026-10-18T23:56:11Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R02",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 160, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 160,
+        "seq": 160,
+        "timestamp": "2026-10-18T23:56:11Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-R03\"}",
+        "revision": 161,
+        "seq": 161,
+        "timestamp": "2026-10-18T23:56:16Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "23542aaa-7d3f-493d-abae-e71d585b2265",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 162,
+        "seq": 162,
+        "timestamp": "2026-10-18T23:56:20Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-R03\"}",
+        "revision": 163,
+        "seq": 163,
+        "timestamp": "2026-10-18T23:57:27Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R03-lifecycle-preservation",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-R03-lifecycle-preservation\"}",
+        "revision": 164,
+        "seq": 164,
+        "timestamp": "2026-10-19T00:11:38Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R03-lifecycle-preservation",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"4d10646b-10fc-4f95-b675-a6431aa48d4a\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 165,
+        "seq": 165,
+        "timestamp": "2026-10-19T00:11:55Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R03",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 166, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 166,
+        "seq": 166,
+        "timestamp": "2026-10-19T00:11:55Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-R04\"}",
+        "revision": 167,
+        "seq": 167,
+        "timestamp": "2026-10-19T00:12:00Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "6764a28a-d395-4d6f-a8d0-7e08e7a2e661",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 168,
+        "seq": 168,
+        "timestamp": "2026-10-19T00:12:05Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-R04\"}",
+        "revision": 169,
+        "seq": 169,
+        "timestamp": "2026-10-19T00:12:30Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R04-export-explicit-restore",
+        "entity_type": "gate",
+        "event_type": "gate.started",
+        "payload_json": "{\"gate_id\": \"TO-R04-export-explicit-restore\"}",
+        "revision": 170,
+        "seq": 170,
+        "timestamp": "2026-10-19T00:25:20Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R04-export-explicit-restore",
+        "entity_type": "gate",
+        "event_type": "gate.completed",
+        "payload_json": "{\"evidence_id\": \"b9d4c657-a7b9-4d31-a0c8-1cd51524864b\", \"status\": \"passed\", \"valid\": true}",
+        "revision": 171,
+        "seq": 171,
+        "timestamp": "2026-10-19T00:25:43Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-R04",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 172, \"disposition\": \"implemented\", \"reached_checkpoints\": []}",
+        "revision": 172,
+        "seq": 172,
+        "timestamp": "2026-10-19T00:25:43Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-RECOVERY",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-RECOVERY\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-RECOVERY\"}",
+        "revision": 173,
+        "seq": 173,
+        "timestamp": "2026-10-19T00:25:49Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-RECOVERY",
+        "entity_type": "task",
+        "event_type": "task.completed",
+        "payload_json": "{\"completion_revision\": 174, \"disposition\": \"validated\", \"reached_checkpoints\": []}",
+        "revision": 174,
+        "seq": 174,
+        "timestamp": "2026-10-19T00:26:09Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-INTEGRATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-INTEGRATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-I01\"}",
+        "revision": 175,
+        "seq": 175,
+        "timestamp": "2026-10-19T00:26:09Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "9bde74ea-5d92-4e29-a159-f5349c9135a4",
+        "entity_type": "gate_binding",
+        "event_type": "workflow.gates.bound",
+        "payload_json": "{\"gate_count\": 1}",
+        "revision": 176,
+        "seq": 176,
+        "timestamp": "2026-10-19T00:26:16Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-INTEGRATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-INTEGRATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-I01\"}",
+        "revision": 177,
+        "seq": 177,
+        "timestamp": "2026-10-19T00:27:22Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-QUALIFICATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-QUALIFICATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"claimed\", \"task_id\": \"TO-Q01\"}",
+        "revision": 178,
+        "seq": 178,
+        "timestamp": "2026-10-19T00:29:30Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "TO-Q01",
+        "entity_type": "task",
+        "event_type": "workflow.task.release",
+        "payload_json": "{\"reason\": null}",
+        "revision": 179,
+        "seq": 179,
+        "timestamp": "2026-10-19T00:30:07Z"
+      },
+      {
+        "actor_session_id": null,
+        "entity_id": "L-INTEGRATION",
+        "entity_type": "workflow_dispatch",
+        "event_type": "workflow.next_task",
+        "payload_json": "{\"lane_id\": \"L-INTEGRATION\", \"run_id\": \"TO-REDESIGN-V1\", \"status\": \"resumed\", \"task_id\": \"TO-I01\"}",
+        "revision": 180,
+        "seq": 180,
+        "timestamp": "2026-10-19T00:30:14Z"
       }
     ],
     "evidence": [
@@ -1643,6 +1883,19 @@
         "checkpoint_id": null,
         "claim_id": null,
         "content_hash": null,
+        "created_at": "2026-10-18T23:56:11Z",
+        "gate_id": "TO-R02-approved-recovery-transitions",
+        "id": "10cc6c6f-e9b7-430a-8172-9ea7375eb5de",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"d243ce1e18145c415dee748b8cc138ea0dbd8ebe23ded0ff0cf8890a80f36e35\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 158}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/10cc6c6f-e9b7-430a-8172-9ea7375eb5de",
+        "revision": 159,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
         "created_at": "2026-10-18T14:50:48Z",
         "gate_id": "TO-F01-BASELINE-CHECK",
         "id": "22ce4689-7401-4350-9a2a-a62cb57d88b7",
@@ -1676,6 +1929,19 @@
         "metadata_json": "{\"argv\": [\"python\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/reference\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"0f2f102fd6bf4c9664f79d871c6a8f6f66e7d70fc84deef78c24790b8631f9ba\", \"inputs\": {\"command_contract\": {\"argv\": [\"python\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/reference\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"61af82032b833db83275a2bb1e69ef3757735376184549e6b3228b2bf7db6886\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/product/reference-baseline.json\", \"docs/product/reference-baseline.md\", \"planning/standalone-v1/README.md\", \"planning/standalone-v1/application.json\", \"planning/standalone-v1/derive_plan.py\", \"planning/standalone-v1/todo-orchestrator-standalone-v1.todo-plan.json\", \"planning/standalone-v1/validation.json\", \"planning/todo-orchestrator-bootstrap-v1/ACCEPTANCE_AND_TESTS.md\", \"planning/todo-orchestrator-bootstrap-v1/ARCHITECTURE.md\", \"planning/todo-orchestrator-bootstrap-v1/CODEX_HANDOFF.md\", \"planning/todo-orchestrator-bootstrap-v1/DOMAIN_AND_INVARIANTS.md\", \"planning/todo-orchestrator-bootstrap-v1/INTEGRATION_AND_CUTOVER.md\", \"planning/todo-orchestrator-bootstrap-v1/MANIFEST.sha256\", \"planning/todo-orchestrator-bootstrap-v1/MIGRATION_MAP.md\", \"planning/todo-orchestrator-bootstrap-v1/PLANNING_AND_INGESTION.md\", \"planning/todo-orchestrator-bootstrap-v1/PRODUCT_SPEC.md\", \"planning/todo-orchestrator-bootstrap-v1/RISKS_AND_OPEN_DESIGN.md\", \"planning/todo-orchestrator-bootstrap-v1/START_HERE.md\", \"planning/todo-orchestrator-bootstrap-v1/VALIDATION_REPORT.json\", \"planning/todo-orchestrator-bootstrap-v1/VERIFICATION_AND_RECOVERY.md\", \"planning/todo-orchestrator-bootstrap-v1/WORKFLOW_AND_AUTHORITY.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-AUTHORITY.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-COORDINATION.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-FOUNDATION.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-INTEGRATION.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-PLANNING.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-QUALIFICATION.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-RECOVERY.md\", \"planning/todo-orchestrator-bootstrap-v1/lanes/L-VERIFICATION.md\", \"planning/todo-orchestrator-bootstrap-v1/machine/acceptance.csv\", \"planning/todo-orchestrator-bootstrap-v1/machine/contracts.json\", \"planning/todo-orchestrator-bootstrap-v1/machine/dependencies.csv\", \"planning/todo-orchestrator-bootstrap-v1/machine/lanes.json\", \"planning/todo-orchestrator-bootstrap-v1/machine/proposed_todos.json\", \"planning/todo-orchestrator-bootstrap-v1/machine/todo-orchestrator.todo-plan.json\", \"planning/todo-orchestrator-bootstrap-v1/machine/workstreams.json\", \"planning/todo-orchestrator-bootstrap-v1/scripts/validate_package.py\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-A01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-A02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-A03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-A04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-A05.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-C01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-C02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-C03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-C04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-C05.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-F01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-F02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-F03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-F04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-I01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-I02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-I03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-I04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-P01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-P02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-P03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-P04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-P05.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-Q01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-Q02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-Q03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-Q04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-Q05.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-R01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-R02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-R03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-R04.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-V01.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-V02.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-V03.md\", \"planning/todo-orchestrator-bootstrap-v1/task-sheets/TO-V04.md\", \"scripts/check_reference_baseline.py\", \"tests/reference/test_reference_baseline.py\", \"todo-status.md\", \"todos.md\", \"todos/to-a01.md\", \"todos/to-a02.md\", \"todos/to-a03.md\", \"todos/to-a04.md\", \"todos/to-a05.md\", \"todos/to-authority.md\", \"todos/to-c01.md\", \"todos/to-c02.md\", \"todos/to-c03.md\", \"todos/to-c04.md\", \"todos/to-c05.md\", \"todos/to-coordination.md\", \"todos/to-f01.md\", \"todos/to-f02.md\", \"todos/to-f03.md\", \"todos/to-f04.md\", \"todos/to-foundation.md\", \"todos/to-i01.md\", \"todos/to-i04.md\", \"todos/to-integration.md\", \"todos/to-p01.md\", \"todos/to-p02.md\", \"todos/to-p03.md\", \"todos/to-p04.md\", \"todos/to-planning.md\", \"todos/to-q01.md\", \"todos/to-q02.md\", \"todos/to-q03.md\", \"todos/to-q05.md\", \"todos/to-qualification.md\", \"todos/to-r01.md\", \"todos/to-r02.md\", \"todos/to-r03.md\", \"todos/to-r04.md\", \"todos/to-recovery.md\", \"todos/to-root.md\", \"todos/to-v01.md\", \"todos/to-v02.md\", \"todos/to-v03.md\", \"todos/to-v04.md\", \"todos/to-verification.md\"], \"files\": [{\"path\": \"docs/product\", \"sha256\": \"missing\"}, {\"path\": \"scripts/check_reference_baseline.py\", \"sha256\": \"ea295424f5a33e91e00396a95f681021f06c81c4df559a9e1c18d38f0b7cad72\"}, {\"path\": \"tests/reference\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"9100f82384ab3099057b272ca5504a64e651aad0\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 7}",
         "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/34cfb668-e3bc-4a02-95ac-4ffc076eb17c",
         "revision": 8,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-19T00:11:55Z",
+        "gate_id": "TO-R03-lifecycle-preservation",
+        "id": "4d10646b-10fc-4f95-b675-a6431aa48d4a",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"706b9805a3ed663d9d22eae8005212eb07abe7c2df1003dc2d82b0563112963d\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/lifecycle.md\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\", \"todos/to-r02.md\", \"todos/to-r03.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 164}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/4d10646b-10fc-4f95-b675-a6431aa48d4a",
+        "revision": 165,
         "status": "passed"
       },
       {
@@ -1832,6 +2098,19 @@
         "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/coordination\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"9f0e67b16dfddf8a1efec905a3c8a2a29f077525256213d7d6917bf8be8e911c\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"README.md\", \"docs/architecture/child-execution.md\", \"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/child_store.py\", \"src/todo_orchestrator/authority/commands.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/coordination/__init__.py\", \"src/todo_orchestrator/coordination/children.py\", \"src/todo_orchestrator/coordination/service.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/children.py\", \"src/todo_orchestrator/verification/acceptance.py\", \"tests/authority/test_sqlite.py\", \"tests/coordination/test_children_independent.py\", \"tests/coordination/test_children_structural_guard.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/coordination\", \"sha256\": \"missing\"}, {\"path\": \"tests/coordination\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"6ca6e30d5ca0d8a131497229a55977a10042473c\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 140}",
         "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/b5b681fc-2c88-460a-8182-6c25f9a191c8",
         "revision": 141,
+        "status": "passed"
+      },
+      {
+        "checkpoint_id": null,
+        "claim_id": null,
+        "content_hash": null,
+        "created_at": "2026-10-19T00:25:43Z",
+        "gate_id": "TO-R04-export-explicit-restore",
+        "id": "b9d4c657-a7b9-4d31-a0c8-1cd51524864b",
+        "kind": "command",
+        "metadata_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"41d8dcd48aea0927fa324484fe8e2a422b15727c393bfc789b75dd13723418b6\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/export-and-restore.md\", \"docs/architecture/lifecycle.md\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/export.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"src/todo_orchestrator/views/__init__.py\", \"src/todo_orchestrator/views/export.py\", \"tests/recovery/test_export.py\", \"tests/recovery/test_export_filesystem.py\", \"tests/recovery/test_export_independent.py\", \"tests/recovery/test_export_redaction.py\", \"tests/recovery/test_export_structural_guard.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\", \"todos/to-r02.md\", \"todos/to-r03.md\", \"todos/to-r04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 170}",
+        "path": "/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/b9d4c657-a7b9-4d31-a0c8-1cd51524864b",
+        "revision": 171,
         "status": "passed"
       },
       {
@@ -2150,6 +2429,19 @@
       },
       {
         "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/api\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/api\", \"SKILL.md\", \"references\"]}",
+        "id": "TO-I01-standalone-interfaces",
+        "input_fingerprint": null,
+        "last_run_at": null,
+        "required": 1,
+        "revision": 176,
+        "status": "pending",
+        "task_id": "TO-I01",
+        "type": "command",
+        "valid": 0
+      },
+      {
+        "checkpoint_id": null,
         "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/planning\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/planning\", \"tests/planning\"]}",
         "id": "TO-P01-plan-compiler",
         "input_fingerprint": "189f2da7d1555a354439406a07616dbe74ddc4de63ed35069419a69857535ee1",
@@ -2217,14 +2509,40 @@
         "checkpoint_id": null,
         "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/operations\", \"src/todo_orchestrator/views\", \"tests/recovery\"]}",
         "id": "TO-R02-approved-recovery-transitions",
-        "input_fingerprint": null,
-        "last_run_at": null,
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "last_run_at": "2026-10-18T23:56:11Z",
         "required": 1,
-        "revision": 155,
-        "status": "pending",
+        "revision": 159,
+        "status": "passed",
         "task_id": "TO-R02",
         "type": "command",
-        "valid": 0
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/operations\", \"src/todo_orchestrator/views\", \"tests/recovery\"]}",
+        "id": "TO-R03-lifecycle-preservation",
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "last_run_at": "2026-10-19T00:11:55Z",
+        "required": 1,
+        "revision": 165,
+        "status": "passed",
+        "task_id": "TO-R03",
+        "type": "command",
+        "valid": 1
+      },
+      {
+        "checkpoint_id": null,
+        "config_json": "{\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\", \"input_paths\": [\"src/todo_orchestrator/operations\", \"src/todo_orchestrator/views\", \"tests/recovery\"]}",
+        "id": "TO-R04-export-explicit-restore",
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "last_run_at": "2026-10-19T00:25:43Z",
+        "required": 1,
+        "revision": 171,
+        "status": "passed",
+        "task_id": "TO-R04",
+        "type": "command",
+        "valid": 1
       },
       {
         "checkpoint_id": null,
@@ -2280,6 +2598,16 @@
       }
     ],
     "handoffs": [
+      {
+        "claim_id": null,
+        "created_at": "2026-10-19T00:25:43Z",
+        "id": "02e17185-279a-4a13-af36-b83e6328ba6e",
+        "kind": "complete",
+        "note": "R04 accepted: versioned useful sanitized authority readmodels/JSON/Markdown; project-scoped authenticated reads and separate privatebackup action; exact public known-credential scalar collision fails closed/no echo. Complete privateSQLite point-in-time backup preserves all semantic/auth/event/receipt/outcome/evidence state under concurrent writer. Explicitrestore only to unoccupied destination after trustedmanifest format/schema/identity/revision/digest/fullDDL/integrity/FK/fingerprint verification; no startuprestore/readrepair. Atomic no-replace publish/POSIX durability; preserve orphan sidecars and dangling targets. Full isolated source389/389PASS137.418s (/tmp/todo-orchestrator-r04-full-tests.log); focusedexport11/11PASS7.323s; independentreview no bounded blocker; diffcheck passed. Actual125-file manifest /tmp/todo-orchestrator-r04-qualified-source-manifest.json aggregate dee2c6f7bb2cd9190e09ab65d0660b1159b8abc21b35d6baee6138aa6a435345 compensates incomplete installed directoryfingerprint. Temporaryauthoritiesonly, no activePC/legacy changes. Privatebackup not signedproof; trustedmanifest required; restore cannot prove postbackuprevocations or externalworkspace/effect freshness; nonPOSIX/faultinjectedpublication not qualified.",
+        "payload_json": "{\"authority_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"changed_owned_paths\": [\"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/export.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"src/todo_orchestrator/views/__init__.py\", \"src/todo_orchestrator/views/export.py\", \"tests/recovery/test_export.py\", \"tests/recovery/test_export_filesystem.py\", \"tests/recovery/test_export_independent.py\", \"tests/recovery/test_export_redaction.py\", \"tests/recovery/test_export_structural_guard.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\"], \"checkpoints\": [], \"completion_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"completion_gates\": [{\"evidence_id\": \"b9d4c657-a7b9-4d31-a0c8-1cd51524864b\", \"evidence_revision\": 171, \"id\": \"TO-R04-export-explicit-restore\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\"}], \"completion_revision\": 172, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-R04-export-explicit-restore\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"last_run_at\": \"2026-10-19T00:25:43Z\", \"revision\": 171, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json         | 302 ++++++++++++++++++++++---\\n docs/architecture/recovery-transitions.md      |  29 +--\\n src/todo_orchestrator/operations/__init__.py   |  37 +++\\n src/todo_orchestrator/operations/inspection.py |  25 +-\\n src/todo_orchestrator/planning/changes.py      |  74 +++++-\\n src/todo_orchestrator/providers/git/service.py | 182 +++++++++++++--\\n src/todo_orchestrator/verification/service.py  |  99 ++++++--\\n src/todo_orchestrator/views/__init__.py        |   9 +\\n tests/recovery/test_inspection_independent.py  |  11 +-\\n tests/recovery/test_recovery_independent.py    | 267 ++++++++++++++++++----\\n todo-status.md                                 |   8 +-\\n todos.md                                       |   8 +-\\n todos/to-r02.md                                |   8 +-\\n todos/to-r03.md                                |   8 +-\\n todos/to-r04.md                                |   6 +-\\n 15 files changed, 915 insertions(+), 158 deletions(-)\", \"git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"R04 accepted: versioned useful sanitized authority readmodels/JSON/Markdown; project-scoped authenticated reads and separate privatebackup action; exact public known-credential scalar collision fails closed/no echo. Complete privateSQLite point-in-time backup preserves all semantic/auth/event/receipt/outcome/evidence state under concurrent writer. Explicitrestore only to unoccupied destination after trustedmanifest format/schema/identity/revision/digest/fullDDL/integrity/FK/fingerprint verification; no startuprestore/readrepair. Atomic no-replace publish/POSIX durability; preserve orphan sidecars and dangling targets. Full isolated source389/389PASS137.418s (/tmp/todo-orchestrator-r04-full-tests.log); focusedexport11/11PASS7.323s; independentreview no bounded blocker; diffcheck passed. Actual125-file manifest /tmp/todo-orchestrator-r04-qualified-source-manifest.json aggregate dee2c6f7bb2cd9190e09ab65d0660b1159b8abc21b35d6baee6138aa6a435345 compensates incomplete installed directoryfingerprint. Temporaryauthoritiesonly, no activePC/legacy changes. Privatebackup not signedproof; trustedmanifest required; restore cannot prove postbackuprevocations or externalworkspace/effect freshness; nonPOSIX/faultinjectedpublication not qualified.\", \"producer_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-R04\"}",
+        "revision": 172,
+        "task_id": "TO-R04"
+      },
       {
         "claim_id": null,
         "created_at": "2026-10-18T18:30:52Z",
@@ -2502,6 +2830,16 @@
       },
       {
         "claim_id": null,
+        "created_at": "2026-10-18T23:56:11Z",
+        "id": "b1f5eb5f-aa0a-4b8e-8b2d-3acffe21660b",
+        "kind": "complete",
+        "note": "R02 accepted: current exact inspect/apply authorization with sealed complete-intent approval; writer-time revision/lease/source/native-child/candidate/effect guards; clean expired release and dirty preservation handoff requeue; Git and verification original-operation retry only with fresh persisted NOT_APPLIED/NOT_STARTED proof, one same-identity effect, and observed-effect reconcile without re-execution. Actual current operator audit; expired/revoked original worker recovery; authorized exact replay, altered-intent and revoked-operator refusal. Recovery discovery21/21 and full isolated source370/370 in131.022s (/tmp/todo-orchestrator-r02-full-tests.log), diff check passed; independent reviewer found no remaining bounded blocker. Actual113-file source/test/pyproject manifest /tmp/todo-orchestrator-r02-qualified-source-manifest.json aggregate5d051ef6c498dd0efc728647026a4123451b31510bd2bb197534d7e75faacace (gate directory fingerprints are insufficient provenance). Temporary SQLite/Git and trusted injected providers only; not external host runtime qualification. No active Project Control/legacy authority changes.",
+        "payload_json": "{\"authority_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"changed_owned_paths\": [\"src/todo_orchestrator/operations/inspection.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\"], \"checkpoints\": [], \"completion_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"completion_gates\": [{\"evidence_id\": \"10cc6c6f-e9b7-430a-8172-9ea7375eb5de\", \"evidence_revision\": 159, \"id\": \"TO-R02-approved-recovery-transitions\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\"}], \"completion_revision\": 160, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-R02-approved-recovery-transitions\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"last_run_at\": \"2026-10-18T23:56:11Z\", \"revision\": 159, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json         |  16 +-\\n docs/architecture/recovery-transitions.md      |  28 ++-\\n src/todo_orchestrator/operations/inspection.py |  25 ++-\\n src/todo_orchestrator/providers/git/service.py | 179 +++++++++++++++--\\n src/todo_orchestrator/verification/service.py  |  93 +++++++--\\n tests/recovery/test_inspection_independent.py  |  11 +-\\n tests/recovery/test_recovery_independent.py    | 267 +++++++++++++++++++++----\\n todo-status.md                                 |   2 +-\\n todos.md                                       |   2 +-\\n 9 files changed, 524 insertions(+), 99 deletions(-)\", \"git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"R02 accepted: current exact inspect/apply authorization with sealed complete-intent approval; writer-time revision/lease/source/native-child/candidate/effect guards; clean expired release and dirty preservation handoff requeue; Git and verification original-operation retry only with fresh persisted NOT_APPLIED/NOT_STARTED proof, one same-identity effect, and observed-effect reconcile without re-execution. Actual current operator audit; expired/revoked original worker recovery; authorized exact replay, altered-intent and revoked-operator refusal. Recovery discovery21/21 and full isolated source370/370 in131.022s (/tmp/todo-orchestrator-r02-full-tests.log), diff check passed; independent reviewer found no remaining bounded blocker. Actual113-file source/test/pyproject manifest /tmp/todo-orchestrator-r02-qualified-source-manifest.json aggregate5d051ef6c498dd0efc728647026a4123451b31510bd2bb197534d7e75faacace (gate directory fingerprints are insufficient provenance). Temporary SQLite/Git and trusted injected providers only; not external host runtime qualification. No active Project Control/legacy authority changes.\", \"producer_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-R02\"}",
+        "revision": 160,
+        "task_id": "TO-R02"
+      },
+      {
+        "claim_id": null,
         "created_at": "2026-10-18T21:52:14Z",
         "id": "b5f13c86-f660-4860-b0dd-cda2b5a04cb6",
         "kind": "complete",
@@ -2509,6 +2847,16 @@
         "payload_json": "{\"authority_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"changed_owned_paths\": [\"tests/coordination/test_declarations.py\", \"tests/coordination/test_messaging_restart.py\"], \"checkpoints\": [], \"completion_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"completion_gates\": [{\"evidence_id\": \"002c7421-a12e-4140-b40e-491aecdc2835\", \"evidence_revision\": 130, \"id\": \"TO-C03-native-communication-and-sync\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\"}], \"completion_revision\": 131, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-C03-native-communication-and-sync\", \"input_fingerprint\": \"b3dff603eb690b00fbded351dc6fefc45c2705ccad7328ea82784f97c0c2d951\", \"last_run_at\": \"2026-10-18T21:52:14Z\", \"revision\": 130, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json           |  16 +-\\n README.md                                        |   4 +-\\n docs/architecture/provider-contracts.md          |   8 +-\\n src/todo_orchestrator/authority/README.md        |  18 +-\\n src/todo_orchestrator/authority/declarations.py  | 238 ++++++++++++--\\n src/todo_orchestrator/contracts/providers.py     |   5 +-\\n src/todo_orchestrator/planning/package.py        |  28 ++\\n src/todo_orchestrator/verification/acceptance.py |  13 +-\\n tests/contracts/test_verification_bindings.py    |   1 +\\n tests/coordination/test_declarations.py          | 397 +++++++++++++++++++++--\\n tests/planning/test_package.py                   |  36 ++\\n todo-status.md                                   |   2 +-\\n todos.md                                         |   2 +-\\n 13 files changed, 702 insertions(+), 66 deletions(-)\", \"git_head\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented C03 typed durable communication and native declaration synchronization. Exact recipient/scope/run inbox partitions, deterministic durable read/delivery cursors and retry receipts, bounded guarded payloads, informational decision/interface notices separate from authorized canonical facts. Native facts drive shared advisory/transactional admission and V03 writer acceptance. Barriers require exact accepted participant outcomes under shared all/any/quorum semantics; compiler rejects identity collisions and duplicate participants. Action-bound provider contract v6 permits separately authorized approvers/readers and fails closed on missing rights/action. Root full isolated source suite: 314 passed (65.386s; /tmp/todo-orchestrator-c03-full-tests.log). Independent reviewer found no remaining blocker; separate approver/read-only/report-only probes passed. Development claims remain globally serial; original source and active Project Control untouched.\", \"producer_commit\": \"a49549e1012657c69f849b3682d35b6284193b66\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-C03\"}",
         "revision": 131,
         "task_id": "TO-C03"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-19T00:26:09Z",
+        "id": "c0ac4751-e3e6-4a62-9167-fb091e4fbb9f",
+        "kind": "complete",
+        "note": "Recovery workstream closure: R01 accepted153/gate152 (read-only exact inspection/uncertainty); R02 accepted160/gate159 (approved replay-safe recovery/requeue, dirty preservation, provider retry/reconcile); R03 accepted166/gate165 (supersession/provenance, quiescent close/retirement and authorized exact successor handoffs); R04 accepted172/gate171 (versioned sanitized reads/private consistent backup/explicit qualified no-clobber restore). Latest full isolated source389/389PASS137.418s plus independent reviews and focused required gates; actual125-file manifest aggregate dee2c6f7bb2cd9190e09ab65d0660b1159b8abc21b35d6baee6138aa6a435345. Risks/limits recorded in recovery-inspection.md/recovery-transitions.md/lifecycle.md/export-and-restore.md: trusted temporaryfixtures notexternalhostqualification, point-in-time backup notsignedproof/freshrevocation/sourceproof, exactschema compatibility/noalphamigration, POSIXpublish boundary. No activePC/legacy mutations. Closure has empty pathscope so cannot bind new commands with any cwd; relies on passed childgates and full-source evidence, does not broaden scope. I01/I04/Q01-Q03/Q05 and integration/qualification/root closure remain open.",
+        "payload_json": "{\"authority_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"changed_owned_paths\": [], \"checkpoints\": [], \"completion_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"completion_gates\": [], \"completion_revision\": 174, \"finalized_checkpoints\": [], \"gates\": [], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json         | 408 +++++++++++++++++++++----\\n docs/architecture/recovery-transitions.md      |  29 +-\\n src/todo_orchestrator/operations/__init__.py   |  37 +++\\n src/todo_orchestrator/operations/inspection.py |  25 +-\\n src/todo_orchestrator/planning/changes.py      |  74 ++++-\\n src/todo_orchestrator/providers/git/service.py | 182 ++++++++++-\\n src/todo_orchestrator/verification/service.py  |  99 ++++--\\n src/todo_orchestrator/views/__init__.py        |   9 +\\n tests/recovery/test_inspection_independent.py  |  11 +-\\n tests/recovery/test_recovery_independent.py    | 267 +++++++++++++---\\n todo-status.md                                 |  10 +-\\n todos.md                                       |  10 +-\\n todos/to-r02.md                                |   8 +-\\n todos/to-r03.md                                |   8 +-\\n todos/to-r04.md                                |   8 +-\\n todos/to-recovery.md                           |   6 +-\\n 16 files changed, 1012 insertions(+), 179 deletions(-)\", \"git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Recovery workstream closure: R01 accepted153/gate152 (read-only exact inspection/uncertainty); R02 accepted160/gate159 (approved replay-safe recovery/requeue, dirty preservation, provider retry/reconcile); R03 accepted166/gate165 (supersession/provenance, quiescent close/retirement and authorized exact successor handoffs); R04 accepted172/gate171 (versioned sanitized reads/private consistent backup/explicit qualified no-clobber restore). Latest full isolated source389/389PASS137.418s plus independent reviews and focused required gates; actual125-file manifest aggregate dee2c6f7bb2cd9190e09ab65d0660b1159b8abc21b35d6baee6138aa6a435345. Risks/limits recorded in recovery-inspection.md/recovery-transitions.md/lifecycle.md/export-and-restore.md: trusted temporaryfixtures notexternalhostqualification, point-in-time backup notsignedproof/freshrevocation/sourceproof, exactschema compatibility/noalphamigration, POSIXpublish boundary. No activePC/legacy mutations. Closure has empty pathscope so cannot bind new commands with any cwd; relies on passed childgates and full-source evidence, does not broaden scope. I01/I04/Q01-Q03/Q05 and integration/qualification/root closure remain open.\", \"producer_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-RECOVERY\"}",
+        "revision": 174,
+        "task_id": "TO-RECOVERY"
       },
       {
         "claim_id": null,
@@ -2529,6 +2877,16 @@
         "payload_json": "{\"authority_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"changed_owned_paths\": [\"src/todo_orchestrator/authority/README.md\", \"src/todo_orchestrator/authority/__init__.py\", \"src/todo_orchestrator/authority/attempts.py\", \"src/todo_orchestrator/authority/auth.py\", \"src/todo_orchestrator/authority/commands.py\", \"src/todo_orchestrator/authority/eligibility.py\", \"src/todo_orchestrator/authority/scopes.py\", \"src/todo_orchestrator/authority/sqlite.py\", \"src/todo_orchestrator/model/__init__.py\", \"src/todo_orchestrator/model/attempts.py\", \"src/todo_orchestrator/model/eligibility.py\", \"tests/authority/test_attempts.py\", \"tests/authority/test_attempts_independent.py\", \"tests/authority/test_auth.py\", \"tests/authority/test_auth_independent.py\", \"tests/authority/test_commands.py\", \"tests/authority/test_eligibility.py\", \"tests/authority/test_eligibility_independent.py\", \"tests/authority/test_sqlite.py\"], \"checkpoints\": [], \"completion_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"completion_gates\": [{\"evidence_id\": \"f87a0e58-2c3c-41d9-b33b-44d8ec8dfda5\", \"evidence_revision\": 68, \"id\": \"TO-A05-atomic-attempt-leases\", \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"24af2ed73089cec187ae82f753485a5d00549e6c\"}], \"completion_revision\": 69, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-A05-atomic-attempt-leases\", \"input_fingerprint\": \"8c883e05890029a18e0df0c9e981d742a3f91120840a186548a214483b02ef97\", \"last_run_at\": \"2026-10-18T17:57:43Z\", \"revision\": 68, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json      | 611 ++++++++++++++++++++++++----\\n docs/architecture/domain-model.md           |   2 +-\\n src/todo_orchestrator/authority/README.md   |  87 +++-\\n src/todo_orchestrator/authority/__init__.py |  72 ++++\\n src/todo_orchestrator/authority/commands.py |  58 ++-\\n src/todo_orchestrator/authority/sqlite.py   |  97 ++++-\\n src/todo_orchestrator/contracts/domain.py   |   9 +-\\n src/todo_orchestrator/model/__init__.py     |  28 ++\\n tests/authority/test_commands.py            |  78 ++++\\n tests/authority/test_sqlite.py              |  43 +-\\n tests/contracts/test_domain.py              |  10 +\\n todo-status.md                              |  14 +-\\n todos.md                                    |  14 +-\\n todos/to-a03.md                             |  10 +-\\n todos/to-a04.md                             |  10 +-\\n todos/to-a05.md                             |   8 +-\\n todos/to-c01.md                             |   8 +-\\n todos/to-p01.md                             |  10 +-\\n todos/to-p02.md                             |  10 +-\\n 19 files changed, 1022 insertions(+), 157 deletions(-)\", \"git_head\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"Implemented authenticated atomic attempt claims/leases/heartbeat/explicit release/expired reconciliation with shared current-transaction eligibility. Two-process claim race hasonewinner/no loserchurn. Ownershipincarnation andrun/assignmentcontext fenced; expired/dirty/live/unknown workpreserved; observations revalidatedagainststate/lease/expiry underlock anddurabletypedreceipt audit. Schema6 immutable claimedscopes/locks survive restart/newplans and cannotbecaller-overridden; exactretries no duplicateclaims/providerinspection. Source144 +reference4 passed, independent8process/expiry/context/crossplan tests, compileall/diffcheckpassed. Trustedhostfakefixtures establishcorepolicy, realGit/providerqualification remainsV04/I04/Q02.\", \"producer_commit\": \"24af2ed73089cec187ae82f753485a5d00549e6c\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-A05\"}",
         "revision": 69,
         "task_id": "TO-A05"
+      },
+      {
+        "claim_id": null,
+        "created_at": "2026-10-19T00:11:55Z",
+        "id": "e57fce35-f1cf-41f7-b2e4-538666887e2b",
+        "kind": "complete",
+        "note": "R03: explicit guarded run close and retirement; exact schedule/revision/current bearer checks, separately authorized successor assignment handoffs or explicit bounded unresolved reasons, immutable lifecycle events/readback and original schedules/history. Quiescence includes native child/candidate/attempt-linked effects plus run-bound preattempt Git effects. Explicit supersession preserves immutable accepted predecessor outcomes/evidence; downstream requirements require exact retirement/retarget, no silent drop; old requirements excluded from owner rebind only when explicitly retired. Three run-bound Git/verification plan lookups corrected. Full isolated source378/378PASS131.979s (/tmp/todo-orchestrator-r03-full-tests.log), lifecycle8/8, independent reviewer no blocker; public disposable distinct-successor supersedes handoff succeeds/unrelatedref denied no churn; retired run dispatch/resume denied and opening replay cannot resurrect. diff check passed. Actual118-file manifest /tmp/todo-orchestrator-r03-qualified-source-manifest.json aggregate c93af172a232dc58a2b47410bfe899c8169a64e9b688a3ea135c8ed55b57001b; installed directory gate fingerprint not complete provenance. Temporary SQLite/Git/injected providers only, no activePC/legacy changes.",
+        "payload_json": "{\"authority_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"changed_owned_paths\": [\"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\"], \"checkpoints\": [], \"completion_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"completion_gates\": [{\"evidence_id\": \"4d10646b-10fc-4f95-b675-a6431aa48d4a\", \"evidence_revision\": 165, \"id\": \"TO-R03-lifecycle-preservation\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"status\": \"passed\", \"valid\": true, \"validation_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\"}], \"completion_revision\": 166, \"finalized_checkpoints\": [], \"gates\": [{\"id\": \"TO-R03-lifecycle-preservation\", \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"last_run_at\": \"2026-10-19T00:11:55Z\", \"revision\": 165, \"status\": \"passed\", \"valid\": 1}], \"git_diffstat\": \".todo-orchestrator/state.snapshot.json         | 169 +++++++++++++---\\n docs/architecture/recovery-transitions.md      |  29 +--\\n src/todo_orchestrator/operations/__init__.py   |  17 ++\\n src/todo_orchestrator/operations/inspection.py |  25 ++-\\n src/todo_orchestrator/planning/changes.py      |  74 ++++++-\\n src/todo_orchestrator/providers/git/service.py | 182 +++++++++++++++--\\n src/todo_orchestrator/verification/service.py  |  99 +++++++--\\n tests/recovery/test_inspection_independent.py  |  11 +-\\n tests/recovery/test_recovery_independent.py    | 267 +++++++++++++++++++++----\\n todo-status.md                                 |   6 +-\\n todos.md                                       |   6 +-\\n todos/to-r02.md                                |   8 +-\\n todos/to-r03.md                                |   6 +-\\n 13 files changed, 759 insertions(+), 140 deletions(-)\", \"git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"integration_commit\": null, \"interfaces\": [], \"note\": \"R03: explicit guarded run close and retirement; exact schedule/revision/current bearer checks, separately authorized successor assignment handoffs or explicit bounded unresolved reasons, immutable lifecycle events/readback and original schedules/history. Quiescence includes native child/candidate/attempt-linked effects plus run-bound preattempt Git effects. Explicit supersession preserves immutable accepted predecessor outcomes/evidence; downstream requirements require exact retirement/retarget, no silent drop; old requirements excluded from owner rebind only when explicitly retired. Three run-bound Git/verification plan lookups corrected. Full isolated source378/378PASS131.979s (/tmp/todo-orchestrator-r03-full-tests.log), lifecycle8/8, independent reviewer no blocker; public disposable distinct-successor supersedes handoff succeeds/unrelatedref denied no churn; retired run dispatch/resume denied and opening replay cannot resurrect. diff check passed. Actual118-file manifest /tmp/todo-orchestrator-r03-qualified-source-manifest.json aggregate c93af172a232dc58a2b47410bfe899c8169a64e9b688a3ea135c8ed55b57001b; installed directory gate fingerprint not complete provenance. Temporary SQLite/Git/injected providers only, no activePC/legacy changes.\", \"producer_commit\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"producer_root\": \"/home/tumlinson/todo-orchestrator\", \"resources\": [], \"task_id\": \"TO-R03\"}",
+        "revision": 166,
+        "task_id": "TO-R03"
       },
       {
         "claim_id": null,
@@ -3349,6 +3707,45 @@
         "task_id": "TO-R01",
         "valid": 1,
         "validation_git_head": "6ca6e30d5ca0d8a131497229a55977a10042473c"
+      },
+      {
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 160,
+        "evidence_id": "10cc6c6f-e9b7-430a-8172-9ea7375eb5de",
+        "evidence_revision": 159,
+        "gate_id": "TO-R02-approved-recovery-transitions",
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "provenance_json": "{\"claim_id\": \"41401f54-8f17-42bc-be8a-b52c64dc5c9f\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"d243ce1e18145c415dee748b8cc138ea0dbd8ebe23ded0ff0cf8890a80f36e35\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 158}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/10cc6c6f-e9b7-430a-8172-9ea7375eb5de\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-R02",
+        "valid": 1,
+        "validation_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87"
+      },
+      {
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 166,
+        "evidence_id": "4d10646b-10fc-4f95-b675-a6431aa48d4a",
+        "evidence_revision": 165,
+        "gate_id": "TO-R03-lifecycle-preservation",
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "provenance_json": "{\"claim_id\": \"23542aaa-7d3f-493d-abae-e71d585b2265\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"706b9805a3ed663d9d22eae8005212eb07abe7c2df1003dc2d82b0563112963d\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/lifecycle.md\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\", \"todos/to-r02.md\", \"todos/to-r03.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 164}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/4d10646b-10fc-4f95-b675-a6431aa48d4a\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-R03",
+        "valid": 1,
+        "validation_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87"
+      },
+      {
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 172,
+        "evidence_id": "b9d4c657-a7b9-4d31-a0c8-1cd51524864b",
+        "evidence_revision": 171,
+        "gate_id": "TO-R04-export-explicit-restore",
+        "input_fingerprint": "8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6",
+        "provenance_json": "{\"claim_id\": \"6764a28a-d395-4d6f-a8d0-7e08e7a2e661\", \"evidence_content_hash\": null, \"evidence_kind\": \"command\", \"evidence_metadata\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"environment\": {}, \"expected_exit_code\": 0, \"input_fingerprint\": \"8c01ea860540768aea86318b29f20ae0de202c46b8cf4053bd6059bfc55bfba6\", \"inputs\": {\"command_contract\": {\"argv\": [\"env\", \"PYTHONPATH=src\", \"python\", \"-S\", \"-m\", \"unittest\", \"discover\", \"-s\", \"tests/recovery\", \"-p\", \"test_*.py\"], \"cwd\": \".\"}, \"diff_fingerprint\": \"41d8dcd48aea0927fa324484fe8e2a422b15727c393bfc789b75dd13723418b6\", \"dirty_paths\": [\".todo-orchestrator/state.snapshot.json\", \"docs/architecture/export-and-restore.md\", \"docs/architecture/lifecycle.md\", \"docs/architecture/recovery-transitions.md\", \"src/todo_orchestrator/operations/__init__.py\", \"src/todo_orchestrator/operations/export.py\", \"src/todo_orchestrator/operations/inspection.py\", \"src/todo_orchestrator/operations/lifecycle.py\", \"src/todo_orchestrator/planning/changes.py\", \"src/todo_orchestrator/providers/git/service.py\", \"src/todo_orchestrator/verification/service.py\", \"src/todo_orchestrator/views/__init__.py\", \"src/todo_orchestrator/views/export.py\", \"tests/recovery/test_export.py\", \"tests/recovery/test_export_filesystem.py\", \"tests/recovery/test_export_independent.py\", \"tests/recovery/test_export_redaction.py\", \"tests/recovery/test_export_structural_guard.py\", \"tests/recovery/test_inspection_independent.py\", \"tests/recovery/test_lifecycle.py\", \"tests/recovery/test_lifecycle_independent.py\", \"tests/recovery/test_lifecycle_run_boundary.py\", \"tests/recovery/test_lifecycle_unattached_effect.py\", \"tests/recovery/test_recovery_independent.py\", \"tests/recovery/test_recovery_run_queue.py\", \"tests/recovery/test_recovery_verification.py\", \"todo-status.md\", \"todos.md\", \"todos/to-r02.md\", \"todos/to-r03.md\", \"todos/to-r04.md\"], \"files\": [{\"path\": \"src/todo_orchestrator/operations\", \"sha256\": \"missing\"}, {\"path\": \"src/todo_orchestrator/views\", \"sha256\": \"missing\"}, {\"path\": \"tests/recovery\", \"sha256\": \"missing\"}], \"interfaces\": [], \"recorded_git_head\": \"c36332da440684270edd0eb4d765a7dca25ffb87\", \"static_path\": null}, \"locks\": [], \"resources\": [], \"returncode\": 0, \"started_revision\": 170}, \"evidence_path\": \"/home/tumlinson/todo-orchestrator/.git/todo-orchestrator/cf341339-9e52-4e91-aa2f-4c80aa6a5cb3/evidence/b9d4c657-a7b9-4d31-a0c8-1cd51524864b\", \"source\": \"completion_transaction\"}",
+        "status": "passed",
+        "task_id": "TO-R04",
+        "valid": 1,
+        "validation_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87"
       },
       {
         "completion_git_head": "d6cf85f364626b5b5f89349826b0871b43e8bc42",
@@ -4566,12 +4963,12 @@
         "priority": 40,
         "result": null,
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 147,
+        "revision": 175,
         "status": "in_progress",
         "tags_json": "[]",
         "title": "Expose stable standalone Python, CLI and skill interfaces",
-        "updated_at": "2026-10-18T23:01:53Z",
-        "version": 3
+        "updated_at": "2026-10-19T00:26:09Z",
+        "version": 4
       },
       {
         "attention_reason": null,
@@ -4766,12 +5163,12 @@
         "priority": 40,
         "result": null,
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 178,
+        "status": "in_progress",
         "tags_json": "[]",
         "title": "Capture pre-redesign reference fixtures and safety expectations",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-19T00:30:07Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -4900,9 +5297,9 @@
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 160,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-R02",
         "kind": "task",
@@ -4914,20 +5311,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-RECOVERY",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 154,
-        "status": "in_progress",
+        "revision": 160,
+        "status": "done",
         "tags_json": "[]",
         "title": "Apply safe and auditable recovery transitions",
-        "updated_at": "2026-10-18T23:27:03Z",
-        "version": 2
+        "updated_at": "2026-10-18T23:56:11Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 166,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-R03",
         "kind": "task",
@@ -4939,20 +5336,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-RECOVERY",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 166,
+        "status": "done",
         "tags_json": "[]",
         "title": "Supersede, retire and replace work without history loss",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-19T00:11:55Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 172,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-R04",
         "kind": "task",
@@ -4964,20 +5361,20 @@
         "parallel_policy": "serial",
         "parent_id": "TO-RECOVERY",
         "priority": 40,
-        "result": null,
+        "result": "implemented",
         "result_policy_json": "{\"allowed_dispositions\": [\"implemented\", \"validated\", \"evaluated_not_promoted\", \"no_change_required\", \"failed\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 172,
+        "status": "done",
         "tags_json": "[]",
         "title": "Add trustworthy export, projections and explicit restoration",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-19T00:25:43Z",
+        "version": 3
       },
       {
         "attention_reason": null,
-        "completion_commit": null,
-        "completion_git_head": null,
-        "completion_revision": null,
+        "completion_commit": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_git_head": "c36332da440684270edd0eb4d765a7dca25ffb87",
+        "completion_revision": 174,
         "created_at": "2026-10-18T14:41:59Z",
         "id": "TO-RECOVERY",
         "kind": "workstream",
@@ -4989,14 +5386,14 @@
         "parallel_policy": "serial",
         "parent_id": "TO-ROOT",
         "priority": 15,
-        "result": null,
+        "result": "validated",
         "result_policy_json": "{\"allowed_dispositions\": [\"validated\", \"no_change_required\"]}",
-        "revision": 2,
-        "status": "planned",
+        "revision": 174,
+        "status": "done",
         "tags_json": "[]",
         "title": "Recovery and lifecycle",
-        "updated_at": "2026-10-18T14:41:59Z",
-        "version": 1
+        "updated_at": "2026-10-19T00:26:09Z",
+        "version": 3
       },
       {
         "attention_reason": null,
@@ -6184,13 +6581,13 @@
         "task_id": "TO-ROOT"
       },
       {
-        "activated_at": null,
+        "activated_at": "2026-10-19T00:26:09Z",
         "completed_at": null,
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-INTEGRATION",
         "position": 0,
-        "revision": 148,
-        "state": "queued",
+        "revision": 175,
+        "state": "active",
         "task_id": "TO-I01"
       },
       {
@@ -6269,7 +6666,7 @@
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-QUALIFICATION",
         "position": 0,
-        "revision": 2,
+        "revision": 179,
         "state": "queued",
         "task_id": "TO-Q01"
       },
@@ -6325,42 +6722,42 @@
       },
       {
         "activated_at": "2026-10-18T23:27:03Z",
-        "completed_at": null,
+        "completed_at": "2026-10-18T23:56:11Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-RECOVERY",
         "position": 1,
-        "revision": 154,
-        "state": "active",
+        "revision": 160,
+        "state": "completed",
         "task_id": "TO-R02"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-18T23:56:16Z",
+        "completed_at": "2026-10-19T00:11:55Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-RECOVERY",
         "position": 2,
-        "revision": 2,
-        "state": "queued",
+        "revision": 166,
+        "state": "completed",
         "task_id": "TO-R03"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-19T00:12:00Z",
+        "completed_at": "2026-10-19T00:25:43Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-RECOVERY",
         "position": 3,
-        "revision": 2,
-        "state": "queued",
+        "revision": 172,
+        "state": "completed",
         "task_id": "TO-R04"
       },
       {
-        "activated_at": null,
-        "completed_at": null,
+        "activated_at": "2026-10-19T00:25:49Z",
+        "completed_at": "2026-10-19T00:26:09Z",
         "enqueued_at": "2026-10-18T14:41:59Z",
         "lane_id": "L-RECOVERY",
         "position": 4,
-        "revision": 2,
-        "state": "queued",
+        "revision": 174,
+        "state": "completed",
         "task_id": "TO-RECOVERY"
       },
       {
@@ -6456,11 +6853,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-INTEGRATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 148,
+        "revision": 175,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "ready",
-        "updated_at": "2026-10-18T23:01:53Z",
+        "state": "active",
+        "updated_at": "2026-10-19T00:26:09Z",
         "workspace_mode": "exclusive"
       },
       {
@@ -6480,11 +6877,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-QUALIFICATION",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 2,
+        "revision": 179,
         "role": "specialist",
         "run_id": "TO-REDESIGN-V1",
         "state": "ready",
-        "updated_at": "2026-10-18T14:41:59Z",
+        "updated_at": "2026-10-19T00:30:07Z",
         "workspace_mode": "exclusive"
       },
       {
@@ -6492,11 +6889,11 @@
         "created_at": "2026-10-18T14:41:59Z",
         "id": "L-RECOVERY",
         "parent_lane_id": "L-FOUNDATION",
-        "revision": 154,
+        "revision": 174,
         "role": "implementer",
         "run_id": "TO-REDESIGN-V1",
-        "state": "active",
-        "updated_at": "2026-10-18T23:27:03Z",
+        "state": "closed",
+        "updated_at": "2026-10-19T00:26:09Z",
         "workspace_mode": "exclusive"
       },
       {

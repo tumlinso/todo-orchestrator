@@ -7,7 +7,7 @@ import unittest
 from tests.verification import test_git_independent as git_fixture
 from tests.verification import test_execution_independent as verification_fixture
 from todo_orchestrator.authority import CapabilityDeniedError, SQLiteAuthority
-from todo_orchestrator.contracts import EntityKind, EntityRef, StableId
+from todo_orchestrator.contracts import EntityKind, EntityRef, Sha256Digest, StableId
 from todo_orchestrator.model import ChildActivity, ProcessLiveness, SourceSafety
 from todo_orchestrator.operations.inspection import (
     RecoveryInspectionService, RecoveryStatus,
@@ -31,6 +31,8 @@ class MutableInspectionHost:
         if self.failure is not None:
             raise self.failure
         observation = self.delegate.inspect_attempt(attempt, workspace)
+        if observation.source_digest is None:
+            observation = replace(observation, source_digest=Sha256Digest("4" * 64))
         return observation if self.override is None else self.override(observation)
 
 
@@ -106,7 +108,7 @@ class RecoveryInspectionIndependentTests(unittest.TestCase):
         self.assertEqual(result.state, active.state)
         self.assertEqual(self.fixture.state_snapshot(), before)
 
-    def test_expired_live_or_dirty_workspace_remains_blocked(self):
+    def test_expired_live_and_unknown_workspace_stay_blocked_while_dirty_gets_handoff(self):
         active = self.inspect()
         self.fixture.clock.value = active.lease_expires_at + timedelta(seconds=1)
         for process, children in (
@@ -127,7 +129,10 @@ class RecoveryInspectionIndependentTests(unittest.TestCase):
         )
         dirty = self.inspect()
         self.assertEqual(dirty.status, RecoveryStatus.DIRTY)
-        self.assertEqual(dirty.intents, ())
+        self.assertEqual(
+            tuple(item.kind for item in dirty.intents),
+            (RecoveryIntentKind.HANDOFF_DIRTY_WORKSPACE,),
+        )
 
         self.host.override = lambda observation: replace(
             observation, source=SourceSafety.UNKNOWN,

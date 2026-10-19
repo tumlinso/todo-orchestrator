@@ -486,7 +486,8 @@ def _requirement(request: GitEffectRequest) -> AuthorizationRequirement:
 
 def _plan_revision(connection: sqlite3.Connection, request: GitEffectRequest) -> StableId:
     if request.run is not None:
-        row = connection.execute("SELECT plan_revision_id FROM run_schedules WHERE run_id = ?",
+        row = connection.execute("SELECT r.plan_revision_id FROM runs AS r "
+                                 "JOIN run_schedules AS s USING (run_id) WHERE s.run_id = ?",
                                  (str(request.run.entity_id),)).fetchone()
         if row is None:
             raise GitEffectDeniedError("Git effect run has no persisted schedule")
@@ -909,10 +910,68 @@ class _TransitionHandler:
                             or attempt_row["work_item_id"] != str(approval.target.entity_id)):
                         raise GitEffectDeniedError("recovery host proof differs from the stored attempt")
             if command.next_state == GitEffectState.EXECUTING.value:
-                if (approval.intent_kind != "retry_original_operation"
-                        or command.expected_state != GitEffectState.NOT_APPLIED.value
-                        or not same_revision):
-                    raise GitEffectDeniedError("recovery retry must start from the approved NOT_APPLIED revision")
+                recovery_inspection = None
+                if approval.intent_kind == "retry_original_operation":
+                    if not same_revision or command.observation_json is None:
+                        raise GitEffectDeniedError(
+                            "recovery retry requires a fresh provider inspection at the approved revision"
+                        )
+                    recovery_inspection = self._validate_retry_inspection(
+                        context, command, request,
+                    )
+                elif command.expected_state != GitEffectState.PREPARED.value:
+                    raise GitEffectDeniedError("observed-effect reconciliation cannot start a new Git effect")
+                expected_states = {GitEffectState.PREPARED.value, GitEffectState.NOT_APPLIED.value}
+                if approval.intent_kind == "retry_original_operation":
+                    expected_states |= {GitEffectState.EXECUTING.value, GitEffectState.UNKNOWN.value}
+                if command.expected_state not in expected_states:
+                    raise GitEffectStateError("only prepared or freshly proven-not-applied effects may start")
+                if recovery_inspection is not None:
+                    observation_json, receipt_json = recovery_inspection
+                    # Keep the provider's NOT_APPLIED proof durable while the
+                    # same writer transaction reserves the one permitted retry.
+                    # The intermediate state satisfies the frozen SQL FSM; no
+                    # observer can see it outside this transaction.
+                    updated = context.execute(
+                        "UPDATE git_effect_operations SET state = 'not_applied', observation_json = ?, "
+                        "provider_receipt_json = ?, updated_at = ? "
+                        "WHERE operation_id = ? AND state = ?",
+                        (observation_json, receipt_json, command.updated_at,
+                         str(command.operation_id), command.expected_state),
+                    ).rowcount
+                    if updated != 1:
+                        raise GitEffectStateError("Git operation changed before retry inspection was recorded")
+                    authority_state = current["authority_state"]
+                    if authority_state in {"executing", "unknown"}:
+                        context.execute(
+                            "UPDATE external_operations SET state = 'not_applied', updated_at = ?, "
+                            "receipt_digest = ? WHERE operation_id = ? AND state = ?",
+                            (command.updated_at, _digest(receipt_json), str(command.operation_id), authority_state),
+                        )
+                        authority_state = "not_applied"
+                    elif authority_state != "not_applied":
+                        raise GitEffectStateError("authority operation cannot record a retry inspection")
+                    context.execute(
+                        "UPDATE git_effect_operations SET state = 'executing', updated_at = ? "
+                        "WHERE operation_id = ? AND state = 'not_applied'",
+                        (command.updated_at, str(command.operation_id)),
+                    )
+                    context.execute(
+                        "UPDATE external_operations SET state = 'executing', updated_at = ? "
+                        "WHERE operation_id = ? AND state = 'not_applied'",
+                        (command.updated_at, str(command.operation_id)),
+                    )
+                    return CommandEffect(True, {"operation_id": str(command.operation_id),
+                                                "state": "executing"},
+                                         "todo.git.effect.executing", {
+                                             "operation_id": str(command.operation_id),
+                                             "request_digest": current["request_digest"],
+                                             "retry": True,
+                                             "recovery_approval_digest": approval_digest,
+                                             "recovery_intent_digest": approval.intent_digest.hex,
+                                             "recovery_intent_kind": approval.intent_kind,
+                                             "inspection_receipt_digest": _digest(receipt_json),
+                                         })
             elif approval.intent_kind == "retry_original_operation" and not prior_start:
                 raise GitEffectDeniedError("Git retry result has no matching approved start event")
             elif approval.intent_kind == "reconcile_observed_effect" and command.next_state == GitEffectState.EXECUTING.value:
@@ -1105,6 +1164,56 @@ class _TransitionHandler:
                                      else approval.intent_digest.hex,
                                  "recovery_intent_kind": None if approval is None else approval.intent_kind,
                              })
+
+    def _validate_retry_inspection(
+        self, context: MutationContext, command: _Transition, request: GitEffectRequest,
+    ) -> tuple[str, str]:
+        """Validate and return the exact durable NOT_APPLIED inspection proof."""
+        try:
+            payload = json.loads(command.observation_json or "")
+            if not isinstance(payload, dict) or set(payload) != {
+                "status", "reason_code", "disposition", "observation", "qualification", "source_after",
+                "correlation_id", "inspection", "inspection_request",
+            }:
+                raise ValueError("invalid Git inspection envelope")
+            if (payload["status"] != ProviderStatus.OBSERVED_SUCCESS.value
+                    or payload["disposition"] != GitEffectDisposition.NOT_APPLIED.value
+                    or payload["inspection"] is not True):
+                raise ValueError("provider did not prove NOT_APPLIED")
+            observation = _observation_from(payload["observation"])
+            if observation is None or observation.operation_id != request.operation_id:
+                raise ValueError("inspection names another Git operation")
+            correlation = StableId(payload["correlation_id"])
+            inspection_request = _inspection_from(payload["inspection_request"], request)
+            if (inspection_request.operation_id != request.operation_id
+                    or inspection_request.idempotency_key != request.idempotency_key
+                    or inspection_request.original_request_digest != provider_request_digest(request)
+                    or inspection_request.correlation_id != correlation
+                    or inspection_request.context.project_id != context.project.project_id
+                    or inspection_request.context.actor != context.actor):
+                raise ValueError("inspection query differs from the authorized Git operation")
+            receipt_document = json.loads(command.provider_receipt_json or "")
+            if not isinstance(receipt_document, dict) or set(receipt_document) != {"receipt", "inspection_receipt"}:
+                raise ValueError("invalid inspection receipt envelope")
+            receipt = _receipt_from(receipt_document["inspection_receipt"])
+            if receipt is None or receipt_document["receipt"] is not None:
+                raise ValueError("NOT_APPLIED retry must not fabricate an effect receipt")
+            if (receipt.provider != self.service.provider.identity
+                    or receipt.request_digest != provider_request_digest(inspection_request)
+                    or receipt.correlation_id != correlation
+                    or receipt.provenance_ref != self.service.provider._provenance(request)):
+                raise ValueError("inspection receipt does not bind the exact query")
+            now = _now(self.service.clock)
+            observed_at = receipt.observed_at.astimezone(timezone.utc)
+            requested_at = request.requested_at
+            if (observed_at > now or (requested_at is not None
+                    and observed_at < requested_at.astimezone(timezone.utc))):
+                raise ValueError("inspection receipt is outside the authorized operation interval")
+            return command.observation_json, command.provider_receipt_json
+        except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise GitEffectObservationMismatchError(
+                "Git retry lacks a fresh exact NOT_APPLIED inspection"
+            ) from exc
 
 
 class GitEffectService:
@@ -1747,7 +1856,7 @@ class GitEffectService:
             replayed = self.recovery_replay(
                 authority, bearer_token,
                 EntityRef(authority.project.project_id, EntityKind.EXTERNAL_OPERATION, operation_id),
-                "reconcile_observed_effect", idempotency_key,
+                "reconcile_observed_effect", idempotency_key, _recovery_approval.intent_digest,
             )
             if replayed is not None:
                 return replayed
@@ -1808,7 +1917,7 @@ class GitEffectService:
             replayed = self.recovery_replay(
                 authority, bearer_token,
                 EntityRef(authority.project.project_id, EntityKind.EXTERNAL_OPERATION, operation_id),
-                "retry_original_operation", idempotency_key,
+                "retry_original_operation", idempotency_key, _recovery_approval.intent_digest,
             )
             if replayed is not None:
                 return replayed
@@ -1845,14 +1954,59 @@ class GitEffectService:
                 expected_revision=self.auth._revision(authority, None),
             )
         self.auth._revision(authority, expected_revision)
-        if view.state is not GitEffectState.NOT_APPLIED:
-            raise GitEffectStateError("explicit Git retry requires a durable NOT_APPLIED observation")
+        if view.state not in {
+            GitEffectState.NOT_APPLIED, GitEffectState.EXECUTING, GitEffectState.UNKNOWN,
+        }:
+            raise GitEffectStateError("explicit Git retry requires a retryable original operation")
         intent_json = self._intent_row(authority, operation_id)["request_json"]
-        started = self._transition(authority, bearer_token, request, intent_json, GitEffectState.NOT_APPLIED,
-                                   GitEffectState.EXECUTING,
-                                   phase=recovery_phase_start if _recovery else "retry:" + str(idempotency_key),
-                                   expected_revision=self.auth._revision(authority, expected_revision),
-                                   recovery_approval=_recovery_approval)
+        inspection_json = None
+        receipt_json = None
+        transition_expected = view.state
+        if _recovery:
+            # R01 is read-only. Repeat its provider query under the current
+            # recovery principal, then bind the proof to the one writer
+            # transition that reserves this retry.
+            actor, capability_id = self._authorize_recovery_request(
+                authority, bearer_token, request, _recovery_approval, "retry_original_operation",
+            )
+            correlation = _id(
+                "gretry-inspect",
+                f"{operation_id}:{idempotency_key}:{_recovery_approval.intent_digest.hex}",
+            )
+            query_context = ProviderCallContext(
+                authority.project.project_id, actor,
+                EntityRef(authority.project.project_id, EntityKind.CAPABILITY, capability_id),
+                _id("gctx", f"{operation_id}:{correlation}"),
+                _id("gscope", json.dumps(_ref_value(request.target), sort_keys=True)),
+            )
+            inspection_request = EffectInspectionRequest(
+                query_context, operation_id, request.idempotency_key,
+                provider_request_digest(request), correlation, request,
+            )
+            try:
+                inspection_result = self.provider.inspect(inspection_request)
+            except Exception as exc:
+                raise GitEffectProviderUnavailableError(
+                    f"Git retry inspection failed: {type(exc).__name__}"
+                ) from exc
+            if not isinstance(inspection_result, ProviderResult):
+                raise GitEffectProviderUnavailableError("Git retry inspection returned no typed provider result")
+            inspection_state, inspection_json, receipt_json = self._provider_payload(
+                request, inspection_result, correlation=correlation, inspection=True,
+                inspection_request=inspection_request,
+            )
+            if inspection_state is not GitEffectState.NOT_APPLIED:
+                raise GitEffectStateError("fresh provider inspection does not prove the effect was not applied")
+        elif view.state is not GitEffectState.NOT_APPLIED:
+            raise GitEffectStateError("explicit Git retry requires a durable NOT_APPLIED observation")
+        started = self._transition(
+            authority, bearer_token, request, intent_json, transition_expected,
+            GitEffectState.EXECUTING,
+            phase=recovery_phase_start if _recovery else "retry:" + str(idempotency_key),
+            expected_revision=self.auth._revision(authority, expected_revision),
+            observation_json=inspection_json, provider_receipt_json=receipt_json,
+            recovery_approval=_recovery_approval,
+        )
         if started.replayed:
             if _recovery:
                 return self._view(authority, operation_id)
