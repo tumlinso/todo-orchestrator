@@ -5,8 +5,8 @@ This scope supersedes the earlier standalone-only integration exclusion.
 
 Use the [cutover operator notes](../../docs/operations/cutover-operator-notes.md)
 for authority boundaries, backup references, rollback conditions, and the live
-deployment evidence record. That record is intentionally marked pending until
-the live bindings and every registered authority have been verified.
+deployment evidence record. The live bindings and all 20 registered repository roots have now been verified;
+the qualification receipt records their parity, runtime identities and MCP checks.
 
 ## Accepted decisions
 
@@ -54,3 +54,12 @@ The manifest records original and snapshot commit IDs and remote verification.
 Project Control implementation starts from its complete source snapshot
 `68621d6f4e4e2285424528da8b37781965f6cef2` in an isolated worktree; this includes
 the pre-existing uncommitted work without altering the live source deployment.
+
+## Completed cutover
+
+On 2026-10-19, Project Control 0.4.0 switched to the separately installed Todo
+Orchestrator 0.2.0 engine. All 20 native authorities are active; public reads
+matched 2,253 task mappings, 15,231 history records and 1,933 legacy completion
+assertions. Both services and fresh MCP clients passed live checks. See
+[`cutover-live.v1.json`](../../docs/qualification/cutover-live.v1.json) and the
+operator notes for exact artifacts, rollback boundaries and retained limitations.

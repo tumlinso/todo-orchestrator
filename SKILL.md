@@ -52,8 +52,10 @@ up a new authority; select the project and authority identities deliberately.
 For plan changes, inspect and explain the preview before committing its exact
 reviewed digest and expected revision. Claim or dispatch only work whose declared
 prerequisites are satisfied. Preserve provider receipts and evidence provenance;
-reporting a candidate is separate from accepting its result. Finish work through
-the supported lifecycle operation.
+reporting a candidate is separate from accepting its result. Verify, report and
+accept the result before integrating the exact accepted source. Acceptance is
+terminal. Use `todo_finish_attempt` to release work without an accepted outcome;
+it is not post-acceptance cleanup.
 
 For authored command checks, use the versioned command contract and an explicitly
 configured `command_execution_provider`. The command adapter passes a tool ID and
