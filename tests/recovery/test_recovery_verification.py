@@ -158,6 +158,51 @@ class VerificationRecoveryTests(unittest.TestCase):
             if json.loads(row["payload_json"]).get("operation_id") == str(operation_id)
         ]
 
+    def test_expired_attempt_with_completed_verification_can_be_released(self):
+        fixture, inspection, recovery = self.make_fixture()
+        worker = fixture.delegate_worker(
+            "verify", "worker-verify", key="recovery-completed-verification-worker",
+        )
+        attempt = fixture.claim(
+            "verify", worker.bearer_token, key="recovery-completed-verification-attempt",
+        )
+        with fixture.open_writer() as authority:
+            completed = fixture.verification.execute(
+                authority,
+                worker.bearer_token,
+                attempt,
+                fixture.requirement_ref("check-verify"),
+                idempotency_key=StableId("recovery-completed-verification-operation"),
+            )
+        self.assertEqual(completed.state, VerificationState.FINALIZED)
+
+        operator = self.delegate_operator(
+            fixture, attempt, key="recovery-completed-verification-operator",
+        )
+        with fixture.open_reader() as authority:
+            stored_attempt = fixture.attempts._attempt_for_service(authority, attempt)
+        fixture.clock.value = stored_attempt.lease.expires_at + timedelta(seconds=1)
+        report = self.inspect(fixture, inspection, operator.bearer_token, attempt)
+        intent, = (item for item in report.intents
+                   if item.kind is RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT)
+        self.assertIn(completed.operation, intent.operations)
+
+        with fixture.open_writer() as authority:
+            applied = recovery.apply(
+                authority,
+                operator.bearer_token,
+                intent,
+                idempotency_key=StableId("recovery-completed-verification-release"),
+            )
+        self.assertEqual(applied.disposition, RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT.value)
+        with fixture.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT state, lease_id FROM attempts WHERE attempt_id = ?",
+                (str(attempt.entity_id),),
+            ).fetchone()
+        self.assertEqual(row["state"], "released")
+        self.assertIsNone(row["lease_id"])
+
     def test_expired_operation_retries_once_after_original_credential_revocation(self):
         fixture, inspection, recovery = self.make_fixture()
         worker, attempt, _request_key, original = self.start_interrupted_operation(

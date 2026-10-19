@@ -257,7 +257,11 @@ class RecoveryExecutionService:
         actor, capability_id, target, run, assignment, attempt, lease = self._authorize(
             authority, bearer_token, intent,
         )
-        if len(intent.operations) == 1:
+        operation_targeted = intent.kind in {
+            RecoveryIntentKind.RETRY_ORIGINAL_OPERATION,
+            RecoveryIntentKind.RECONCILE_OBSERVED_EFFECT,
+        }
+        if operation_targeted and len(intent.operations) == 1:
             operation_ref = intent.operations[0]
             operation_kind = None
             with authority.read_transaction() as connection:
@@ -301,7 +305,7 @@ class RecoveryExecutionService:
             raise RecoveryIntentStaleError("recovery intent preconditions are no longer satisfied")
 
         operation = None
-        if intent.operations:
+        if operation_targeted and intent.operations:
             operation = next((item for item in view.operations if item.operation == intent.operations[0]), None)
             if operation is None:
                 raise RecoveryIntentStaleError("recovery operation is absent from the current inspection")
@@ -314,7 +318,7 @@ class RecoveryExecutionService:
             attempt=attempt,
             run=run,
             assignment=assignment,
-            operation=None if operation is None else operation.operation,
+            operation=None if not operation_targeted or operation is None else operation.operation,
             intent_digest=_intent_digest(intent),
             authority_revision=intent.expected_authority_revision,
             expected_lease_id=intent.expected_lease_id,
