@@ -1157,6 +1157,10 @@ class RecoveryInspectionService:
             preconditions.extend((
                 RecoveryPrecondition("source_clean", host.source is SourceSafety.CLEAN, attempt.ref),
                 RecoveryPrecondition("process_stopped", host.process is ProcessLiveness.STOPPED, attempt.ref),
+                RecoveryPrecondition(
+                    "external_producer_quiescent",
+                    host.process is ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT, attempt.ref,
+                ),
                 RecoveryPrecondition("no_active_children", host.children is ChildActivity.NONE, attempt.ref),
                 RecoveryPrecondition("host_state_matches_exact_lease", True, attempt.ref),
             ))
@@ -1182,14 +1186,19 @@ class RecoveryInspectionService:
                 and not pending_candidates and host is not None
                 and host.source is SourceSafety.DIRTY
                 and host.source_digest is not None
-                and host.process is ProcessLiveness.STOPPED
+                and host.process.quiescent
                 and host.children is ChildActivity.NONE
                 and dirty_handoff_operations_resolved
                 and not any(item.state != "stopped" or item.candidate_pending_review for item in snapshot.children)
                 and consistent and snapshot.workspace is not None):
             handoff_preconditions = tuple(preconditions) + (
                 RecoveryPrecondition("lease_expired", True, attempt.ref),
-                RecoveryPrecondition("writer_stopped", True, attempt.ref),
+                RecoveryPrecondition("writer_stopped", host.process is ProcessLiveness.STOPPED, attempt.ref),
+                RecoveryPrecondition(
+                    "external_producer_quiescent",
+                    host.process is ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT, attempt.ref,
+                ),
+                RecoveryPrecondition("writer_quiescent", host.process.quiescent, attempt.ref),
                 RecoveryPrecondition("no_active_children", True, attempt.ref),
                 RecoveryPrecondition("uncommitted_source_preserved", True, attempt.ref),
                 RecoveryPrecondition("no_ambiguous_external_effect", True, attempt.ref),
@@ -1293,7 +1302,7 @@ class RecoveryInspectionService:
             return RecoveryStatus.IRRECOVERABLE
         if operation.status is RecoveryOperationStatus.SAFELY_RETRYABLE:
             return RecoveryStatus.SAFELY_RETRYABLE
-        if host is not None and (host.process is not ProcessLiveness.STOPPED or host.children is not ChildActivity.NONE):
+        if host is not None and (not host.process.quiescent or host.children is not ChildActivity.NONE):
             return RecoveryStatus.UNKNOWN_LIVE
         return RecoveryStatus.UNCERTAIN
 

@@ -89,6 +89,7 @@ class EligibilityFacts:
     assignments: Mapping[EntityRef, Assignment]
     attempts: tuple[Attempt, ...]
     outcomes: Mapping[EntityRef, Outcome]
+    legacy_completion_assertions: Mapping[EntityRef, str] = field(default_factory=dict)
     queue_entries: Mapping[EntityRef, QueueEntry] = field(default_factory=dict)
     blocker_observations: Mapping[EntityRef, ConditionResult] = field(default_factory=dict)
     check_observations: Mapping[StableId, ConditionResult] = field(default_factory=dict)
@@ -133,6 +134,7 @@ class EligibilityFacts:
             ("assignments", self.assignments, EntityRef, Assignment),
             ("queue_entries", self.queue_entries, EntityRef, QueueEntry),
             ("outcomes", self.outcomes, EntityRef, Outcome),
+            ("legacy_completion_assertions", self.legacy_completion_assertions, EntityRef, str),
             ("blocker_observations", self.blocker_observations, EntityRef, ConditionResult),
             ("check_observations", self.check_observations, StableId, ConditionResult),
             ("decision_observations", self.decision_observations, str, DecisionObservation),
@@ -152,6 +154,12 @@ class EligibilityFacts:
             for key, value in self.outcomes.items()
         ):
             raise ValueError("outcomes must be keyed by their same-project work-item reference")
+        if any(
+            key.kind is not EntityKind.WORK_ITEM or key.project_id != self.project.project_id
+            or key.definition_revision_id is None
+            for key in self.legacy_completion_assertions
+        ):
+            raise ValueError("legacy completion assertions must be keyed by exact same-project work definitions")
         if any(key.project_id != self.project.project_id for key in self.runs):
             raise ValueError("run references must belong to the project")
         if any(key.project_id != self.project.project_id for key in self.assignments):
@@ -278,6 +286,15 @@ def _work_item(plan: CompiledPlan, ref: EntityRef) -> PlannedWorkItem | None:
 def _completion_result(ref: EntityRef, facts: EligibilityFacts) -> ConditionResult:
     item = _work_item(facts.plan, ref)
     outcome = facts.outcomes.get(ref)
+    if outcome is None and ref in facts.legacy_completion_assertions:
+        legacy_source = facts.legacy_completion_assertions[ref]
+        return ConditionResult(
+            ConditionStatus.SATISFIED,
+            (ConditionCause(
+                "legacy_completion_assertion", str(ref.entity_id),
+                "legacy source state asserts completion; no native outcome or verification was created; " + legacy_source,
+            ),),
+        )
     if item is None:
         if outcome is not None:
             if outcome.disposition in {
@@ -815,6 +832,12 @@ def evaluate_eligibility(request: EligibilityRequest, facts: EligibilityFacts) -
                 request.target,
                 (accepted_outcome.ref,),
             ))
+        elif accepted_outcome is None and request.target in facts.legacy_completion_assertions:
+            blocked.append(EligibilityCause(
+                "legacy_completion_requires_revalidation",
+                "legacy state asserts that this exact work definition is complete; create a fresh native result before dispatch",
+                request.target,
+            ))
 
     actor_capabilities = [cap for cap in facts.capabilities if cap.actor == request.actor]
     matching = False
@@ -1135,6 +1158,18 @@ def _load_facts(
         )
         outcomes[outcome.work_item] = outcome
 
+    legacy_completion_assertions = {}
+    for row in connection.execute(
+        "SELECT a.work_item_id, a.definition_revision_id, a.source_task_id, i.import_id, i.source_project_id "
+        "FROM legacy_completion_assertions AS a JOIN legacy_imports AS i USING(import_id) "
+        "ORDER BY a.work_item_id, a.definition_revision_id"
+    ).fetchall():
+        ref = _entity_ref(project_id, "work_item", row["work_item_id"], row["definition_revision_id"])
+        legacy_completion_assertions[ref] = (
+            f"source Project Control task {row['source_task_id']} from source project "
+            f"{row['source_project_id']} is searchable in immutable legacy import {row['import_id']}"
+        )
+
     attempt_scope_snapshots = _load_attempt_scope_snapshots(connection, project_id)
     child_scope_occupancies = _load_child_scope_occupancies(
         connection, project_id, workspace_qualifications,
@@ -1163,6 +1198,7 @@ def _load_facts(
         assignments=assignments,
         attempts=tuple(attempts),
         outcomes=outcomes,
+        legacy_completion_assertions=legacy_completion_assertions,
         queue_entries=queue_entries,
         blocker_observations=authoritative_blockers,
         check_observations=check_observations,

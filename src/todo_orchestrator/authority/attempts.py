@@ -947,10 +947,10 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
         preserved_dirty_workspace = False
         if command.recovery and command.preserve_dirty_workspace:
             if not (observation.source is SourceSafety.DIRTY
-                    and observation.process is ProcessLiveness.STOPPED
+                    and observation.process.quiescent
                     and observation.children is ChildActivity.NONE):
                 raise AttemptObservationMismatchError(
-                    "dirty workspace handoff requires a fresh dirty source and stopped writer"
+                    "dirty workspace handoff requires a fresh dirty source and quiescent writer"
                 )
             if (command.expected_source_digest is None
                     or observation.source_digest != command.expected_source_digest):
@@ -965,7 +965,7 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
             preserved_dirty_workspace = True
         elif command.recovery and state is not AttemptState.RELEASED:
             raise AttemptObservationMismatchError(
-                "safe recovery release requires a fresh clean source and stopped writer"
+                "safe recovery release requires a fresh clean source and quiescent writer"
             )
         elif command.recovery and (
             command.expected_source_digest is None

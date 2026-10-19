@@ -848,12 +848,15 @@ class _FinalizeHandler:
         self.service._require_fresh_receipt(final_receipt, now, "final source")
         safety = json.loads(command.safety_json)
         if (safety.get("source") != SourceSafety.CLEAN.value
-                or safety.get("process") != ProcessLiveness.STOPPED.value
+                or safety.get("process") not in {
+                    ProcessLiveness.STOPPED.value,
+                    ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT.value,
+                }
                 or safety.get("children") != ChildActivity.NONE.value
                 or safety.get("attempt_id") != str(attempt.attempt_id)
                 or safety.get("lease_id") != str(attempt.lease.lease_id)
                 or safety.get("workspace_id") != str(workspace.workspace_id)):
-            raise CandidateDeniedError("attempt safety is dirty, unknown, live, or bound to another lease/workspace")
+            raise CandidateDeniedError("attempt safety is dirty, unknown, active, or bound to another lease/workspace")
         safety_receipt = safety.get("receipt")
         if not isinstance(safety_receipt, dict):
             raise CandidateObservationMismatchError("host safety receipt is missing")
@@ -1276,7 +1279,7 @@ class OutcomeAcceptanceService:
         except (TypeError, ValueError, AttemptObservationMismatchError) as exc:
             raise CandidateObservationMismatchError(str(exc)) from exc
         if (checked.receipt.provider != self.host_identity or not checked.safe_to_release):
-            raise CandidateDeniedError("host did not prove a fresh clean, stopped, child-free attempt")
+            raise CandidateDeniedError("host did not prove a fresh clean, quiescent, child-free attempt")
         return checked
 
     def accept_candidate(self, authority: SQLiteAuthority, bearer_token: str, attempt_ref: EntityRef,

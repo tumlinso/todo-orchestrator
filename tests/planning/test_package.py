@@ -206,18 +206,29 @@ class PlanPackageTests(unittest.TestCase):
         self.assertIsNone(cyclic_lineage.plan)
         self.assertEqual(cyclic_lineage.diagnostics[0].code, "lineage_cycle")
 
-    def test_graph_size_limit_returns_diagnostic_before_recursive_walk(self):
+    def test_large_valid_lineage_and_cycle_validation_avoid_python_recursion_limit(self):
         document = package_document()
         template = document["work_items"][1]
-        for index in range(520):
+        previous = "build"
+        for index in range(1100):
             extra = dict(template)
-            extra.update({"id": f"extra-{index:04d}", "title": "Extra", "objective": "Bound graph size", "outcome": "Bounded"})
+            extra.update({
+                "id": f"extra-{index:04d}", "title": "Extra", "objective": "Bound graph size",
+                "outcome": "Bounded", "parent_id": previous,
+            })
             extra.pop("supersedes", None)
-            extra.pop("parent_id", None)
             document["work_items"].append(extra)
+            previous = extra["id"]
+
         result = compile_plan(self.parse(document).package, Project(StableId("project-a"), StableId("authority-a")))
-        self.assertIsNone(result.plan)
-        self.assertEqual(result.diagnostics[0].code, "graph_too_large")
+        self.assertTrue(result.ok, result.diagnostics)
+        self.assertGreater(len(result.graph_validation.nodes), 512)
+
+        document["work_items"][0]["parent_id"] = previous
+        cyclic = compile_plan(self.parse(document).package, Project(StableId("project-a"), StableId("authority-a")))
+        self.assertIsNone(cyclic.plan)
+        self.assertEqual(cyclic.diagnostics[0].code, "lineage_cycle")
+        self.assertGreater(len(cyclic.graph_validation.cycles[0].edges), 512)
 
     def test_record_order_and_object_key_order_have_stable_digest(self):
         first = package_document()

@@ -39,7 +39,7 @@ class SourceCliTests(unittest.TestCase):
     def test_version_is_available(self) -> None:
         result = self.run_source_module("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "todo 0.1.0")
+        self.assertEqual(result.stdout.strip(), "todo 0.2.0")
 
     def test_unknown_command_error_does_not_echo_raw_arguments(self) -> None:
         secret = "do-not-print-this-value"

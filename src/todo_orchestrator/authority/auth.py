@@ -51,7 +51,9 @@ from .sqlite import AuthorityError, InvalidAuthorityError, SQLiteAuthority
 LOCAL_OWNER_SCRYPT_N = 1 << 14
 LOCAL_OWNER_SCRYPT_R = 8
 LOCAL_OWNER_SCRYPT_P = 1
-_OWNER_ACTIONS = (StableId("todo.capability.delegate"), StableId("todo.capability.revoke"))
+CAPABILITY_DELEGATE_ACTION = StableId("todo.capability.delegate")
+CAPABILITY_REVOKE_ACTION = StableId("todo.capability.revoke")
+_OWNER_ACTIONS = (CAPABILITY_DELEGATE_ACTION, CAPABILITY_REVOKE_ACTION)
 _ATTEMPT_SESSION_ACTIONS = frozenset({
     StableId("todo.attempt.heartbeat"), StableId("todo.attempt.release"), StableId("todo.attempt.finish"),
 })
@@ -60,6 +62,7 @@ CONTEXT_FINDING_PUBLISH_ACTION = StableId("todo.context.finding.publish")
 CONTEXT_FINDING_INVALIDATE_ACTION = StableId("todo.context.finding.invalidate")
 RECOVERY_INSPECT_ACTION = StableId("todo.recovery.inspect")
 RECOVERY_APPLY_ACTION = StableId("todo.recovery.apply")
+CAPABILITY_READ_ACTION = StableId("todo.capability.read")
 RESOURCE_RESERVE_ACTION = StableId("todo.resource.reserve")
 RESOURCE_RELEASE_ACTION = StableId("todo.resource.release")
 RESOURCE_READ_ACTION = StableId("todo.resource.read")
@@ -191,6 +194,20 @@ class IssuedCapability:
     capability: Capability
     bearer_token: str = field(repr=False)
     receipt: object
+
+
+@dataclass(frozen=True)
+class CapabilityState:
+    """Safe capability metadata for an authorized read; contains no bearer."""
+
+    capability: Capability
+    revoked: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.capability, Capability):
+            raise TypeError("capability must be a Capability")
+        if type(self.revoked) is not bool:
+            raise TypeError("revoked must be bool")
 
 
 @dataclass(frozen=True)
@@ -534,7 +551,7 @@ class _DelegateCapabilityHandler:
     command_type = _DelegateCapability
 
     def authorization_requirement(self, command: _DelegateCapability) -> AuthorizationRequirement:
-        return AuthorizationRequirement(StableId("todo.capability.delegate"), command.scope,
+        return AuthorizationRequirement(CAPABILITY_DELEGATE_ACTION, command.scope,
                                         command.run, command.assignment, command.attempt)
 
     def canonical_payload(self, command: _DelegateCapability) -> dict[str, object]:
@@ -594,7 +611,7 @@ class _RevokeCapabilityHandler:
     command_type = _RevokeCapabilityFamily
 
     def authorization_requirement(self, command: _RevokeCapabilityFamily) -> AuthorizationRequirement:
-        return AuthorizationRequirement(StableId("todo.capability.revoke"), command.expected_scope,
+        return AuthorizationRequirement(CAPABILITY_REVOKE_ACTION, command.expected_scope,
                                         command.expected_run, command.expected_assignment,
                                         command.expected_attempt)
 
@@ -1237,6 +1254,34 @@ class AuthorityAuthService:
             token, result.receipt,
         )
 
+    def read_capability(self, authority: SQLiteAuthority, bearer_token: str,
+                        capability_id: StableId) -> CapabilityState:
+        """Read non-secret grant metadata under the caller's scoped read action."""
+        if not isinstance(authority, SQLiteAuthority):
+            raise TypeError("authority must be a SQLiteAuthority")
+        target_id = _id(capability_id, "capability_id")
+        digest = _token_digest(bearer_token)
+        actor, _ = self._actor_for_token(authority, digest)
+        with authority.read_transaction() as connection:
+            target = _stored_capability(connection, target_id)
+            if target is None:
+                raise CapabilityDeniedError("target capability is unknown")
+            scope = _scope_from_row(authority.project, target)
+            run, assignment, attempt = _context_from_row(authority.project, target)
+            self._authorize_capability(
+                connection, authority.project, digest, actor,
+                AuthorizationRequirement(CAPABILITY_READ_ACTION, scope, run, assignment, attempt),
+            )
+            expires_at = target["expires_at"]
+            capability = _capability_from_values(
+                authority.project, target_id,
+                _actor_ref(authority.project, target["actor_id"], target["actor_incarnation_id"]),
+                scope, _stored_actions(connection, target_id), run, assignment, attempt,
+                datetime.fromisoformat(expires_at) if expires_at is not None else None,
+                StableId(target["parent_capability_id"]) if target["parent_capability_id"] is not None else None,
+            )
+            return CapabilityState(capability, bool(target["revoked"]))
+
     @staticmethod
     def _principal_actor_id(project: Project, provider_id: str, subject_id: str) -> StableId:
         material = json.dumps(
@@ -1286,8 +1331,9 @@ class AuthorityAuthService:
 __all__ = [
     "AuthenticatedPrincipal", "AuthenticationFailedError",
     "AuthenticationProviderUnavailableError", "AuthorizationError", "AuthorizationRequirement",
-    "AuthorityAuthService", "CapabilityDeliveryUncertainError", "CapabilityDeniedError",
-    "IssuedCapability", "LOCAL_OWNER_SCRYPT_N", "LOCAL_OWNER_SCRYPT_P", "LOCAL_OWNER_SCRYPT_R",
+    "AuthorityAuthService", "CAPABILITY_DELEGATE_ACTION", "CAPABILITY_READ_ACTION",
+    "CAPABILITY_REVOKE_ACTION", "CapabilityDeliveryUncertainError", "CapabilityDeniedError",
+    "CapabilityState", "IssuedCapability", "LOCAL_OWNER_SCRYPT_N", "LOCAL_OWNER_SCRYPT_P", "LOCAL_OWNER_SCRYPT_R",
     "OwnerAlreadyEnrolledError", "OwnerEnrollmentNotAllowedError", "PrincipalAuthenticator",
     "RECOVERY_APPLY_ACTION", "RECOVERY_INSPECT_ACTION",
     "RESOURCE_RESERVE_ACTION", "RESOURCE_RELEASE_ACTION", "RESOURCE_READ_ACTION", "RESOURCE_RECONCILE_ACTION",

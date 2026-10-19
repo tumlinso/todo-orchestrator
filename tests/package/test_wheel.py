@@ -108,7 +108,7 @@ assert not any(name == 'project_control' or name.startswith('project_control.') 
                 check=False,
             )
             self.assertEqual(smoke.returncode, 0, smoke.stderr)
-            self.assertEqual(smoke.stdout.strip(), "todo 0.1.0")
+            self.assertEqual(smoke.stdout.strip(), "todo 0.2.0")
 
 
 if __name__ == "__main__":

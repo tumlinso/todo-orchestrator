@@ -1,8 +1,34 @@
 """Public standalone application, provider, metadata, and wire APIs."""
 
 from .application import (
+    AttemptScopeSnapshot,
+    CapabilityViewV1,
+    ChildArtifactRef,
+    ChildCandidate,
+    ChildCandidateDecision,
+    ChildExecutionGrant,
+    ChildExecutionView,
+    ChildReview,
     DEFAULT_OWNER_ACTIONS,
+    InboxPage,
+    InboxStatus,
     InitializationIncompleteError,
+    LEGACY_IMPORT_ACTION,
+    LegacyAttention,
+    LegacyCurrentTask,
+    LegacyCurrentTaskCursor,
+    LegacyCurrentTaskPage,
+    LegacyHistoryCursor,
+    LegacyHistoryPage,
+    LegacyHistoryRecord,
+    LegacyImportPreview,
+    LegacyImportReceipt,
+    LegacyProjectContextCursor,
+    LegacyProjectContextPage,
+    LegacyProjectContextRecord,
+    MessageContentRef,
+    MessageType,
+    MessageView,
     PlanPreviewMismatchError,
     ProjectIdentityError,
     ProjectUnavailableError,
@@ -10,6 +36,16 @@ from .application import (
     TodoApplicationError,
     TodoAuthenticationError,
     TodoSession,
+)
+from todo_orchestrator.authority.auth import (
+    AuthenticatedPrincipal,
+    AuthenticationProviderUnavailableError,
+    CAPABILITY_DELEGATE_ACTION,
+    CAPABILITY_READ_ACTION,
+    CAPABILITY_REVOKE_ACTION,
+    CapabilityDeliveryUncertainError,
+    IssuedCapability,
+    PrincipalAuthenticator,
 )
 from .metadata import (
     AUTHORITY_RELATIVE_PATH,
@@ -43,12 +79,31 @@ from .serialization import (
     serialize_public_document,
 )
 from todo_orchestrator.model import IsolationPolicy, LaneSpec, QueuePolicy, RunCharter, RunSchedule, ScheduledWork
+from todo_orchestrator.model.context import (
+    ContextCapsule, ContextCapsuleStatus, ContextChangeKind, ContextExpansion,
+    ContextExpansionStatus, ContextFinding, ContextFragment, ContextFragmentChange,
+    ContextFragmentKind, ContextFragmentRef, ContextManifest,
+)
 from .cli import main
 
 __all__ = [
     "AUTHORITY_RELATIVE_PATH", "ApiDocumentV1", "ApiReceiptV1", "ApiSerializationError",
+    "AttemptScopeSnapshot", "ChildArtifactRef", "ChildCandidate", "ChildCandidateDecision",
+    "ChildExecutionGrant", "ChildExecutionView", "ChildReview",
+    "ContextCapsule", "ContextCapsuleStatus", "ContextChangeKind", "ContextExpansion",
+    "ContextExpansionStatus", "ContextFinding", "ContextFragment", "ContextFragmentChange",
+    "ContextFragmentKind", "ContextFragmentRef", "ContextManifest",
     "AuthorityBackupManifest", "AuthorityBackupResult", "AuthorityReadModelV1",
-    "CandidateReceiptV1", "DEFAULT_OWNER_ACTIONS", "DispatchReceiptV1",
+    "AuthenticatedPrincipal", "AuthenticationProviderUnavailableError",
+    "CAPABILITY_DELEGATE_ACTION", "CAPABILITY_READ_ACTION", "CAPABILITY_REVOKE_ACTION",
+    "CandidateReceiptV1", "CapabilityDeliveryUncertainError", "CapabilityViewV1",
+    "DEFAULT_OWNER_ACTIONS", "DispatchReceiptV1", "IssuedCapability", "PrincipalAuthenticator",
+    "InboxPage", "InboxStatus", "MessageContentRef", "MessageType", "MessageView",
+    "LEGACY_IMPORT_ACTION", "LegacyAttention", "LegacyCurrentTask", "LegacyCurrentTaskCursor",
+    "LegacyCurrentTaskPage",
+    "LegacyHistoryCursor", "LegacyHistoryPage",
+    "LegacyHistoryRecord", "LegacyImportPreview", "LegacyImportReceipt",
+    "LegacyProjectContextCursor", "LegacyProjectContextPage", "LegacyProjectContextRecord",
     "InitializationIncompleteError", "PROJECT_METADATA_RELATIVE_PATH", "PlanPreviewMismatchError",
     "IsolationPolicy", "LaneSpec", "QueuePolicy", "RunCharter", "RunSchedule", "ScheduledWork",
     "PlanPreviewV1", "ProjectIdentityError", "ProjectMetadataError", "ProjectMetadataExistsError",

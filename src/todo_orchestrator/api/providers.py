@@ -8,6 +8,7 @@ from typing import Callable
 
 from todo_orchestrator.contracts import ProviderIdentity
 from todo_orchestrator.contracts.providers import CommandExecutionProvider, ResourcePermitProvider
+from todo_orchestrator.authority.auth import PrincipalAuthenticator
 from todo_orchestrator.providers.git import GitRepositoryConfig, GitRepositoryProvider
 
 
@@ -41,10 +42,18 @@ class ProviderComposition:
     declaration_identity: ProviderIdentity | None = None
     git_provider: GitRepositoryProvider | None = None
     clock: Callable[[], datetime] | None = None
+    principal_authenticator: PrincipalAuthenticator | None = None
 
     def __post_init__(self) -> None:
         if self.clock is not None and not callable(self.clock):
             raise TypeError("clock must be callable or None")
+        if self.principal_authenticator is not None:
+            if not callable(getattr(self.principal_authenticator, "authenticate", None)):
+                raise TypeError("principal_authenticator must implement authenticate")
+            provider_id = getattr(self.principal_authenticator, "provider_id", None)
+            if (not isinstance(provider_id, str) or not provider_id
+                    or provider_id != provider_id.strip()):
+                raise ValueError("principal_authenticator.provider_id must be non-empty trimmed text")
         for identity, name in (
             (self.host_identity, "host_identity"), (self.source_identity, "source_identity"),
             (self.verification_identity, "verification_identity"),
@@ -113,6 +122,7 @@ class ProviderComposition:
         resource_permit_identity: ProviderIdentity | None = None,
         declaration_observer: object | None = None,
         declaration_identity: ProviderIdentity | None = None,
+        principal_authenticator: PrincipalAuthenticator | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> "ProviderComposition":
         """Explicitly configure the native local Git provider.
@@ -139,6 +149,7 @@ class ProviderComposition:
             declaration_observer=declaration_observer,
             declaration_identity=declaration_identity,
             git_provider=provider,
+            principal_authenticator=principal_authenticator,
             clock=clock,
         )
 

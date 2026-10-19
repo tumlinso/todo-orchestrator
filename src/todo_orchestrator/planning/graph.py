@@ -90,6 +90,10 @@ class GraphValidation:
         return not self.diagnostics
 
 
+MAX_PLAN_GRAPH_NODES = 10_000
+MAX_PLAN_GRAPH_EDGES = 100_000
+
+
 def _node_from_ref(reference: QualifiedReference | EntityRef, plan: CompiledPlan) -> PlanNode:
     if isinstance(reference, QualifiedReference):
         ref = reference.reference
@@ -152,32 +156,45 @@ def _find_cycles(nodes: Sequence[PlanNode], edges: Sequence[PlanGraphEdge], kind
     lowlinks: dict[PlanNode, int] = {}
     components: list[tuple[PlanNode, ...]] = []
 
-    def strongconnect(node: PlanNode) -> None:
-        nonlocal index
-        indexes[node] = lowlinks[node] = index
-        index += 1
-        stack.append(node)
-        on_stack.add(node)
-        for edge in adjacency[node]:
-            target = edge.target
-            if target not in indexes:
-                strongconnect(target)
-                lowlinks[node] = min(lowlinks[node], lowlinks[target])
-            elif target in on_stack:
-                lowlinks[node] = min(lowlinks[node], indexes[target])
-        if lowlinks[node] == indexes[node]:
-            component = []
-            while True:
-                member = stack.pop()
-                on_stack.remove(member)
-                component.append(member)
-                if member == node:
-                    break
-            components.append(tuple(sorted(component)))
-
     for node in sorted(adjacency):
         if node not in indexes:
-            strongconnect(node)
+            indexes[node] = lowlinks[node] = index
+            index += 1
+            stack.append(node)
+            on_stack.add(node)
+            # Iterative Tarjan DFS avoids Python recursion limits for valid
+            # authored graphs close to the compiler's explicit size bound.
+            frames: list[tuple[PlanNode, int]] = [(node, 0)]
+            while frames:
+                current, edge_index = frames[-1]
+                outgoing = adjacency[current]
+                if edge_index < len(outgoing):
+                    edge = outgoing[edge_index]
+                    frames[-1] = (current, edge_index + 1)
+                    target = edge.target
+                    if target not in indexes:
+                        indexes[target] = lowlinks[target] = index
+                        index += 1
+                        stack.append(target)
+                        on_stack.add(target)
+                        frames.append((target, 0))
+                    elif target in on_stack:
+                        lowlinks[current] = min(lowlinks[current], indexes[target])
+                    continue
+
+                frames.pop()
+                if frames:
+                    parent = frames[-1][0]
+                    lowlinks[parent] = min(lowlinks[parent], lowlinks[current])
+                if lowlinks[current] == indexes[current]:
+                    component = []
+                    while True:
+                        member = stack.pop()
+                        on_stack.remove(member)
+                        component.append(member)
+                        if member == current:
+                            break
+                    components.append(tuple(sorted(component)))
 
     cycles = []
     for component in sorted(components, key=lambda members: members[0]):
@@ -189,24 +206,35 @@ def _find_cycles(nodes: Sequence[PlanNode], edges: Sequence[PlanGraphEdge], kind
         path: list[PlanGraphEdge] = []
         active: set[PlanNode] = {start}
 
-        def witness(node: PlanNode) -> bool:
-            for edge in adjacency[node]:
-                if edge.target not in allowed:
-                    continue
-                if edge.target == start:
-                    path.append(edge)
-                    return True
-                if edge.target in active:
-                    continue
+        witness_nodes = [start]
+        witness_positions = [0]
+        found = False
+        while witness_nodes:
+            node = witness_nodes[-1]
+            position = witness_positions[-1]
+            outgoing = adjacency[node]
+            if position >= len(outgoing):
+                witness_nodes.pop()
+                witness_positions.pop()
+                active.remove(node)
+                if path:
+                    path.pop()
+                continue
+            edge = outgoing[position]
+            witness_positions[-1] = position + 1
+            if edge.target not in allowed:
+                continue
+            if edge.target == start:
                 path.append(edge)
-                active.add(edge.target)
-                if witness(edge.target):
-                    return True
-                active.remove(edge.target)
-                path.pop()
-            return False
-
-        if witness(start):
+                found = True
+                break
+            if edge.target in active:
+                continue
+            path.append(edge)
+            active.add(edge.target)
+            witness_nodes.append(edge.target)
+            witness_positions.append(0)
+        if found:
             cycles.append(GraphCycle(tuple(path), kind))
     return tuple(cycles)
 
@@ -287,10 +315,12 @@ def validate_plan_graph(plan: CompiledPlan) -> GraphValidation:
     ordered_nodes = tuple(sorted(nodes))
     ordered_edges = tuple(sorted(edges, key=lambda edge: (edge.source, edge.target, edge.relation, edge.path, edge.conditional)))
     ordered_lineage_edges = tuple(sorted(lineage_edges, key=lambda edge: (edge.source, edge.target, edge.relation, edge.path)))
-    if len(ordered_nodes) > 512 or len(ordered_edges) + len(ordered_lineage_edges) > 4096:
+    if (len(ordered_nodes) > MAX_PLAN_GRAPH_NODES
+            or len(ordered_edges) + len(ordered_lineage_edges) > MAX_PLAN_GRAPH_EDGES):
         diagnostic = PlanDiagnostic(
             "graph_too_large",
-            "plan graph exceeds the v1 compiler limit of 512 nodes or 4096 edges",
+            f"plan graph exceeds the v1 compiler limit of {MAX_PLAN_GRAPH_NODES} nodes "
+            f"or {MAX_PLAN_GRAPH_EDGES} edges",
             "$/graph",
         )
         return GraphValidation(ordered_nodes, ordered_edges, ordered_lineage_edges, (), (diagnostic,))

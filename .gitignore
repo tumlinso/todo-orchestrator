@@ -22,3 +22,9 @@ dist/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Private local authority, credentials, and cutover backups
+.cutover-backups/
+.todo-orchestrator/authority.sqlite3*
+.todo-orchestrator/private/
+.todo-orchestrator/*.token

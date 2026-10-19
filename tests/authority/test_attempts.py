@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -187,6 +188,7 @@ class AttemptAuthorityTests(unittest.TestCase):
 
     def open_writer(self):
         return SQLiteAuthority.open_writer(self.path, PROJECT)
+
 
     def open_reader(self):
         return SQLiteAuthority.open_reader(self.path, PROJECT)
@@ -557,6 +559,30 @@ class AttemptAuthorityTests(unittest.TestCase):
                 idempotency_key=StableId("reported-reconcile"),
             )
         self.assertEqual(reconciled.receipt.result["state"], AttemptState.UNCERTAIN.value)
+
+
+class AttemptSafetyObservationTests(unittest.TestCase):
+    def test_external_producer_quiescence_is_distinct_and_sufficient_only_with_clean_source(self):
+        clock = MutableClock()
+        host = FakeHost(clock)
+        target = _plan(PROJECT).work_items[0].definition.ref
+        attempt_id = StableId("external-completion-attempt")
+        attempt_ref = EntityRef(PROJECT.project_id, EntityKind.ATTEMPT, attempt_id)
+        workspace = host.qualify_workspace(StableId("external-workspace"), target, attempt_id)
+        receipt = ProviderReceipt(
+            StableId("external-host-receipt"), ProviderIdentity(StableId("fixture-host"), "1"),
+            attempt_id, Sha256Digest("d" * 64), workspace.common_base.ref, NOW,
+        )
+        observation = AttemptSafetyObservation(
+            attempt_ref, AttemptState.ACTIVE, StableId("external-lease"), NOW + timedelta(minutes=1),
+            workspace, SourceSafety.CLEAN, ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT,
+            ChildActivity.NONE, receipt, Sha256Digest("e" * 64),
+        )
+        self.assertTrue(observation.safe_to_release)
+        self.assertTrue(ProcessLiveness.STOPPED.quiescent)
+        self.assertTrue(ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT.quiescent)
+        self.assertFalse(ProcessLiveness.UNKNOWN.quiescent)
+        self.assertFalse(replace(observation, source=SourceSafety.DIRTY).safe_to_release)
 
 
 if __name__ == "__main__":

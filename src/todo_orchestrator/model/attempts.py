@@ -22,6 +22,17 @@ class ProcessLiveness(str, Enum):
     STOPPED = "stopped"
     LIVE = "live"
     UNKNOWN = "unknown"
+    EXTERNAL_PRODUCER_QUIESCENT = "external_producer_quiescent"
+
+    @property
+    def quiescent(self) -> bool:
+        """Whether the trusted host has evidence that this writer is quiescent.
+
+        ``EXTERNAL_PRODUCER_QUIESCENT`` records a root/operator-observed
+        producer lifecycle completion bound to the current attempt, lease and
+        source. It is intentionally distinct from kernel-confirmed ``STOPPED``.
+        """
+        return self in {ProcessLiveness.STOPPED, ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT}
 
 
 class ChildActivity(str, Enum):
@@ -82,7 +93,7 @@ class AttemptSafetyObservation:
     def safe_to_release(self) -> bool:
         return (
             self.source is SourceSafety.CLEAN
-            and self.process is ProcessLiveness.STOPPED
+            and self.process.quiescent
             and self.children is ChildActivity.NONE
         )
 

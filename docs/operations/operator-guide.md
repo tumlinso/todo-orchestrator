@@ -1,6 +1,32 @@
 # Todo Orchestrator operator guide
 
-This guide documents the fixture-qualified Todo Orchestrator 0.1.0 alpha. The integrated source suite passed 427 tests in 183.031 seconds on Python 3.13.11. Evidence comes from disposable SQLite/Git fixtures and injected providers; it does not qualify production host supervision, real command executors, hardware resource scheduling, power-loss recovery, or network filesystems.
+This guide documents standalone Todo Orchestrator 0.2.0 alpha and the registered-workspace client boundary. The 0.1.0 standalone baseline passed 427 fixture tests; the 0.2.0 source suite and migration/import rehearsals are tracked separately in [the cutover qualification record](../../planning/cutover-v1/README.md). Fixture evidence does not qualify production host supervision, real command executors, hardware resource scheduling, power-loss recovery, or network filesystems.
+
+## Registered Project Control workspaces
+
+Use the Project Control native workflow tools rather than the standalone CLI
+for a registered workspace. The host selects the registered authority and
+binds identity, profile, credentials, repository, and providers. Common tools
+are `todo_read_authority`, `todo_preview_plan`, `todo_commit_plan`,
+`todo_open_run`, `todo_create_workspace`, `todo_dispatch_attempt`,
+`todo_verify_attempt`, `todo_report_outcome`, `todo_accept_outcome`,
+`todo_finish_attempt`, and `todo_inspect_attempt`. Plan commit takes the exact
+preview returned by `todo_preview_plan` and an idempotency key. Other mutating
+calls use typed native IDs and the same idempotency discipline. Never supply
+filesystem paths or bearer credentials as selectors.
+
+Use `todo_read_legacy_current_tasks`, `todo_search_legacy_history`, and
+`todo_read_legacy_project_context` to inspect imported status, linked archive
+history, and preserved project declarations. Legacy completion assertions are
+not native verification. Unresolved or unknown external effects remain
+attention items and are not replayed. Legacy snapshot preview/import tools are
+mutator-only operations controlled by the operator migration procedure. For
+the exact schema and full operation list, follow the active Project Control
+tool manifest.
+
+The standalone CLI instructions below apply to a separate authority opened
+directly through Todo Orchestrator; they do not select a registered Project
+Control authority.
 
 ## Install in isolation
 
@@ -158,6 +184,6 @@ A recovery grant needs both inspect and apply authority on the exact target/cont
 
 ## Schema compatibility and support boundary
 
-Schema v20 is current and only supported. V1–v19 are rejected without automatic migration; there is no downgrade or in-place migration path. Recreate disposable earlier fixtures. Never aim these instructions at a production or Project Control authority.
+Schema v21 is current. `migrate()` upgrades only an exact, identity-checked schema-v20 authority; opening never migrates automatically. V1–v19 remain unsupported, and there is no downgrade path. Use temporary authorities for migration qualification, never a production or Project Control authority.
 
-The CLI reports version 0.1.0. The latest source qualification runtime was Python 3.13.11. The CLI, API, source suite, and injected temporary providers have fixture-level evidence. There is no qualification claim for arbitrary host supervisors, production Git topology, real command executors, hardware/resource runtimes, power loss, or network filesystems. Project Control integration/cutover and the optional legacy plan importer are excluded.
+The standalone CLI reports version 0.2.0. The latest source qualification runtime was Python 3.13.11. The CLI, API, source suite, and injected temporary providers have fixture-level evidence. There is no qualification claim for arbitrary host supervisors, production Git topology, real command executors, hardware/resource runtimes, power loss, or network filesystems. Project Control integration has been implemented in an isolated source snapshot and qualified with fixture and import rehearsal evidence; production deployment and live cutover remain pending. See the operator status and rollback notes before any deployment action.

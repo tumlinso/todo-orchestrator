@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import hashlib
@@ -16,6 +17,7 @@ from todo_orchestrator.authority.auth import (
     AuthorityAuthService,
     AuthorizationRequirement,
     CapabilityDeniedError,
+    IssuedCapability,
     RECOVERY_INSPECT_ACTION,
     RESOURCE_READ_ACTION,
     RESOURCE_RECONCILE_ACTION,
@@ -40,6 +42,7 @@ from todo_orchestrator.authority.declarations import DeclarationService
 from todo_orchestrator.authority.sqlite import SQLiteAuthority
 from todo_orchestrator.contracts import (
     Attempt,
+    Capability,
     EntityKind,
     EntityRef,
     OutcomeDisposition,
@@ -49,6 +52,15 @@ from todo_orchestrator.contracts import (
     StableId,
 )
 from todo_orchestrator.coordination.context import ContextService
+from todo_orchestrator.coordination.messaging import (
+    InboxPage,
+    InboxStatus,
+    MessageContentRef,
+    MessageType,
+    MessageView,
+    MessagingService,
+)
+from todo_orchestrator.coordination.children import ChildExecutionService
 from todo_orchestrator.coordination.service import (
     ATTEMPT_FINISH_ACTION,
     RUN_DISPATCH_ACTION,
@@ -57,7 +69,36 @@ from todo_orchestrator.coordination.service import (
     RunScheduleNotFoundError,
 )
 from todo_orchestrator.coordination.store import load_run_schedule
-from todo_orchestrator.model import CommandReceipt, CommandResult, DispatchResult, RunSchedule
+from todo_orchestrator.model import (
+    AttemptScopeSnapshot,
+    ChildArtifactRef,
+    ChildCandidate,
+    ChildCandidateDecision,
+    ChildExecutionGrant,
+    ChildExecutionView,
+    ChildReview,
+    CommandReceipt,
+    CommandResult,
+    DispatchResult,
+    RunSchedule,
+)
+from todo_orchestrator.model.context import ContextExpansion, ContextFragmentKind, ContextFragmentRef, ContextManifest
+from todo_orchestrator.migration import (
+    LEGACY_IMPORT_ACTION,
+    LegacyAttention,
+    LegacyCurrentTask,
+    LegacyCurrentTaskCursor,
+    LegacyCurrentTaskPage,
+    LegacyHistoryCursor,
+    LegacyHistoryPage,
+    LegacyHistoryRecord,
+    LegacyImportPreview,
+    LegacyImportReceipt,
+    LegacyProjectContextCursor,
+    LegacyProjectContextPage,
+    LegacyProjectContextRecord,
+    LegacyMigrationService,
+)
 from todo_orchestrator.operations.export import (
     AUTHORITY_BACKUP_ACTION,
     AUTHORITY_READ_ACTION,
@@ -164,7 +205,10 @@ class TodoAuthenticationError(TodoApplicationError):
 class _ServiceBundle:
     def __init__(self, project: Project, providers: ProviderComposition) -> None:
         self.dispatcher = CommandDispatcher()
-        self.auth = AuthorityAuthService(self.dispatcher, clock=providers.clock)
+        self.auth = AuthorityAuthService(
+            self.dispatcher, clock=providers.clock,
+            authenticator=providers.principal_authenticator,
+        )
         self.plan = PlanService(self.auth)
         self.attempts = None
         if providers.attempt_host is not None:
@@ -172,6 +216,9 @@ class _ServiceBundle:
         self.coordination = CoordinationService(self.auth, attempts=self.attempts)
         self.declarations = DeclarationService(self.auth)
         self.context = ContextService(self.auth, clock=providers.clock)
+        self.messaging = MessagingService(self.auth)
+        self.children = None if self.attempts is None else ChildExecutionService(self.auth, attempts=self.attempts)
+        self.migration = LegacyMigrationService(self.auth)
         self.verification = None
         has_verification = (
             providers.verification_provider is not None
@@ -261,6 +308,24 @@ DEFAULT_OWNER_ACTIONS = tuple(sorted({
     StableId("todo.rendezvous.arrive"), StableId("todo.blocker.open"),
     StableId("todo.blocker.clear"),
 }))
+
+
+@dataclass(frozen=True)
+class CapabilityViewV1:
+    """Versioned, non-secret view of a capability grant and revocation state."""
+
+    capability: Capability
+    revoked: bool
+    format: str = "todo-orchestrator.capability-view"
+    version: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.capability, Capability):
+            raise TypeError("capability must be a Capability")
+        if type(self.revoked) is not bool:
+            raise TypeError("revoked must be bool")
+        if self.format != "todo-orchestrator.capability-view" or type(self.version) is not int or self.version != 1:
+            raise ValueError("unsupported capability view format")
 
 
 class TodoApplication:
@@ -475,6 +540,222 @@ def _token_digest(token: str) -> str:
     return digest(token)
 
 
+def _coerce_entity_ref(value: EntityRef | Mapping[str, object], project_id: StableId) -> EntityRef:
+    if isinstance(value, EntityRef):
+        ref = value
+    elif isinstance(value, Mapping):
+        required = {
+            "project_id", "kind", "entity_id", "definition_revision_id", "incarnation_id",
+        }
+        if set(value) != required:
+            raise ValueError("entity reference fields do not match the public API shape")
+        ref = EntityRef(
+            StableId(value["project_id"]), EntityKind(value["kind"]), StableId(value["entity_id"]),
+            None if value["definition_revision_id"] is None else StableId(value["definition_revision_id"]),
+            None if value["incarnation_id"] is None else StableId(value["incarnation_id"]),
+        )
+    else:
+        raise TypeError("reference must be an EntityRef or its public object form")
+    if ref.project_id != project_id:
+        raise ValueError("reference belongs to another project")
+    return ref
+
+
+def _coerce_context_fragment_ref(value: ContextFragmentRef | Mapping[str, object]) -> ContextFragmentRef:
+    if isinstance(value, ContextFragmentRef):
+        return value
+    if not isinstance(value, Mapping) or set(value) != {"fragment_id", "kind", "digest"}:
+        raise ValueError("context fragment reference fields do not match the public API shape")
+    return ContextFragmentRef(
+        StableId(value["fragment_id"]), ContextFragmentKind(value["kind"]), Sha256Digest(value["digest"]),
+    )
+
+
+def _coerce_context_fragment_refs(value) -> tuple[ContextFragmentRef, ...]:
+    if not isinstance(value, (tuple, list)):
+        raise TypeError("source_fragment_refs must be a sequence of typed context fragment references")
+    return tuple(_coerce_context_fragment_ref(item) for item in value)
+
+
+def _coerce_context_manifest(
+    value: ContextManifest | Mapping[str, object] | str,
+    project_id: StableId,
+) -> ContextManifest:
+    if isinstance(value, ContextManifest):
+        manifest = value
+    else:
+        if isinstance(value, str):
+            document = ApiDocumentV1.from_json(value, expected_kind="context-manifest")
+            payload: Mapping[str, object] = document.payload
+        elif isinstance(value, Mapping):
+            if set(value) == {"format", "version", "kind", "payload"}:
+                document = ApiDocumentV1(
+                    str(value["kind"]), value["payload"], value["format"], value["version"],
+                )
+                if document.kind != "context-manifest":
+                    raise ValueError("API document kind must be context-manifest")
+                payload = document.payload
+            else:
+                payload = value
+        else:
+            raise TypeError("source_manifest must be a ContextManifest or its public API document")
+        required = {
+            "plan_revision", "work_item", "run", "assignment", "attempt", "fragments",
+            "digest", "source_digest", "since_revision",
+        }
+        if set(payload) != required:
+            raise ValueError("context manifest fields do not match the public API shape")
+        manifest = ContextManifest(
+            _coerce_entity_ref(payload["plan_revision"], project_id),
+            _coerce_entity_ref(payload["work_item"], project_id),
+            None if payload["run"] is None else _coerce_entity_ref(payload["run"], project_id),
+            None if payload["assignment"] is None else _coerce_entity_ref(payload["assignment"], project_id),
+            None if payload["attempt"] is None else _coerce_entity_ref(payload["attempt"], project_id),
+            _coerce_context_fragment_refs(payload["fragments"]),
+            Sha256Digest(payload["digest"]), Sha256Digest(payload["source_digest"]),
+            payload["since_revision"],
+        )
+    if manifest.work_item.project_id != project_id:
+        raise ValueError("context manifest belongs to another project")
+    return manifest
+
+
+def _coerce_message_content_ref(
+    value: MessageContentRef | Mapping[str, object] | None,
+    project_id: StableId,
+) -> MessageContentRef | None:
+    if value is None or isinstance(value, MessageContentRef):
+        result = value
+    elif isinstance(value, Mapping) and set(value) == {"artifact", "digest"}:
+        result = MessageContentRef(
+            _coerce_entity_ref(value["artifact"], project_id), Sha256Digest(value["digest"]),
+        )
+    else:
+        raise ValueError("content_ref must contain an artifact reference and digest")
+    if result is not None and result.artifact.project_id != project_id:
+        raise ValueError("message content belongs to another project")
+    return result
+
+
+def _coerce_legacy_import_preview(
+    value: LegacyImportPreview | Mapping[str, object] | str,
+) -> LegacyImportPreview:
+    if isinstance(value, LegacyImportPreview):
+        return value
+    if isinstance(value, str):
+        payload: Mapping[str, object] = ApiDocumentV1.from_json(
+            value, expected_kind="legacy-import-preview",
+        ).payload
+    elif isinstance(value, Mapping):
+        if set(value) == {"format", "version", "kind", "payload"}:
+            document = ApiDocumentV1(
+                str(value["kind"]), value["payload"], value["format"], value["version"],
+            )
+            if document.kind != "legacy-import-preview":
+                raise ValueError("API document kind must be legacy-import-preview")
+            payload = document.payload
+        else:
+            payload = value
+    else:
+        raise TypeError("preview must be LegacyImportPreview or its public API document")
+    expected = {
+        "project_id", "authority_revision", "accepted_plan_revision_id", "source_project_id",
+        "source_authority_revision", "source_digest", "package_json", "included_task_ids",
+        "completed_task_ids", "archive_only_task_ids", "attention",
+    }
+    if set(payload) != expected:
+        raise ValueError("legacy import preview fields do not match the public API shape")
+    attention = payload["attention"]
+    if not isinstance(attention, (tuple, list)):
+        raise TypeError("legacy preview attention must be a sequence")
+    attention_values = []
+    for item in attention:
+        if isinstance(item, LegacyAttention):
+            attention_values.append(item)
+            continue
+        if not isinstance(item, Mapping) or set(item) != {
+            "task_id", "source_kind", "source_id", "message", "decision_id",
+        }:
+            raise ValueError("legacy attention item fields do not match the public API shape")
+        values = tuple(item[name] for name in ("task_id", "source_kind", "source_id", "message"))
+        if any(not isinstance(child, str) for child in values):
+            raise TypeError("legacy attention fields must be text")
+        attention_values.append(LegacyAttention(*values, StableId(item["decision_id"])))
+    task_lists = []
+    for name in ("included_task_ids", "completed_task_ids", "archive_only_task_ids"):
+        values = payload[name]
+        if not isinstance(values, (tuple, list)) or any(not isinstance(item, str) for item in values):
+            raise TypeError(f"{name} must be a sequence of text IDs")
+        task_lists.append(tuple(values))
+    if not isinstance(payload["source_project_id"], str) or not isinstance(payload["package_json"], str):
+        raise TypeError("legacy preview source project and package must be text")
+    source_digest = payload["source_digest"]
+    if not isinstance(source_digest, str):
+        raise TypeError("legacy preview source digest must be text")
+    Sha256Digest(source_digest)
+    return LegacyImportPreview(
+        StableId(payload["project_id"]), payload["authority_revision"],
+        None if payload["accepted_plan_revision_id"] is None else StableId(payload["accepted_plan_revision_id"]),
+        payload["source_project_id"], payload["source_authority_revision"], source_digest,
+        payload["package_json"], *task_lists, tuple(attention_values),
+    )
+
+
+def _coerce_legacy_history_cursor(
+    value: LegacyHistoryCursor | Mapping[str, object] | None,
+) -> LegacyHistoryCursor | None:
+    if value is None or isinstance(value, LegacyHistoryCursor):
+        cursor = value
+    elif isinstance(value, Mapping) and set(value) == {"source_revision", "occurred_at", "history_id"}:
+        cursor = LegacyHistoryCursor(value["source_revision"], value["occurred_at"], value["history_id"])
+    else:
+        raise ValueError("history cursor fields do not match the public API shape")
+    if cursor is not None and (
+        type(cursor.source_revision) is not int or cursor.source_revision < 0
+        or not isinstance(cursor.occurred_at, str) or not isinstance(cursor.history_id, str)
+    ):
+        raise ValueError("history cursor contains invalid values")
+    return cursor
+
+
+def _coerce_legacy_current_task_cursor(
+    value: LegacyCurrentTaskCursor | Mapping[str, object] | None,
+) -> LegacyCurrentTaskCursor | None:
+    if value is None or isinstance(value, LegacyCurrentTaskCursor):
+        cursor = value
+    elif isinstance(value, Mapping) and set(value) == {"import_id", "source_task_id"}:
+        cursor = LegacyCurrentTaskCursor(value["import_id"], value["source_task_id"])
+    else:
+        raise ValueError("current legacy task cursor fields do not match the public API shape")
+    if cursor is not None and (
+        not isinstance(cursor.import_id, str) or not cursor.import_id
+        or not isinstance(cursor.source_task_id, str) or not cursor.source_task_id
+    ):
+        raise ValueError("current legacy task cursor contains invalid values")
+    return cursor
+
+
+def _coerce_legacy_project_context_cursor(
+    value: LegacyProjectContextCursor | Mapping[str, object] | None,
+) -> LegacyProjectContextCursor | None:
+    if value is None or isinstance(value, LegacyProjectContextCursor):
+        cursor = value
+    elif isinstance(value, Mapping) and set(value) == {"import_id", "source_table", "source_id"}:
+        cursor = LegacyProjectContextCursor(value["import_id"], value["source_table"], value["source_id"])
+    else:
+        raise ValueError("legacy project context cursor fields do not match the public API shape")
+    if cursor is not None and (
+        not isinstance(cursor.import_id, str) or not cursor.import_id
+        or not isinstance(cursor.source_table, str)
+        or cursor.source_table not in {
+            "project_declarations", "project_amendments", "project_fragment_invalidations",
+        }
+        or not isinstance(cursor.source_id, str) or not cursor.source_id
+    ):
+        raise ValueError("legacy project context cursor contains invalid values")
+    return cursor
+
+
 class TodoSession:
     """Short-lived facade over existing authorities and injected trusted ports."""
 
@@ -585,6 +866,135 @@ class TodoSession:
             )
         return ApiReceiptV1.from_result(result)
 
+    def delegate_principal(
+        self,
+        principal_credential: object,
+        *,
+        scope: EntityRef,
+        actions: tuple[StableId, ...],
+        expires_at: datetime,
+        idempotency_key: StableId,
+        run: EntityRef | None = None,
+        assignment: EntityRef | None = None,
+        attempt: EntityRef | None = None,
+        expected_revision: int | None = None,
+    ) -> IssuedCapability:
+        """Issue a narrowed session for a principal authenticated by the trusted host.
+
+        `principal_credential` is an opaque value constructed by the trusted
+        adapter, not a caller-asserted identity. The returned bearer is a
+        one-time secret for host-side use and must never be sent to MCP clients.
+        """
+        self._ensure_open()
+        with self._writer() as authority:
+            return self._services.auth.delegate(
+                authority, self._bearer_token, principal_credential,
+                scope=scope, actions=actions, expires_at=expires_at,
+                run=run, assignment=assignment, attempt=attempt,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+
+    def read_capability(self, capability_id: StableId | str) -> "CapabilityViewV1":
+        """Read safe grant metadata when this session has capability-read authority."""
+        capability_key = capability_id if isinstance(capability_id, StableId) else StableId(capability_id)
+        with self._reader() as authority:
+            state = self._services.auth.read_capability(
+                authority, self._bearer_token, capability_key,
+            )
+        return CapabilityViewV1(state.capability, state.revoked)
+
+    def revoke_capability(
+        self,
+        capability_id: StableId | str,
+        *,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        """Revoke a delegated capability and all descendants under this grant family."""
+        capability_key = capability_id if isinstance(capability_id, StableId) else StableId(capability_id)
+        with self._writer() as authority:
+            result = self._services.auth.revoke_family(
+                authority, self._bearer_token, capability_key,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def preview_legacy_import(
+        self, snapshot: Mapping[str, object] | str | bytes,
+    ) -> LegacyImportPreview:
+        """Preview a sanitized prior Todo snapshot under project-read authority."""
+        with self._reader() as authority:
+            return self._services.migration.preview(authority, self._bearer_token, snapshot)
+
+    def import_legacy_snapshot(
+        self,
+        snapshot: Mapping[str, object] | str | bytes,
+        preview: LegacyImportPreview | Mapping[str, object] | str,
+        *,
+        idempotency_key: StableId,
+    ) -> LegacyImportReceipt:
+        """Apply exactly the reviewed import preview in one authenticated command."""
+        reviewed = _coerce_legacy_import_preview(preview)
+        with self._writer() as authority:
+            return self._services.migration.import_snapshot(
+                authority, self._bearer_token, snapshot, preview=reviewed,
+                idempotency_key=idempotency_key,
+            )
+
+    def search_legacy_history(
+        self,
+        query: str = "",
+        *,
+        import_id: StableId | str | None = None,
+        limit: int = 100,
+        after: LegacyHistoryCursor | Mapping[str, object] | None = None,
+    ) -> LegacyHistoryPage:
+        selected_import = None if import_id is None else (
+            import_id if isinstance(import_id, StableId) else StableId(import_id)
+        )
+        cursor = _coerce_legacy_history_cursor(after)
+        with self._reader() as authority:
+            return self._services.migration.search_history(
+                authority, self._bearer_token, query, import_id=selected_import,
+                limit=limit, after=cursor,
+            )
+
+    def read_legacy_current_tasks(
+        self,
+        *,
+        import_id: StableId | str | None = None,
+        limit: int = 100,
+        after: LegacyCurrentTaskCursor | Mapping[str, object] | None = None,
+    ) -> LegacyCurrentTaskPage:
+        """Read imported task statuses and exact source-to-native definition links."""
+        selected_import = None if import_id is None else (
+            import_id if isinstance(import_id, StableId) else StableId(import_id)
+        )
+        cursor = _coerce_legacy_current_task_cursor(after)
+        with self._reader() as authority:
+            return self._services.migration.read_current_tasks(
+                authority, self._bearer_token, import_id=selected_import,
+                limit=limit, after=cursor,
+            )
+
+    def read_legacy_project_context(
+        self,
+        *,
+        import_id: StableId | str | None = None,
+        limit: int = 100,
+        after: LegacyProjectContextCursor | Mapping[str, object] | None = None,
+    ) -> LegacyProjectContextPage:
+        """Read preserved project declaration context with source provenance."""
+        selected_import = None if import_id is None else (
+            import_id if isinstance(import_id, StableId) else StableId(import_id)
+        )
+        cursor = _coerce_legacy_project_context_cursor(after)
+        with self._reader() as authority:
+            return self._services.migration.read_project_context(
+                authority, self._bearer_token, import_id=selected_import,
+                limit=limit, after=cursor,
+            )
+
     def read_snapshot(self):
         with self._reader() as authority:
             with authority.read_transaction() as connection:
@@ -667,6 +1077,330 @@ class TodoSession:
             result = self._services.coordination.open_run(
                 authority, self._bearer_token, plan, schedule,
                 idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def claim_attempt(
+        self,
+        work_item: StableId | EntityRef,
+        workspace_id: StableId | str,
+        *,
+        plan_revision_id: StableId | str,
+        idempotency_key: StableId,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        """Claim a qualified work item through the configured trusted host."""
+        attempts = self._required(self._services.attempts, "attempt_host")
+        plan = self._accepted_plan(
+            plan_revision_id if isinstance(plan_revision_id, StableId) else StableId(plan_revision_id)
+        )
+        target = self._selector_ref(work_item, EntityKind.WORK_ITEM, plan_revision_id=plan.revision.plan_revision_id)
+        run = self._selector_ref(run_id, EntityKind.RUN)
+        assignment_ref = self._selector_ref(assignment, EntityKind.ASSIGNMENT)
+        workspace = workspace_id if isinstance(workspace_id, StableId) else StableId(workspace_id)
+        with self._writer() as authority:
+            result = attempts.claim(
+                authority, self._bearer_token, target, plan, workspace_id=workspace,
+                run=run, assignment=assignment_ref, idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def heartbeat_attempt(
+        self,
+        attempt_id: StableId | str,
+        lease_id: StableId | str,
+        *,
+        plan_revision_id: StableId | str,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        attempts = self._required(self._services.attempts, "attempt_host")
+        plan = self._accepted_plan(
+            plan_revision_id if isinstance(plan_revision_id, StableId) else StableId(plan_revision_id)
+        )
+        attempt = self.attempt_ref(attempt_id)
+        lease = lease_id if isinstance(lease_id, StableId) else StableId(lease_id)
+        with self._writer() as authority:
+            result = attempts.heartbeat(
+                authority, self._bearer_token, attempt, lease, plan,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def resume_attempt(
+        self,
+        attempt_id: StableId | str,
+        lease_id: StableId | str,
+        *,
+        plan_revision_id: StableId | str,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+        work_item: StableId | EntityRef | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        attempts = self._required(self._services.attempts, "attempt_host")
+        plan = self._accepted_plan(
+            plan_revision_id if isinstance(plan_revision_id, StableId) else StableId(plan_revision_id)
+        )
+        attempt = self.attempt_ref(attempt_id)
+        lease = lease_id if isinstance(lease_id, StableId) else StableId(lease_id)
+        target = self._selector_ref(work_item, EntityKind.WORK_ITEM, plan_revision_id=plan.revision.plan_revision_id)
+        run = self._selector_ref(run_id, EntityKind.RUN)
+        assignment_ref = self._selector_ref(assignment, EntityKind.ASSIGNMENT)
+        with self._writer() as authority:
+            result = self._services.coordination.resume(
+                authority, self._bearer_token, plan, attempt, lease,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                work_item=target, run=run, assignment=assignment_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def release_attempt(
+        self,
+        attempt_id: StableId | str,
+        lease_id: StableId | str,
+        *,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        attempts = self._required(self._services.attempts, "attempt_host")
+        attempt = self.attempt_ref(attempt_id)
+        lease = lease_id if isinstance(lease_id, StableId) else StableId(lease_id)
+        with self._writer() as authority:
+            result = attempts.release(
+                authority, self._bearer_token, attempt, lease,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def send_message(
+        self,
+        scope: EntityRef | Mapping[str, object],
+        recipients: tuple[EntityRef | Mapping[str, object], ...],
+        *,
+        subject: str,
+        message_type: MessageType | str = MessageType.STATUS,
+        body: str | None = None,
+        content_ref: MessageContentRef | Mapping[str, object] | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        scope_ref = _coerce_entity_ref(scope, self.project.project_id)
+        recipient_refs = tuple(_coerce_entity_ref(item, self.project.project_id) for item in recipients)
+        type_value = message_type if isinstance(message_type, MessageType) else MessageType(message_type)
+        content = _coerce_message_content_ref(content_ref, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.messaging.send(
+                authority, self._bearer_token, scope_ref, recipient_refs,
+                message_type=type_value, subject=subject, body=body, content_ref=content,
+                context_run=run, context_assignment=assignment_ref, context_attempt=attempt_ref,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def ask_question(
+        self,
+        scope: EntityRef | Mapping[str, object],
+        recipients: tuple[EntityRef | Mapping[str, object], ...],
+        *,
+        subject: str,
+        body: str | None = None,
+        content_ref: MessageContentRef | Mapping[str, object] | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        scope_ref = _coerce_entity_ref(scope, self.project.project_id)
+        recipient_refs = tuple(_coerce_entity_ref(item, self.project.project_id) for item in recipients)
+        content = _coerce_message_content_ref(content_ref, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.messaging.ask(
+                authority, self._bearer_token, scope_ref, recipient_refs, subject=subject,
+                body=body, content_ref=content, context_run=run, context_assignment=assignment_ref,
+                context_attempt=attempt_ref, idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def answer_question(
+        self,
+        question_id: StableId | str,
+        *,
+        body: str | None = None,
+        content_ref: MessageContentRef | Mapping[str, object] | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        question = question_id if isinstance(question_id, StableId) else StableId(question_id)
+        content = _coerce_message_content_ref(content_ref, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.messaging.answer(
+                authority, self._bearer_token, question, body=body, content_ref=content,
+                context_run=run, context_assignment=assignment_ref, context_attempt=attempt_ref,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def sync_inbox(
+        self,
+        scope: EntityRef | Mapping[str, object],
+        *,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        limit: int = 50,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> InboxPage:
+        scope_ref = _coerce_entity_ref(scope, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            return self._services.messaging.sync_inbox(
+                authority, self._bearer_token, scope_ref, context_run=run,
+                context_assignment=assignment_ref, context_attempt=attempt_ref,
+                limit=limit, idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+
+    def mark_messages_read(
+        self,
+        scope: EntityRef | Mapping[str, object],
+        through_sequence: int,
+        *,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        scope_ref = _coerce_entity_ref(scope, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.messaging.mark_read(
+                authority, self._bearer_token, scope_ref, through_sequence=through_sequence,
+                context_run=run, context_assignment=assignment_ref, context_attempt=attempt_ref,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def inbox_status(
+        self,
+        scope: EntityRef | Mapping[str, object],
+        *,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> InboxStatus:
+        scope_ref = _coerce_entity_ref(scope, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._reader() as authority:
+            return self._services.messaging.inbox_status(
+                authority, self._bearer_token, scope_ref, context_run=run,
+                context_assignment=assignment_ref, context_attempt=attempt_ref,
+            )
+
+    def start_child(
+        self,
+        parent_attempt_id: StableId | str,
+        child_credential: object,
+        *,
+        execution_id: StableId,
+        logical_id: StableId,
+        scope: AttemptScopeSnapshot,
+        actions: tuple[StableId, ...],
+        idempotency_key: StableId,
+        retry_of: StableId | None = None,
+        expected_revision: int | None = None,
+    ) -> ChildExecutionGrant:
+        children = self._required(self._services.children, "child_execution")
+        with self._writer() as authority:
+            return children.start_child(
+                authority, self._bearer_token, self.attempt_ref(parent_attempt_id), child_credential,
+                execution_id=execution_id, logical_id=logical_id, scope=scope, actions=actions,
+                idempotency_key=idempotency_key, retry_of=retry_of,
+                expected_revision=expected_revision,
+            )
+
+    def read_child_execution(self, execution_id: StableId | str) -> ChildExecutionView:
+        children = self._required(self._services.children, "child_execution")
+        execution = execution_id if isinstance(execution_id, StableId) else StableId(execution_id)
+        with self._reader() as authority:
+            return children.read_execution(authority, self._bearer_token, execution)
+
+    def submit_child_candidate(
+        self, execution_id: StableId | str, *, candidate_id: StableId, summary: str,
+        artifacts: tuple[ChildArtifactRef, ...] = (), idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ChildCandidate:
+        children = self._required(self._services.children, "child_execution")
+        execution = execution_id if isinstance(execution_id, StableId) else StableId(execution_id)
+        with self._writer() as authority:
+            return children.submit_candidate(
+                authority, self._bearer_token, execution, candidate_id=candidate_id,
+                summary=summary, artifacts=artifacts, idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+            )
+
+    def review_child_candidate(
+        self,
+        execution_id: StableId | str,
+        candidate_id: StableId | str,
+        decision: ChildCandidateDecision | str,
+        *,
+        review_id: StableId,
+        reason: str | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ChildReview:
+        children = self._required(self._services.children, "child_execution")
+        execution = execution_id if isinstance(execution_id, StableId) else StableId(execution_id)
+        candidate = candidate_id if isinstance(candidate_id, StableId) else StableId(candidate_id)
+        decision_value = decision if isinstance(decision, ChildCandidateDecision) else ChildCandidateDecision(decision)
+        with self._writer() as authority:
+            return children.review_candidate(
+                authority, self._bearer_token, execution, candidate, decision_value,
+                review_id=review_id, reason=reason, idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
+            )
+
+    def request_child_cancel(
+        self, execution_id: StableId | str, *, cancellation_id: StableId,
+        reason: str | None = None, idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        children = self._required(self._services.children, "child_execution")
+        execution = execution_id if isinstance(execution_id, StableId) else StableId(execution_id)
+        with self._writer() as authority:
+            result = children.request_cancel(
+                authority, self._bearer_token, execution, cancellation_id=cancellation_id,
+                reason=reason, idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def reconcile_child_stopped(
+        self, execution_id: StableId | str, *, idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        children = self._required(self._services.children, "child_execution")
+        execution = execution_id if isinstance(execution_id, StableId) else StableId(execution_id)
+        with self._writer() as authority:
+            result = children.reconcile_stopped(
+                authority, self._bearer_token, execution, idempotency_key=idempotency_key,
+                expected_revision=expected_revision,
             )
         return ApiReceiptV1.from_result(result)
 
@@ -996,6 +1730,263 @@ class TodoSession:
                 assignment=assignment_ref, attempt=attempt_ref, max_bytes=max_bytes,
             )
 
+    def expand_context(
+        self,
+        work_item: StableId | EntityRef,
+        fragment_id: StableId | str,
+        expected_digest: Sha256Digest | str,
+        *,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        max_bytes: int = 16 * 1024,
+        offset: int | None = None,
+        since_revision: int | None = None,
+    ) -> ContextExpansion:
+        """Expand one exact fragment from the caller's current bounded context."""
+        target = self._selector_ref(work_item, EntityKind.WORK_ITEM)
+        run = self._selector_ref(run_id, EntityKind.RUN)
+        assignment_ref = self._selector_ref(assignment, EntityKind.ASSIGNMENT)
+        attempt_ref = self._selector_ref(attempt, EntityKind.ATTEMPT)
+        fragment = fragment_id if isinstance(fragment_id, StableId) else StableId(fragment_id)
+        digest = expected_digest if isinstance(expected_digest, Sha256Digest) else Sha256Digest(expected_digest)
+        with self._reader() as authority:
+            return self._services.context.expand_fragment(
+                authority, self._bearer_token, target, fragment_id=fragment,
+                expected_digest=digest, run=run, assignment=assignment_ref, attempt=attempt_ref,
+                max_bytes=max_bytes, offset=offset, since_revision=since_revision,
+            )
+
+    def resolve_decision(
+        self, decision_id: StableId | str | EntityRef, option_id: StableId | str, rationale: str, *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._declaration_target(decision_id, EntityKind.DECISION)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        option = option_id if isinstance(option_id, StableId) else StableId(option_id)
+        with self._writer() as authority:
+            result = self._services.declarations.resolve_decision(
+                authority, self._bearer_token, plan_ref, target, option, rationale,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def publish_interface(
+        self, interface_id: StableId | str | EntityRef, version: str, rationale: str, *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._declaration_target(interface_id, EntityKind.INTERFACE)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.publish_interface(
+                authority, self._bearer_token, plan_ref, target, version, rationale,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def accept_checkpoint(
+        self, checkpoint_id: StableId | str | EntityRef, evidence_ids: tuple[StableId | str, ...],
+        rationale: str, *, plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._declaration_target(checkpoint_id, EntityKind.CHECKPOINT)
+        evidence = tuple(item if isinstance(item, StableId) else StableId(item) for item in evidence_ids)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.accept_checkpoint(
+                authority, self._bearer_token, plan_ref, target, evidence, rationale,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def release_barrier(
+        self, barrier_id: StableId | str | EntityRef, rationale: str, *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._declaration_target(barrier_id, EntityKind.BARRIER)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.release_barrier(
+                authority, self._bearer_token, plan_ref, target, rationale,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def arrive_rendezvous(
+        self, rendezvous_id: StableId | str | EntityRef, participant_ref: EntityRef | Mapping[str, object], *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._declaration_target(rendezvous_id, EntityKind.BARRIER)
+        participant = _coerce_entity_ref(participant_ref, self.project.project_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.arrive_rendezvous(
+                authority, self._bearer_token, plan_ref, target, participant,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def open_blocker(
+        self, blocker_id: StableId | str | EntityRef, reason: str, *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._blocker_target(blocker_id, plan_ref.entity_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.open_blocker(
+                authority, self._bearer_token, plan_ref, target, reason,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def clear_blocker(
+        self, blocker_id: StableId | str | EntityRef, reason: str, *,
+        plan_revision_id: StableId | str, idempotency_key: StableId,
+        expected_revision: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+    ) -> ApiReceiptV1:
+        plan_ref = self.ref(EntityKind.PLAN_REVISION, plan_revision_id)
+        target = self._blocker_target(blocker_id, plan_ref.entity_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.declarations.clear_blocker(
+                authority, self._bearer_token, plan_ref, target, reason,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def publish_finding(
+        self,
+        work_item_id: StableId | str | EntityRef,
+        summary: str,
+        source_manifest: ContextManifest | Mapping[str, object] | str,
+        source_fragment_refs: tuple[ContextFragmentRef, ...] | list[Mapping[str, object]],
+        *,
+        finding_id: StableId | str | None = None,
+        expected_finding_version: int | None = None,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        work_item = self._selector_ref(work_item_id, EntityKind.WORK_ITEM)
+        manifest = _coerce_context_manifest(source_manifest, self.project.project_id)
+        fragments = _coerce_context_fragment_refs(source_fragment_refs)
+        finding = None if finding_id is None else (
+            finding_id if isinstance(finding_id, StableId) else StableId(finding_id)
+        )
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.context.publish_finding(
+                authority, self._bearer_token, work_item, summary, manifest, fragments,
+                finding_id=finding, expected_finding_version=expected_finding_version,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def invalidate_finding(
+        self,
+        work_item_id: StableId | str | EntityRef,
+        finding_id: StableId | str,
+        finding_version: int,
+        reason: str,
+        source_manifest: ContextManifest | Mapping[str, object] | str,
+        *,
+        run_id: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        attempt: StableId | EntityRef | None = None,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        work_item = self._selector_ref(work_item_id, EntityKind.WORK_ITEM)
+        manifest = _coerce_context_manifest(source_manifest, self.project.project_id)
+        finding = finding_id if isinstance(finding_id, StableId) else StableId(finding_id)
+        run, assignment_ref, attempt_ref = self._context_selectors(run_id, assignment, attempt)
+        with self._writer() as authority:
+            result = self._services.context.invalidate_finding(
+                authority, self._bearer_token, work_item, finding, finding_version, reason, manifest,
+                run=run, assignment=assignment_ref, attempt=attempt_ref,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def _context_selectors(self, run_id, assignment, attempt):
+        return (
+            self._selector_ref(run_id, EntityKind.RUN),
+            self._selector_ref(assignment, EntityKind.ASSIGNMENT),
+            self._selector_ref(attempt, EntityKind.ATTEMPT),
+        )
+
+    def _declaration_target(self, target: StableId | str | EntityRef, kind: EntityKind) -> EntityRef:
+        if isinstance(target, EntityRef):
+            if target.project_id != self.project.project_id or target.kind is not kind:
+                raise ValueError(f"target must be a project-local {kind.value} reference")
+            return target
+        return self.ref(kind, target)
+
+    def _blocker_target(self, target: StableId | str | EntityRef, plan_revision_id: StableId) -> EntityRef:
+        if isinstance(target, EntityRef):
+            if target.project_id != self.project.project_id:
+                raise ValueError("blocker target must belong to this project")
+            return target
+        blocker_id = target if isinstance(target, StableId) else StableId(target)
+        plan = self._accepted_plan(plan_revision_id)
+        declaration_kinds = {
+            "decisions": EntityKind.DECISION,
+            "interfaces": EntityKind.INTERFACE,
+            "checkpoints": EntityKind.CHECKPOINT,
+            "barriers": EntityKind.BARRIER,
+            "rendezvous": EntityKind.BARRIER,
+        }
+        matches = [
+            self.ref(declaration_kinds[item.kind], item.declaration_id)
+            for item in plan.declarations
+            if item.declaration_id == blocker_id and item.kind in declaration_kinds
+        ]
+        if len(matches) != 1:
+            raise ValueError("blocker target is absent or ambiguous; pass its exact declaration reference")
+        return matches[0]
+
     def serialize(self, kind: str, value: object, *, max_bytes: int = 512 * 1024) -> str:
         return serialize_public_document(kind, value, max_bytes=max_bytes)
 
@@ -1010,7 +2001,15 @@ class TodoSession:
                                                 expected_revision=expected_revision)
 
 __all__ = [
-    "DEFAULT_OWNER_ACTIONS", "InitializationIncompleteError", "PlanPreviewMismatchError",
+    "CapabilityViewV1", "DEFAULT_OWNER_ACTIONS", "InitializationIncompleteError", "PlanPreviewMismatchError",
     "ProjectIdentityError", "ProjectUnavailableError", "TodoAuthenticationError",
     "TodoApplication", "TodoApplicationError", "TodoSession",
+    "InboxPage", "InboxStatus", "MessageContentRef", "MessageType", "MessageView",
+    "AttemptScopeSnapshot", "ChildArtifactRef", "ChildCandidate", "ChildCandidateDecision",
+    "ChildExecutionGrant", "ChildExecutionView", "ChildReview",
+    "LEGACY_IMPORT_ACTION", "LegacyAttention", "LegacyCurrentTask", "LegacyCurrentTaskCursor",
+    "LegacyCurrentTaskPage",
+    "LegacyHistoryCursor", "LegacyHistoryPage",
+    "LegacyHistoryRecord", "LegacyImportPreview", "LegacyImportReceipt",
+    "LegacyProjectContextCursor", "LegacyProjectContextPage", "LegacyProjectContextRecord",
 ]

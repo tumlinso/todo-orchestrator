@@ -184,7 +184,7 @@ def _parser() -> argparse.ArgumentParser:
         command.add_argument("--idempotency-key", required=True)
         command.add_argument("--json", action="store_true")
 
-    finish = commands.add_parser("finish", help="release a safely stopped attempt")
+    finish = commands.add_parser("finish", help="release a safely quiescent attempt")
     finish.add_argument("--attempt", required=True)
     finish.add_argument("--lease", required=True)
     finish.add_argument("--idempotency-key", required=True)

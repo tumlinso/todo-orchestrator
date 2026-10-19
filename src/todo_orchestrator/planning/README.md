@@ -63,9 +63,9 @@ semantics with typed causes; they consume supplied facts and do not read
 authority state or determine runtime readiness. A false condition deactivates
 that member; inactive members never count as positive `any` or quorum votes. A
 group with no active members is vacuously satisfied, while a quorum retains its
-authored threshold among active members. V1 graph compilation is bounded to 512
-nodes and 4096 edges. Unsupported operators and implicit/ambiguous references
-are errors rather than guesses.
+authored threshold among active members. V1 graph compilation is bounded to
+10,000 nodes and 100,000 edges. Unsupported operators and implicit/ambiguous
+references are errors rather than guesses.
 
 `preview_changes(proposal, snapshot)` is a pure comparison against an explicit
 `AcceptedSnapshot`; it never opens or writes an authority. The snapshot binds

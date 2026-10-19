@@ -63,7 +63,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
     def open_writer(self, *, project_value: Project | None = None, busy_timeout: float = 5) -> SQLiteAuthority:
         return SQLiteAuthority.open_writer(self.path, project_value or self.project, busy_timeout=busy_timeout)
 
-    def test_initialization_records_identity_and_schema_v20_in_normalized_tables(self):
+    def test_initialization_records_identity_and_schema_v21_in_normalized_tables(self):
         with self.open_reader() as authority:
             connection = authority.connection
             self.assertEqual(connection.execute("PRAGMA application_id").fetchone()[0], APPLICATION_ID)
@@ -399,7 +399,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v20"
+                InvalidAuthorityError, "frozen schema-v21"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -415,7 +415,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v20"
+                InvalidAuthorityError, "frozen schema-v21"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -431,7 +431,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v20"
+                InvalidAuthorityError, "frozen schema-v21"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -458,7 +458,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v20"
+                InvalidAuthorityError, "frozen schema-v21"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -528,6 +528,33 @@ class SQLiteAuthorityTests(unittest.TestCase):
         result = SQLiteAuthority.migrate(self.path, self.project)
         self.assertEqual((result.from_version, result.to_version), (SCHEMA_VERSION, SCHEMA_VERSION))
         self.assertEqual(self.path.read_bytes(), original)
+
+    def test_schema_v20_migration_adds_legacy_tables_without_changing_existing_data(self):
+        import todo_orchestrator.authority.sqlite as authority_module
+
+        earlier = self.root / "schema-v20.sqlite3"
+        with patch.object(authority_module, "_SCHEMA_STATEMENTS", authority_module._SCHEMA_V20_STATEMENTS):
+            SQLiteAuthority.initialize(earlier, self.project)
+        with closing(sqlite3.connect(earlier)) as connection:
+            connection.execute("UPDATE authority_meta SET semantic_revision = 7 WHERE singleton = 1")
+            connection.execute("PRAGMA user_version = 20")
+            connection.commit()
+        with closing(sqlite3.connect(earlier)) as connection:
+            before = tuple(connection.execute(
+                "SELECT project_id, authority_id, semantic_revision FROM authority_meta"
+            ).fetchone())
+
+        result = SQLiteAuthority.migrate(earlier, self.project)
+        self.assertEqual((result.from_version, result.to_version), (20, SCHEMA_VERSION))
+        with SQLiteAuthority.open_reader(earlier, self.project) as authority:
+            connection = authority.connection
+            self.assertEqual(connection.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            self.assertEqual(tuple(connection.execute(
+                "SELECT project_id, authority_id, semantic_revision FROM authority_meta"
+            ).fetchone()), before)
+            self.assertEqual(connection.execute("SELECT count(*) FROM legacy_imports").fetchone()[0], 0)
+            self.assertEqual(connection.execute("SELECT count(*) FROM legacy_history").fetchone()[0], 0)
+            self.assertEqual(connection.execute("PRAGMA integrity_check").fetchone()[0], "ok")
 
     def test_unknown_external_operation_resumes_only_with_executing_verification_row(self):
         with self.open_writer() as authority:

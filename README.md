@@ -2,13 +2,13 @@
 
 Todo Orchestrator is a standalone, local-first workflow engine for versioned plans, safely admitted work, evidence-backed outcomes, and non-destructive recovery. Its SQLite authority is the semantic source of truth; reads do not create, repair, migrate, or restore state.
 
-Todo Orchestrator **0.1.0 alpha** is fixture-qualified: 427 tests passed in 183.031 seconds on Python 3.13.11. The checks used disposable authorities, temporary Git repositories, and injected providers; they do not qualify production host supervision, real command executors, hardware resource scheduling, power-loss recovery, or network filesystems.
+Todo Orchestrator **0.2.0 alpha** adds explicit legacy-state import, linked historical records, and public host/session and coordination interfaces. The prior standalone 0.1.0 release passed 427 fixture tests; qualification of this continuation is tracked separately in [the cutover plan](planning/cutover-v1/README.md).
 
-Project Control integration, cutover, and the optional legacy-plan importer are excluded. The original implementation and active Project Control instance remain separate and unchanged.
+Project Control hosts the independently installed engine through its public API. It retains workspace registration, client authorization, source tools, process supervision, and physical resource ownership. The engine itself has no Project Control dependency. Original implementations and authorities are preserved for history and rollback.
 
 ## Quick start
 
-Use a fresh environment, never the active Project Control Python runtime. Python 3.11+ is required; the package has no runtime dependencies. The tested CLI reports version 0.1.0; the latest qualification runtime was Python 3.13.11. Build tooling must provide setuptools 68+.
+For standalone development, use a fresh environment. Python 3.11+ is required; the package has no runtime dependencies. Build tooling must provide setuptools 68+. Project Control installs its explicitly pinned wheel into a separate host environment.
 
 ```sh
 python3 -m venv .venv
@@ -52,6 +52,6 @@ See [the operator guide](docs/operations/operator-guide.md) for credentials, pro
 
 ## Storage and compatibility
 
-Each project has a local `.todo-orchestrator/authority.sqlite3`. Schema v20 is the only supported schema. There is no automatic migration from v1–v19; earlier development fixtures must be recreated as disposable data. Backup/restore is explicit and restore refuses an existing destination. SQLite initialization currently requires a POSIX filesystem with hard-link and directory-sync support.
+Each project has a local `.todo-orchestrator/authority.sqlite3`. Schema v21 supports an explicit upgrade from the released native v20 schema. Older development schemas remain unsupported. Legacy Project Control authorities use a separate previewed import into a fresh native authority; they are never upgraded in place. Imported completion assertions retain legacy provenance and do not become native verification outcomes. Backup/restore is explicit and restore refuses an existing destination. SQLite initialization currently requires a POSIX filesystem with hard-link and directory-sync support.
 
-Do not edit authority SQLite files or generated task projections by hand. Tests and examples use temporary projects. No part of this development setup authorizes changes to production authorities or the active Project Control instance.
+Do not edit authority SQLite files or generated task projections by hand. Tests and examples use temporary projects. Production changes require explicit operator direction; the authorized all-workspace replacement is recorded in the cutover plan.

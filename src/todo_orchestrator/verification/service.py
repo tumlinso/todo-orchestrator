@@ -1920,7 +1920,7 @@ class VerificationService:
                     or intent_kind == "retry_original_operation" and observation.source is not SourceSafety.CLEAN
                     or intent_kind == "reconcile_observed_effect"
                     and observation.source not in {SourceSafety.CLEAN, SourceSafety.DIRTY}):
-                raise VerificationDeniedError("recovery host observation does not establish the required safe state")
+                raise VerificationDeniedError("recovery host observation does not establish the required stopped state")
         request = self._load_stored_request(authority, view.operation)
         verifier_identity = self._identity_for_contract(request.contract)
         approved_source_digest = approval.expected_source_digest

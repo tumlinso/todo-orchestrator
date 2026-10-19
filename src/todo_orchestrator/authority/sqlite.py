@@ -26,7 +26,7 @@ from todo_orchestrator.contracts.verification import EvidenceRequirement, Verifi
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 20
+SCHEMA_VERSION = 21
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -1366,6 +1366,115 @@ _SCHEMA_STATEMENTS = (
         BEGIN SELECT RAISE(ABORT, 'context finding invalidations are append-only'); END""",
 )
 
+# Preserve the exact v20 DDL for the explicit, identity-checked upgrade below.
+_SCHEMA_V20_STATEMENTS = _SCHEMA_STATEMENTS
+
+_LEGACY_MIGRATION_SCHEMA_STATEMENTS = (
+    """CREATE TABLE legacy_imports (
+        import_id TEXT PRIMARY KEY,
+        source_system TEXT NOT NULL,
+        source_project_id TEXT NOT NULL,
+        source_schema_version INTEGER NOT NULL CHECK (source_schema_version > 0),
+        source_authority_revision INTEGER NOT NULL CHECK (source_authority_revision >= 0),
+        source_digest TEXT NOT NULL UNIQUE CHECK (
+            length(source_digest) = 64 AND source_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        exported_at TEXT NOT NULL,
+        project_name TEXT NOT NULL,
+        repository_id TEXT,
+        envelope_json TEXT NOT NULL,
+        plan_revision_id TEXT,
+        imported_by_actor_id TEXT NOT NULL,
+        imported_by_incarnation_id TEXT NOT NULL,
+        semantic_revision INTEGER NOT NULL CHECK (semantic_revision > 0),
+        imported_at TEXT NOT NULL,
+        UNIQUE (source_system, source_project_id),
+        FOREIGN KEY (plan_revision_id) REFERENCES plan_revisions(plan_revision_id),
+        FOREIGN KEY (imported_by_actor_id, imported_by_incarnation_id)
+            REFERENCES actors(actor_id, incarnation_id)
+    )""",
+    """CREATE TABLE legacy_entity_links (
+        import_id TEXT NOT NULL,
+        source_table TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        source_entity_id TEXT,
+        mapping_kind TEXT NOT NULL CHECK (mapping_kind IN ('work_item', 'archive_only', 'attention')),
+        native_work_item_id TEXT,
+        definition_revision_id TEXT,
+        detail_json TEXT NOT NULL,
+        PRIMARY KEY (import_id, source_table, source_id),
+        CHECK ((native_work_item_id IS NULL) = (definition_revision_id IS NULL)),
+        CHECK ((mapping_kind = 'work_item') = (native_work_item_id IS NOT NULL)),
+        FOREIGN KEY (import_id) REFERENCES legacy_imports(import_id),
+        FOREIGN KEY (native_work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id)
+    )""",
+    """CREATE INDEX legacy_entity_links_native_work
+        ON legacy_entity_links(native_work_item_id, definition_revision_id)""",
+    """CREATE TABLE legacy_history (
+        import_id TEXT NOT NULL,
+        history_id TEXT NOT NULL,
+        source_table TEXT NOT NULL,
+        source_id TEXT NOT NULL,
+        entity_id TEXT,
+        source_revision INTEGER NOT NULL CHECK (source_revision >= 0),
+        occurred_at TEXT NOT NULL,
+        event_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        payload_digest TEXT NOT NULL CHECK (
+            length(payload_digest) = 64 AND payload_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        native_work_item_id TEXT,
+        definition_revision_id TEXT,
+        PRIMARY KEY (import_id, history_id),
+        UNIQUE (import_id, source_table, source_id),
+        CHECK ((native_work_item_id IS NULL) = (definition_revision_id IS NULL)),
+        FOREIGN KEY (import_id) REFERENCES legacy_imports(import_id),
+        FOREIGN KEY (native_work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id)
+    )""",
+    """CREATE INDEX legacy_history_entity_revision
+        ON legacy_history(import_id, entity_id, source_revision, history_id)""",
+    """CREATE INDEX legacy_history_time
+        ON legacy_history(import_id, occurred_at, history_id)""",
+    """CREATE TABLE legacy_completion_assertions (
+        import_id TEXT NOT NULL,
+        source_task_id TEXT NOT NULL,
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        source_revision INTEGER NOT NULL CHECK (source_revision >= 0),
+        source_status TEXT NOT NULL CHECK (source_status = 'done'),
+        assertion_digest TEXT NOT NULL CHECK (
+            length(assertion_digest) = 64 AND assertion_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        PRIMARY KEY (import_id, source_task_id),
+        UNIQUE (import_id, work_item_id, definition_revision_id),
+        FOREIGN KEY (import_id) REFERENCES legacy_imports(import_id),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id)
+    )""",
+    """CREATE INDEX legacy_completion_work_ref
+        ON legacy_completion_assertions(work_item_id, definition_revision_id)""",
+    """CREATE TRIGGER legacy_imports_no_update BEFORE UPDATE ON legacy_imports
+        BEGIN SELECT RAISE(ABORT, 'legacy imports are append-only'); END""",
+    """CREATE TRIGGER legacy_imports_no_delete BEFORE DELETE ON legacy_imports
+        BEGIN SELECT RAISE(ABORT, 'legacy imports are append-only'); END""",
+    """CREATE TRIGGER legacy_entity_links_no_update BEFORE UPDATE ON legacy_entity_links
+        BEGIN SELECT RAISE(ABORT, 'legacy entity links are append-only'); END""",
+    """CREATE TRIGGER legacy_entity_links_no_delete BEFORE DELETE ON legacy_entity_links
+        BEGIN SELECT RAISE(ABORT, 'legacy entity links are append-only'); END""",
+    """CREATE TRIGGER legacy_history_no_update BEFORE UPDATE ON legacy_history
+        BEGIN SELECT RAISE(ABORT, 'legacy history is append-only'); END""",
+    """CREATE TRIGGER legacy_history_no_delete BEFORE DELETE ON legacy_history
+        BEGIN SELECT RAISE(ABORT, 'legacy history is append-only'); END""",
+    """CREATE TRIGGER legacy_completion_assertions_no_update BEFORE UPDATE ON legacy_completion_assertions
+        BEGIN SELECT RAISE(ABORT, 'legacy completion assertions are append-only'); END""",
+    """CREATE TRIGGER legacy_completion_assertions_no_delete BEFORE DELETE ON legacy_completion_assertions
+        BEGIN SELECT RAISE(ABORT, 'legacy completion assertions are append-only'); END""",
+)
+
+_SCHEMA_STATEMENTS = _SCHEMA_V20_STATEMENTS + _LEGACY_MIGRATION_SCHEMA_STATEMENTS
+
 
 def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...], ...]:
     rows = connection.execute(
@@ -1376,18 +1485,19 @@ def _schema_signature(connection: sqlite3.Connection) -> tuple[tuple[object, ...
     return tuple(tuple(row) for row in rows)
 
 
-def _compile_schema_signature() -> tuple[tuple[object, ...], ...]:
+def _compile_schema_signature(statements: tuple[str, ...] = _SCHEMA_STATEMENTS) -> tuple[tuple[object, ...], ...]:
     connection = sqlite3.connect(":memory:")
     try:
-        for statement in _SCHEMA_STATEMENTS:
+        for statement in statements:
             connection.execute(statement)
         return _schema_signature(connection)
     finally:
         connection.close()
 
 
-# Schema v20 is frozen. Compare SQLite definitions with a signature compiled
-# once from the trusted source DDL rather than validating table names alone.
+# Compare SQLite definitions with signatures compiled from trusted source DDL
+# rather than validating table names alone.
+_SCHEMA_V20_SIGNATURE = _compile_schema_signature(_SCHEMA_V20_STATEMENTS)
 _SCHEMA_SIGNATURE = _compile_schema_signature()
 
 _REQUIRED_TABLES = frozenset({
@@ -1405,6 +1515,7 @@ _REQUIRED_TABLES = frozenset({
     "declaration_facts", "coordination_messages", "coordination_message_recipients",
     "coordination_message_cursors",
     "context_finding_versions", "context_finding_invalidations",
+    "legacy_imports", "legacy_entity_links", "legacy_history", "legacy_completion_assertions",
     "command_receipts", "command_idempotency",
 })
 
@@ -2067,7 +2178,7 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
 
     try:
         if _schema_signature(connection) != _SCHEMA_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v20 definition")
+            raise InvalidAuthorityError(f"authority schema does not match the frozen schema-v{SCHEMA_VERSION} definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -2089,6 +2200,35 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
         raise InvalidAuthorityError(f"authority journal mode is unreadable: {exc}") from exc
     if str(journal_mode).lower() != "wal":
         raise InvalidAuthorityError("authority is not using the required WAL journal mode")
+
+
+def _validate_schema_v20(connection: sqlite3.Connection, project: Project) -> None:
+    """Prove that a candidate migration source is the exact supported v20 file."""
+
+    expected_project_id, expected_authority_id = _project_identity(project)
+    try:
+        if _pragma_int(connection, "application_id") != APPLICATION_ID:
+            raise InvalidAuthorityError("SQLite file is not a Todo Orchestrator authority")
+        if _pragma_int(connection, "user_version") != 20:
+            raise UnsupportedSchemaVersionError("explicit schema-v20 migration requires user_version 20")
+        row = connection.execute(
+            "SELECT project_id, authority_id, semantic_revision FROM authority_meta WHERE singleton = 1"
+        ).fetchone()
+        if row is None:
+            raise InvalidAuthorityError("authority metadata row is missing")
+        if row["project_id"] != expected_project_id or row["authority_id"] != expected_authority_id:
+            raise AuthorityIdentityMismatchError(
+                "authority project or authority identity does not match the requested project"
+            )
+        if type(row["semantic_revision"]) is not int or row["semantic_revision"] < 0:
+            raise InvalidAuthorityError("authority semantic revision is invalid")
+        if _schema_signature(connection) != _SCHEMA_V20_SIGNATURE:
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v20 definition")
+        journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
+        if str(journal_mode).lower() != "wal":
+            raise InvalidAuthorityError("authority is not using the required WAL journal mode")
+    except sqlite3.Error as exc:
+        raise InvalidAuthorityError(f"schema-v20 migration source is unreadable: {exc}") from exc
 
 
 def _configure(connection: sqlite3.Connection, *, readonly: bool, timeout: float) -> None:
@@ -2131,7 +2271,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v20 authority without replacing an existing path.
+        """Create a new schema-v21 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority
@@ -2281,17 +2421,61 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> MigrationResult:
-        """Validate the current schema; no schema migration is implemented yet.
+        """Explicitly migrate an exact schema-v20 authority to schema v21.
 
-        Schema v18 is the only supported version. A current v18 authority is a
-        no-op. Older versions and every other unsupported version are rejected
-        without opening the file writable; this method never guesses a
-        conversion or restores a backup.
+        The read-only preflight proves identity and the complete old DDL
+        signature before a writer is opened. The extension tables are created
+        atomically under SQLite's writer reservation. Opening an authority
+        never invokes this method implicitly.
         """
 
-        with cls.open_reader(path, project, busy_timeout=busy_timeout) as authority:
-            version = _pragma_int(authority.connection, "user_version")
-        return MigrationResult(version, version)
+        timeout = _timeout(busy_timeout)
+        authority_path = _path(path)
+        if not authority_path.exists():
+            raise AuthorityNotFoundError(f"authority does not exist: {authority_path}")
+
+        preflight = _connect(authority_path, "ro", timeout)
+        try:
+            version = _pragma_int(preflight, "user_version")
+            if version == SCHEMA_VERSION:
+                _validate(preflight, project)
+                return MigrationResult(version, version)
+            if version != 20:
+                raise UnsupportedSchemaVersionError(
+                    f"authority schema version {version} is unsupported; this package supports 20 or {SCHEMA_VERSION}"
+                )
+            _validate_schema_v20(preflight, project)
+        finally:
+            preflight.close()
+
+        connection = _connect(authority_path, "rw", timeout)
+        try:
+            _configure(connection, readonly=False, timeout=timeout)
+            if _pragma_int(connection, "synchronous") != 2:
+                raise InvalidAuthorityError("writer SQLite connection is not using FULL synchronous durability")
+            _validate_schema_v20(connection, project)
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                # Repeat the old-schema proof while holding the write lock so
+                # concurrent migration or file replacement fails closed.
+                _validate_schema_v20(connection, project)
+                for statement in _LEGACY_MIGRATION_SCHEMA_STATEMENTS:
+                    connection.execute(statement)
+                connection.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
+                connection.execute("COMMIT")
+            except BaseException:
+                if connection.in_transaction:
+                    connection.execute("ROLLBACK")
+                raise
+            _validate(connection, project)
+            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                raise InvalidAuthorityError(f"migrated authority failed integrity check: {integrity}")
+        except BaseException:
+            connection.close()
+            raise
+        connection.close()
+        return MigrationResult(20, SCHEMA_VERSION)
 
     @property
     def connection(self) -> sqlite3.Connection:

@@ -1,4 +1,4 @@
-# SQLite authority v20
+# SQLite authority v21
 
 Each project owns one SQLite file. The file contains a single `authority_meta`
 identity row with the project ID, authority ID, semantic revision, and creation
@@ -6,8 +6,8 @@ time. SQLite's `application_id` identifies Todo Orchestrator files and
 `user_version` identifies the schema version. Semantic revision belongs to
 `authority_meta`; `user_version` is schema metadata only.
 
-Schema v20 uses frozen DDL. Each open compares the full application schema
-signature against the signature compiled in memory from the trusted v20
+Schema v21 uses frozen DDL. Each open compares the full application schema
+signature against the signature compiled in memory from the trusted v21
 statements. This checks table definitions (including columns, keys, foreign
 keys, checks, and uniqueness), generated and named indexes, and append-only
 triggers; missing, altered, or extra application objects are rejected. V1 has
@@ -48,7 +48,7 @@ Reusing an exact definition reference requires identical bundle bytes, digest,
 and normalized projections. Snapshot, membership, and definition corruption
 fails closed; the reader does not repair or infer missing authority state.
 
-`SQLiteAuthority.initialize()` is the only creation path. It builds schema v20
+`SQLiteAuthority.initialize()` is the only creation path. It builds schema v21
 in a private same-directory temporary database, commits and checks it, then
 publishes it atomically without replacing an existing path. After publication,
 it syncs the parent directory on POSIX systems. If that sync fails, it raises
@@ -74,12 +74,13 @@ competing writers while WAL readers retain stable snapshots.
 Each writer connection verifies that SQLite reports `synchronous=FULL` and
 fails closed if that setting is not active; opening a writer does not change it.
 
-Schema v20 is the only implemented version. `migrate()` is an explicit current
-version no-op and rejects schema v1 through v19 or any other unsupported version
-without writable access. Earlier disposable fixtures are unsupported and must
-be recreated; no v1-v19 migration is provided. A future migration must preserve
-definition identity and full accepted-snapshot meaning; it cannot infer mixed
-membership from matching revision IDs.
+Schema v21 is current. `migrate()` is an explicit no-op for v21 and upgrades
+only an exact, identity-checked schema-v20 authority, adding immutable legacy
+import, source-link, history, and completion-assertion tables in one transaction.
+It rejects schema v1 through v19 or any other unsupported version without
+writable access. The legacy completion assertion remains distinct from a native
+outcome or verification; exact imported work definitions require native
+revalidation before dispatch.
 
 Schema v8 introduced immutable run-schedule snapshots, lane policies, and queue
 positions attached to immutable assignments. A schedule can omit lane
@@ -212,7 +213,10 @@ and exact persisted workspace under the lock. A changed snapshot is rejected.
 Dirty sources, live processes, or active children are quarantined; missing or
 uncertain evidence remains uncertain. Expiry never removes files, kills
 processes, or automatically releases ownership. Releasing a reconciled attempt
-requires a separate fresh clean/stopped/no-children observation.
+requires a separate fresh clean/quiescent/no-children observation. Quiescence
+may come from kernel PID/start-token proof or a private Project Control
+attestation of completed Codex producer work; the latter is explicitly not a
+claim that the producer process has exited.
 
 The host provider and injected clock are trusted composition inputs. Stored
 provider receipts preserve provenance but are not cryptographic attestations,

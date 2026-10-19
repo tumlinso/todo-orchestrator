@@ -103,9 +103,48 @@ class RecoveryInspectionIndependentTests(unittest.TestCase):
         self.assertEqual(
             {item.code for item in intent.preconditions},
             {"authority_revision_unchanged", "stored_workspace_binding_valid", "source_clean",
-             "process_stopped", "no_active_children", "host_state_matches_exact_lease"},
+             "process_stopped", "external_producer_quiescent", "no_active_children",
+             "host_state_matches_exact_lease"},
         )
         self.assertEqual(result.state, active.state)
+        self.assertEqual(self.fixture.state_snapshot(), before)
+
+    def test_expired_external_producer_completion_is_quiescent_without_claiming_kernel_stop(self):
+        active = self.inspect()
+        self.fixture.clock.value = active.lease_expires_at + timedelta(seconds=1)
+        self.host.override = lambda observation: replace(
+            observation, process=ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT,
+        )
+
+        result = self.inspect()
+
+        self.assertEqual(result.status, RecoveryStatus.EXPIRED)
+        self.assertEqual(tuple(item.kind for item in result.intents),
+                         (RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT,))
+        checks = {item.code: item.satisfied for item in result.intents[0].preconditions}
+        self.assertFalse(checks["process_stopped"])
+        self.assertTrue(checks["external_producer_quiescent"])
+        self.assertTrue(checks["no_active_children"])
+
+    def test_external_producer_quiescence_preserves_dirty_workspace_as_explicit_handoff(self):
+        active = self.inspect()
+        self.fixture.clock.value = active.lease_expires_at + timedelta(seconds=1)
+        self.host.override = lambda observation: replace(
+            observation, source=SourceSafety.DIRTY,
+            process=ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT,
+        )
+        before = self.fixture.state_snapshot()
+
+        result = self.inspect()
+
+        self.assertEqual(result.status, RecoveryStatus.DIRTY)
+        self.assertEqual(tuple(item.kind for item in result.intents),
+                         (RecoveryIntentKind.HANDOFF_DIRTY_WORKSPACE,))
+        checks = {item.code: item.satisfied for item in result.intents[0].preconditions}
+        self.assertFalse(checks["writer_stopped"])
+        self.assertTrue(checks["external_producer_quiescent"])
+        self.assertTrue(checks["writer_quiescent"])
+        self.assertTrue(checks["uncommitted_source_preserved"])
         self.assertEqual(self.fixture.state_snapshot(), before)
 
     def test_expired_live_and_unknown_workspace_stay_blocked_while_dirty_gets_handoff(self):
