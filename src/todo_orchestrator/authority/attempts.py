@@ -61,6 +61,10 @@ from .auth import (
     CONTEXT_READ_ACTION,
     RECOVERY_APPLY_ACTION,
     RECOVERY_INSPECT_ACTION,
+    RESOURCE_READ_ACTION,
+    RESOURCE_RECONCILE_ACTION,
+    RESOURCE_RELEASE_ACTION,
+    RESOURCE_RESERVE_ACTION,
 )
 from .commands import MutationContext
 from .eligibility import (
@@ -107,6 +111,7 @@ _ATTEMPT_SESSION_ACTION_CEILING = frozenset((
     StableId("todo.message.send"), StableId("todo.message.read"), StableId("todo.question.answer"),
     CONTEXT_READ_ACTION, CONTEXT_FINDING_PUBLISH_ACTION, CONTEXT_FINDING_INVALIDATE_ACTION,
     RECOVERY_INSPECT_ACTION,
+    RESOURCE_RESERVE_ACTION, RESOURCE_RELEASE_ACTION, RESOURCE_READ_ACTION, RESOURCE_RECONCILE_ACTION,
     CHILD_DELEGATE_ACTION, CHILD_RETRY_ACTION, CHILD_REVIEW_ACTION, CHILD_CANCEL_ACTION,
     CHILD_STOP_RECONCILE_ACTION, CHILD_READ_ACTION, CHILD_WRITE_ACTION,
     CHILD_CANDIDATE_SUBMIT_ACTION,
@@ -322,10 +327,14 @@ def _require_children_resolved(connection: sqlite3.Connection, attempt_id: Stabl
 
 
 def _require_recovery_operations_resolved(connection: sqlite3.Connection, attempt_id: StableId) -> None:
-    """Refuse attempt release while an external operation can still change state."""
+    """Refuse completion while an external operation can still change state.
+
+    Definitive ``not_applied`` is resolved: it proves the external effect did
+    not occur, though any retry still requires its own explicit authorization.
+    """
     pending = connection.execute(
         "SELECT operation_id FROM external_operations WHERE attempt_id = ? "
-        "AND state NOT IN ('finalized', 'failed') ORDER BY operation_id LIMIT 1",
+        "AND state NOT IN ('finalized', 'failed', 'not_applied') ORDER BY operation_id LIMIT 1",
         (str(attempt_id),),
     ).fetchone()
     if pending is not None:
@@ -794,6 +803,10 @@ class _ReleaseHandler(_AttemptHandlerBase):
         if attempt.lease is None or attempt.lease.lease_id != command.expected_lease_id:
             raise AttemptLeaseMismatchError("expected lease ID is no longer current")
         _require_children_resolved(context._connection, attempt.attempt_id)
+        # A resource or command effect can outlive the worker lease. Releasing
+        # the attempt while its external operation is unresolved would make
+        # the work appear available while the provider may still act on it.
+        _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
         workspace = _stored_workspace(context._connection, context.project, attempt.ref)
         observation = _check_observation(
             command.observation, target=attempt.work_item, attempt_ref=attempt.ref, row=row,

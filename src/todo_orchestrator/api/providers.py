@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Callable
 
 from todo_orchestrator.contracts import ProviderIdentity
+from todo_orchestrator.contracts.providers import CommandExecutionProvider, ResourcePermitProvider
 from todo_orchestrator.providers.git import GitRepositoryConfig, GitRepositoryProvider
 
 
@@ -32,6 +33,10 @@ class ProviderComposition:
     source_identity: ProviderIdentity | None = None
     verification_provider: object | None = None
     verification_identity: ProviderIdentity | None = None
+    command_execution_provider: CommandExecutionProvider | None = None
+    command_execution_identity: ProviderIdentity | None = None
+    resource_permit_provider: ResourcePermitProvider | None = None
+    resource_permit_identity: ProviderIdentity | None = None
     declaration_observer: object | None = None
     declaration_identity: ProviderIdentity | None = None
     git_provider: GitRepositoryProvider | None = None
@@ -58,6 +63,28 @@ class ProviderComposition:
             callable(getattr(self.verification_provider, method, None)) for method in ("verify", "inspect")
         ):
             raise TypeError("verification_provider must implement verify and inspect")
+        if self.command_execution_provider is not None and not all(
+            callable(getattr(self.command_execution_provider, method, None))
+            for method in ("execute", "inspect")
+        ):
+            raise TypeError("command_execution_provider must implement execute and inspect")
+        if (self.command_execution_provider is None) != (self.command_execution_identity is None):
+            raise ValueError("command execution provider and identity must be supplied together")
+        if self.command_execution_identity is not None and not isinstance(
+            self.command_execution_identity, ProviderIdentity
+        ):
+            raise TypeError("command_execution_identity must be a ProviderIdentity")
+        if self.resource_permit_provider is not None and not all(
+            callable(getattr(self.resource_permit_provider, method, None))
+            for method in ("reserve", "release", "inspect")
+        ):
+            raise TypeError("resource_permit_provider must implement reserve, release, and inspect")
+        if (self.resource_permit_provider is None) != (self.resource_permit_identity is None):
+            raise ValueError("resource permit provider and identity must be supplied together")
+        if self.resource_permit_identity is not None and not isinstance(
+            self.resource_permit_identity, ProviderIdentity
+        ):
+            raise TypeError("resource_permit_identity must be a ProviderIdentity")
         if self.declaration_observer is not None and not callable(
             getattr(self.declaration_observer, "observe_declaration", None)
         ):
@@ -80,6 +107,10 @@ class ProviderComposition:
         child_observer: object | None = None,
         verification_provider: object | None = None,
         verification_identity: ProviderIdentity | None = None,
+        command_execution_provider: CommandExecutionProvider | None = None,
+        command_execution_identity: ProviderIdentity | None = None,
+        resource_permit_provider: ResourcePermitProvider | None = None,
+        resource_permit_identity: ProviderIdentity | None = None,
         declaration_observer: object | None = None,
         declaration_identity: ProviderIdentity | None = None,
         clock: Callable[[], datetime] | None = None,
@@ -101,6 +132,10 @@ class ProviderComposition:
             source_identity=provider.identity,
             verification_provider=verification_provider,
             verification_identity=verification_identity,
+            command_execution_provider=command_execution_provider,
+            command_execution_identity=command_execution_identity,
+            resource_permit_provider=resource_permit_provider,
+            resource_permit_identity=resource_permit_identity,
             declaration_observer=declaration_observer,
             declaration_identity=declaration_identity,
             git_provider=provider,

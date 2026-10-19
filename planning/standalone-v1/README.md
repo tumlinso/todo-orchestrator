@@ -46,3 +46,9 @@ At development revision 145, `L-RECOVERY` was likewise changed from `specialist`
 to `implementer` through the coordinator lane API before its first dispatch,
 so recovery tasks can bind required gates. This changes only the development
 run; the preserved initial plan and active Project Control instance are unchanged.
+
+At development revision 187, `L-QUALIFICATION` was changed from `specialist`
+to `implementer` through the same supported coordinator lane API so its
+required qualification gates can be bound. No qualification task was claimed
+while `TO-I04` remained active. This changes only the repository development
+run and does not change the installed Project Control service or source.

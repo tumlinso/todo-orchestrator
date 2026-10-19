@@ -1,0 +1,281 @@
+{
+  "format": "todo-orchestrator-parity-matrix",
+  "version": 1,
+  "scope": "TO-Q01 standalone Todo only",
+  "reference": {
+    "baseline_document": "docs/product/reference-baseline.json",
+    "baseline_sha256": "40ca01455d4b9cbff873fc4c61cc0f838d6b5de4d11ce218d62c2e11d047e7fb",
+    "primary_source": {
+      "label": "skills-dev standalone package",
+      "root": "/home/tumlinson/skills_dev/todo-orchestrator",
+      "revision": "bfa9238985dfeb2368bad076f1cc51bfdadbae92",
+      "branch": "development",
+      "captured": "2026-10-18"
+    },
+    "separate_noncanonical_reference": {
+      "label": "Project Control vendored copy",
+      "root": "/home/tumlinson/project-control/src/todo_orchestrator",
+      "revision": "fba161b1dc6ed4399c1a3818071eacdb9b80c17d",
+      "included_in_matrix": false,
+      "reason": "Distinct snapshot with source differences; never merged into the selected legacy corpus."
+    },
+    "fixture_helper": {
+      "path": "tests/v2_helpers.py",
+      "sha256": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d",
+      "description": "V2Repo uses TemporaryDirectory for disposable Git and runtime/SQLite state."
+    }
+  },
+  "evidence_runs": {
+    "legacy_selected_tests": {
+      "status": "passed",
+      "result": "8 isolated legacy test subprocesses, each ran one test; all passed",
+      "duration_seconds": 9.054,
+      "command": "PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src:. python -B -S -m unittest tests.qualification.test_legacy_corpus -v",
+      "tests": [
+        "tests.test_workflow_plan_snapshot.WorkflowPlanSnapshotTests.test_v3_plan_reapply_reconciles_idle_lane_order_and_preserves_omitted_tasks",
+        "tests.test_v2_concurrency.V2ConcurrencyTests.test_multiple_processes_one_task_exactly_one_wins",
+        "tests.test_child_execution_core.ChildExecutionCoreTests.test_child_token_is_restricted_and_never_completes_parent",
+        "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_gate_inputs_are_precisely_invalidated",
+        "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_complete_managed_contract_allows_overlapping_first_class_claims",
+        "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_missing_integrator_destination_keeps_overlap_blocked",
+        "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_expired_dirty_claim_is_quarantined",
+        "tests.test_v2_foundation.V2FoundationTests.test_event_revisions_are_unique_and_monotonic"
+      ],
+      "source_test_hashes": {
+        "tests/test_child_execution_core.py": "cbea32eb1800cf8c1371ae0c8a230ef3f4f2097dd62c4c666888650fb9b70653",
+        "tests/test_v2_concurrency.py": "230fb7dc53c14baeeaf404aea00da358c75e064393e70407fa1050c0585c41b7",
+        "tests/test_v2_foundation.py": "4a56e6f5f2036754d328ace4f7d032847bbe8e3764918a59f018aba609bd6944",
+        "tests/test_v2_recovery_migration_context.py": "07a09b88562ce649440d8aa889474014183da4e2e65e43e2cc394705b38f2611",
+        "tests/test_workflow_isolated_claims.py": "5480abeb0c478fd7ed93b5d92efa684191ecdc0beebd998386febd7a2b5f6e12",
+        "tests/test_workflow_plan_snapshot.py": "a3e7bac91dbbcde4aad43f9f70522f59e9260d6debaf7a26315c7aa942d399cb",
+        "tests/v2_helpers.py": "29dd4fd890894456eac830903ad929ec06e6593e5032abe26a94112cdc98461d"
+      },
+      "limitations": [
+        "Only these eight selected tests were run; the rest of the legacy suite was inspected and hashed, not executed.",
+        "Each selected test establishes its named assertion, not all behavior in its source module.",
+        "The harness checks the captured source revision, clean package/test paths, selected file hashes, and imported package location before counting a case."
+      ],
+      "harness": "tests/qualification/test_legacy_corpus.py",
+      "harness_sha256": "76086404b2437d6e987cb10bdf53966b132b846735863ef8bf9c9bb36212289e",
+      "harness_manifest": "tests/qualification/legacy-corpus.v1.json",
+      "harness_manifest_sha256": "b0acac43c029e6921d07a7f6b22741501fea0103acd0af43ac0670583ed30a86"
+    },
+    "native_isolated_suite": {
+      "status": "passed",
+      "result": "420 tests, OK",
+      "duration_seconds": 161.793,
+      "log": "/tmp/todo-orchestrator-i04-qualified-tests.log",
+      "source_manifest": "/tmp/todo-orchestrator-i04-qualified-source-manifest.json",
+      "source_manifest_embedded_sha256": "91a879def05ce93ed9f71bd4d2d0aabc340040f40065f0568d84398ef97fcb0d",
+      "source_manifest_file_sha256": "e301b666fac89bbe58c29dd4fdc4281ba4fcc7af6cfc061812f9af41b812d109",
+      "manifest_file_count": 149,
+      "qualification_docs_in_manifest": false,
+      "note": "Native test names below were confirmed in this run log. The source manifest predates the Q01 docs added here; it is not evidence for these documentation files."
+    }
+  },
+  "classifications": {
+    "retained": "The safety or user-visible property remains materially the same.",
+    "adapted": "The purpose remains, but the standalone contract or enforcement boundary intentionally differs.",
+    "unsupported": "No supported standalone equivalent exists in this v1 scope; this is not a future commitment.",
+    "excluded": "The operator explicitly removed the work from this standalone effort."
+  },
+  "cases": [
+    {
+      "id": "atomic-event-replay",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "partial",
+      "legacy_tests_passed": [
+        "tests.test_v2_foundation.V2FoundationTests.test_event_revisions_are_unique_and_monotonic"
+      ],
+      "legacy_related_not_run": [
+        "tests.test_v2_concurrency.V2ConcurrencyTests.test_concurrent_pulses_preserve_events_and_atomic_snapshot"
+      ],
+      "legacy_limit": "The old fixture establishes event monotonicity, not generic exactly-once command replay.",
+      "native_tests_passed": [
+        "tests/authority/test_commands.py::CommandAuthorityTests.test_handler_exception_after_write_rolls_back_everything",
+        "tests/authority/test_commands.py::CommandAuthorityTests.test_same_request_concurrent_dispatch_has_one_commit_and_one_replay",
+        "tests/authority/test_commands.py::CommandAuthorityTests.test_history_and_delta_are_revision_ordered_and_fingerprint_ignores_wal_layout"
+      ],
+      "change": "Standalone commands use typed intent, receipt and idempotency contracts; the stronger generic replay property is a native extension, not an old-code parity claim."
+    },
+    {
+      "id": "event-revision-order",
+      "classification": "retained",
+      "legacy_fixture_coverage": "passed",
+      "legacy_tests_passed": [
+        "tests.test_v2_foundation.V2FoundationTests.test_event_revisions_are_unique_and_monotonic"
+      ],
+      "legacy_related_not_run": [],
+      "legacy_limit": "The selected test establishes ordered unique revisions, not generic command replay.",
+      "native_tests_passed": [
+        "tests/authority/test_commands.py::CommandAuthorityTests.test_history_and_delta_are_revision_ordered_and_fingerprint_ignores_wal_layout"
+      ],
+      "change": "Append-only revision ordering remains a core property; standalone command receipts and replay semantics are separately adapted."
+    },
+    {
+      "id": "plan-noop-preserve",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "partial",
+      "legacy_tests_passed": [
+        "tests.test_workflow_plan_snapshot.WorkflowPlanSnapshotTests.test_v3_plan_reapply_reconciles_idle_lane_order_and_preserves_omitted_tasks"
+      ],
+      "legacy_related_not_run": [
+        "tests.test_as1_foreign_source_port scenarios plan_noop and plan_omitted",
+        "tests.test_workflow_plan_snapshot.WorkflowPlanSnapshotTests.test_plan_reapply_never_downgrades_a_frozen_interface"
+      ],
+      "legacy_limit": "The selected test covers omitted-task preservation and idle lane order; it does not establish every plan fixture in the baseline.",
+      "native_tests_passed": [
+        "tests/planning/test_changes.py::PlanChangePreviewTests.test_same_package_is_a_deterministic_noop",
+        "tests/planning/test_changes.py::PlanChangePreviewTests.test_frozen_interface_contract_cannot_be_revised_in_place",
+        "tests/planning/test_service.py::PlanServiceTests.test_partial_update_persists_omitted_records_and_authored_context",
+        "tests/planning/test_service.py::PlanServiceTests.test_reversion_is_a_new_revision_and_preserves_prior_snapshots"
+      ],
+      "change": "Authored native plans compile into typed versioned snapshots and selective reviewed operations; the old proposed_todos/Markdown importer is excluded."
+    },
+    {
+      "id": "typed-cycle-witness",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "not_run",
+      "legacy_tests_passed": [],
+      "legacy_related_not_run": [
+        "tests.test_workflow_runs_lanes.WorkflowRunsLanesTests.test_static_cycles_are_rejected_and_runtime_cycles_are_structured",
+        "tests.test_v2_graph_coordination heterogeneous checkpoint/interface/barrier/decision cases"
+      ],
+      "legacy_limit": "The old static-cycle test is task/task; it does not cover the proposed heterogeneous task/checkpoint/producer cycle fixture.",
+      "native_tests_passed": [
+        "tests/planning/test_package.py::PlanPackageTests.test_cross_type_cycle_has_a_stable_witness",
+        "tests/planning/test_package.py::PlanPackageTests.test_condition_and_quorum_evaluation_preserves_unknown_states",
+        "tests/coordination/test_declarations.py::DeclarationServiceTests.test_interface_rendezvous_and_explicit_blocker_feed_native_facts"
+      ],
+      "change": "The standalone compiler validates typed blocking relations across declarations; unresolved conditions remain explicit rather than being coerced to false."
+    },
+    {
+      "id": "admission-race-scope",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "partial",
+      "legacy_tests_passed": [
+        "tests.test_v2_concurrency.V2ConcurrencyTests.test_multiple_processes_one_task_exactly_one_wins"
+      ],
+      "legacy_related_not_run": [
+        "tests.test_v2_concurrency.V2ConcurrencyTests.test_ten_processes_claim_five_unique_tasks",
+        "tests.test_v2_concurrency.V2ConcurrencyTests.test_overlapping_scopes_block_but_disjoint_scopes_run"
+      ],
+      "legacy_limit": "One-task winner behavior was exercised; the broader ten-process and scope matrix was not run in the legacy corpus.",
+      "native_tests_passed": [
+        "tests/authority/test_attempts_independent.py::IndependentAttemptAuthorityTests.test_two_process_claim_race_has_one_commit_and_no_loser_event_churn",
+        "tests/authority/test_attempts_independent.py::IndependentAttemptAuthorityTests.test_overlap_without_exact_workspace_isolation_is_denied_but_disjoint_work_claims",
+        "tests/authority/test_eligibility_independent.py::IndependentEligibilityTests.test_only_exactly_qualified_distinct_workspaces_isolate_overlap"
+      ],
+      "change": "Standalone eligibility and admission share exact transactional scope requalification with typed capabilities and attempts."
+    },
+    {
+      "id": "isolation-proof-pair",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "passed",
+      "legacy_tests_passed": [
+        "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_missing_integrator_destination_keeps_overlap_blocked",
+        "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_complete_managed_contract_allows_overlapping_first_class_claims"
+      ],
+      "legacy_related_not_run": [],
+      "legacy_limit": "Both positive and blocked branches ran in the selected isolated pair; this does not establish every integration behavior in the source module.",
+      "native_tests_passed": [
+        "tests/authority/test_eligibility_independent.py::IndependentEligibilityTests.test_only_exactly_qualified_distinct_workspaces_isolate_overlap",
+        "tests/verification/test_git.py::GitRepositoryProviderTests.test_integration_uses_expected_old_ref_and_publishes_merge_commit"
+      ],
+      "change": "Isolation and integration use explicit provider evidence and exact destination/base contracts; advisory preview does not replace transactional admission."
+    },
+    {
+      "id": "explicit-restore",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "not_run",
+      "legacy_tests_passed": [],
+      "legacy_related_not_run": [
+        "tests.test_v2_foundation.V2FoundationTests.test_read_only_service_status_and_export_do_not_write_snapshot",
+        "tests.test_v2_foundation.V2FoundationTests.test_database_reconstructs_from_snapshot"
+      ],
+      "legacy_limit": "Neither source read-only nor reconstruction test was included in the selected seven-test run.",
+      "native_tests_passed": [
+        "tests/api/test_application.py::ApplicationFacadeTests.test_private_backup_and_explicit_restore_preserve_project_identity",
+        "tests/recovery/test_export_filesystem.py::test_backup_and_restore_refuse_orphan_sidecar_namespaces"
+      ],
+      "change": "Native reads never create or restore state; restore is a separate explicit operation bound to exact identity, revision and integrity."
+    },
+    {
+      "id": "evidence-freshness",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "partial",
+      "legacy_tests_passed": [
+        "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_gate_inputs_are_precisely_invalidated"
+      ],
+      "legacy_related_not_run": [
+        "tests.test_workflow_completion_provenance.WorkflowCompletionProvenanceTests.test_missing_declared_artifact_blocks_completion"
+      ],
+      "legacy_limit": "Gate input invalidation ran; the missing-artifact completion case did not.",
+      "native_tests_passed": [
+        "tests/verification/test_acceptance_independent.py::IndependentOutcomeAcceptanceTests.test_artifact_disappearance_blocks_acceptance_and_stales_only_current_applicability",
+        "tests/verification/test_acceptance_independent.py::IndependentOutcomeAcceptanceTests.test_source_and_artifact_change_after_final_preflight_is_rechecked_before_commit",
+        "tests/verification/test_contracts.py::VerificationContractTests.test_no_change_and_evaluated_not_promoted_are_not_failures"
+      ],
+      "change": "Final acceptance rechecks current source, artifact and authored-contract applicability while preserving historical evidence."
+    },
+    {
+      "id": "child-rights-acceptance",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "partial",
+      "legacy_tests_passed": [
+        "tests.test_child_execution_core.ChildExecutionCoreTests.test_child_token_is_restricted_and_never_completes_parent"
+      ],
+      "legacy_related_not_run": [
+        "tests.test_child_execution_core.ChildExecutionCoreTests.test_scope_must_be_parent_subset_and_active_child_scopes_do_not_overlap",
+        "tests.test_child_execution_v2.ChildExecutionV2Tests.test_ready_result_is_durable_and_blocks_parent_until_rejected"
+      ],
+      "legacy_limit": "The selected legacy assertion covers child-token restriction and parent non-completion only.",
+      "native_tests_passed": [
+        "tests/coordination/test_children_independent.py::ChildExecutionIndependentTests.test_child_rights_are_attenuated_and_cannot_use_parent_attempt_authority",
+        "tests/coordination/test_children_independent.py::ChildExecutionIndependentTests.test_candidate_review_is_separate_from_parent_outcome_and_native_occupancy"
+      ],
+      "change": "Native child execution uses attenuated actor capabilities and durable subordinate attempts; child candidate review is separate from parent outcome acceptance."
+    },
+    {
+      "id": "interrupted-dirty-attempt",
+      "classification": "adapted",
+      "legacy_fixture_coverage": "passed",
+      "legacy_tests_passed": [
+        "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_expired_dirty_claim_is_quarantined"
+      ],
+      "legacy_related_not_run": [],
+      "legacy_limit": "The selected case proves this fixture's quarantine assertion only; it does not establish all recovery transitions.",
+      "native_tests_passed": [
+        "tests/recovery/test_recovery_independent.py::DirtyWorkspaceHandoffIndependentTests.test_stopped_dirty_workspace_is_requeued_without_changing_any_git_bytes",
+        "tests/recovery/test_recovery_independent.py::RecoveryTransitionIndependentTests.test_expired_safe_attempt_is_released_by_exact_intent_and_retry_is_idempotent",
+        "tests/recovery/test_inspection_independent.py::RecoveryInspectionIndependentTests.test_expired_safe_attempt_has_preview_intent_without_reconciliation"
+      ],
+      "change": "Native recovery separates read-only inspection from authenticated intent application and allows a stopped dirty workspace to be preserved during an explicit handoff."
+    }
+  ],
+  "scope_classifications": [
+    {
+      "id": "legacy-import",
+      "classification": "excluded",
+      "reference_area": "Legacy proposed_todos.json/Markdown lowering and source migrations.",
+      "standalone_scope": "TO-P05 is excluded; the authored versioned native plan format is the canonical input."
+    },
+    {
+      "id": "project-control-rewire-and-cutover",
+      "classification": "excluded",
+      "reference_area": "Project Control adapters, ingestion transfer and cutover rehearsal.",
+      "standalone_scope": "TO-I02, TO-I03, TO-Q04, P-09 and P-10 are excluded. No active Project Control source, configuration, service or authority is changed by this matrix."
+    },
+    {
+      "id": "host-specific-legacy-runtime",
+      "classification": "unsupported",
+      "reference_area": "Legacy Codex/MCP transport, background worker pools, source intelligence and CUDA-specific interlocks.",
+      "standalone_scope": "No direct standalone-core parity claim is made. Generic trusted provider ports are a different boundary, not proof of these host-specific behaviors."
+    }
+  ],
+  "unresolved": [
+    "The selected legacy subset does not exercise every fixture in docs/product/reference-baseline.json.",
+    "The old and native tests have intentionally different boundaries; the listed pairings compare named predicates, not source-module equivalence.",
+    "The native 420-test source manifest predates this Q01 documentation and does not hash or validate the new matrix."
+  ]
+}

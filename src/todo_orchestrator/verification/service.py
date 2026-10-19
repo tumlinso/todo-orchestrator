@@ -321,7 +321,7 @@ def _source_value(source: SourceObservation) -> dict[str, object]:
 
 
 def _observation_value(observation: VerificationObservation) -> dict[str, object]:
-    return {
+    value = {
         "operation_id": str(observation.operation_id), "verdict": observation.verdict.value,
         "verifier_id": str(observation.verifier_id), "verifier_version": observation.verifier_version,
         "source_digest": observation.source_digest.hex, "contract_digest": observation.contract_digest.hex,
@@ -336,6 +336,19 @@ def _observation_value(observation: VerificationObservation) -> dict[str, object
             for item in sorted(observation.evidence_facts, key=lambda value: str(value.name))
         ],
     }
+    if observation.command_observation is not None:
+        command = observation.command_observation
+        receipt = observation.command_receipt
+        value["command_observation"] = {
+            "operation_id": str(command.operation_id), "exit_code": command.exit_code,
+            "timed_out": command.timed_out,
+            "started_at": command.started_at.astimezone(timezone.utc).isoformat(timespec="microseconds"),
+            "completed_at": command.completed_at.astimezone(timezone.utc).isoformat(timespec="microseconds"),
+            "stdout_digest": None if command.stdout_digest is None else command.stdout_digest.hex,
+            "stderr_digest": None if command.stderr_digest is None else command.stderr_digest.hex,
+        }
+        value["command_receipt"] = None if receipt is None else _receipt_value(receipt)
+    return value
 
 
 def _contract_digest(contract: VerificationContract) -> Sha256Digest:
@@ -454,6 +467,7 @@ def _verification_request_json(request: VerificationRequest) -> str:
         "contract_digest": request.contract_digest.hex, "inputs": _inputs_value(request.inputs),
         "contract": request.contract.to_mapping(), "workspace_id": str(request.workspace_id),
         "verifier_version": request.verifier_version,
+        "expected_authority_revision": request.expected_authority_revision,
         "required_evidence": [
             {"name": str(item.name), "kind": item.kind.value, "version": item.version}
             for item in request.required_evidence
@@ -484,7 +498,7 @@ def _request_from_json(encoded: str) -> VerificationRequest:
         VerificationContract.from_mapping(value["contract"]), StableId(value["workspace_id"]),
         value["verifier_version"], tuple(
             EvidenceRequirement.from_mapping(item) for item in value["required_evidence"]
-        ),
+        ), value.get("expected_authority_revision"),
     )
 
 
@@ -540,16 +554,21 @@ class _PrepareHandler:
         if current_membership is None:
             raise VerificationDeniedError("work definition is no longer in the selected accepted plan")
         request = _request_from_json(command.request_json)
+        verifier_identity = self.service._identity_for_contract(request.contract)
         if (provider_request_digest(request) != command.request_digest
                 or request.operation_id != command.operation_id
                 or request.idempotency_key != command.idempotency_key
                 or request.attempt != command.attempt or request.requirement != command.requirement
                 or request.verifier_id != command.verifier_id
                 or request.verifier_version != command.verifier_version
+                or request.verifier_id != verifier_identity.provider_id
+                or request.verifier_version != verifier_identity.version
                 or request.context.capability.entity_id != command.capability_id
                 or request.expected_source != command.source_digest
                 or request.contract_digest != command.contract_digest):
             raise VerificationObservationMismatchError("prepared provider request differs from its durable operation fields")
+        if request.expected_authority_revision != context.starting_revision:
+            raise StaleAuthorityRevisionError("provider request was prepared against a different authority revision")
         source_document = json.loads(command.source_receipt_json)
         source = source_document.get("source")
         source_receipt = source_document.get("receipt")
@@ -734,7 +753,11 @@ class _TransitionHandler:
             raise VerificationStateError("verification state changed during transition")
         external_state = {
             "prepared": "prepared", "executing": "executing", "observed": "observed",
-            "not_started": "unknown", "unknown": "unknown", "failed": "failed",
+            # A correlated provider inspection proving NOT_STARTED is a
+            # definitive no-effect result. Keep it distinct from UNKNOWN in
+            # the shared effect ledger so a later safe attempt release is
+            # permitted, while any retry still needs its explicit path.
+            "not_started": "not_applied", "unknown": "unknown", "failed": "failed",
             "finalized": "finalized", "rejected": "finalized", "stale": "finalized",
         }[effective_state]
         receipt_digest = None
@@ -792,6 +815,7 @@ class _TransitionHandler:
         receipt = json.loads(command.receipt_json)
         facts = observation["evidence_facts"]
         request = _request_from_json(row["request_json"])
+        verifier_identity = self.service._identity_for_contract(request.contract)
         if (provider_request_digest(request).hex != row["request_digest"]
                 or request.operation_id != StableId(row["operation_id"])
                 or request.attempt.entity_id != StableId(row["attempt_id"])
@@ -980,6 +1004,23 @@ class VerificationService:
         self.auth.dispatcher.register(_PrepareHandler(self))
         self.auth.dispatcher.register(_TransitionHandler(self))
 
+    def _identity_for_contract(self, contract: VerificationContract | None) -> ProviderIdentity:
+        resolver = getattr(getattr(self, "provider", None), "identity_for", None)
+        if callable(resolver):
+            try:
+                identity = resolver(contract)
+            except LookupError as exc:
+                raise VerificationProviderUnavailableError(str(exc)) from exc
+            if not isinstance(identity, ProviderIdentity):
+                raise VerificationProviderUnavailableError("configured verifier identity is unavailable")
+            return identity
+        return self.provider_identity
+
+    def _supports(self, contract: VerificationContract | None,
+                  required_evidence: tuple[EvidenceRequirement, ...] = ()) -> bool:
+        supports = getattr(self.provider, "supports", None)
+        return True if not callable(supports) else bool(supports(contract, required_evidence))
+
     def _now(self) -> datetime:
         now = self.clock()
         if not isinstance(now, datetime) or now.tzinfo is None or now.utcoffset() is None:
@@ -1125,6 +1166,7 @@ class VerificationService:
             raise VerificationDeniedError("recovery is blocked by a pending outcome candidate")
 
         request = _request_from_json(row["request_json"])
+        verifier_identity = self._identity_for_contract(request.contract)
         if (provider_request_digest(request).hex != row["request_digest"]
                 or row["external_digest"] != row["request_digest"]
                 or row["external_idempotency_key"] != str(request.idempotency_key)
@@ -1134,8 +1176,8 @@ class VerificationService:
                 or request.requirement.definition_revision_id != StableId(row["requirement_definition_revision_id"])
                 or request.verifier_id != StableId(row["verifier_id"])
                 or request.verifier_version != row["verifier_version"]
-                or request.verifier_id != self.provider_identity.provider_id
-                or request.verifier_version != self.provider_identity.version
+                or request.verifier_id != verifier_identity.provider_id
+                or request.verifier_version != verifier_identity.version
                 or request.expected_source.hex != row["source_digest"]
                 or request.contract_digest.hex != row["contract_digest"]
                 or request.context.actor != attempt.actor
@@ -1179,6 +1221,7 @@ class VerificationService:
                 raise ValueError("provider operation is not NOT_STARTED")
             if document.get("original_receipt") is not None:
                 raise ValueError("NOT_STARTED inspection must not contain an execution receipt")
+            verifier_identity = self._identity_for_contract(request.contract)
             expected_context = self._context(
                 context.actor, context.authorized_capability_id,
                 command.operation_id, command.target,
@@ -1189,11 +1232,12 @@ class VerificationService:
             inspection_request = EffectInspectionRequest(
                 expected_context, command.operation_id, request.idempotency_key,
                 Sha256Digest(row["request_digest"]), correlation,
+                verification_request=request,
             )
             now = self._now()
-            if (provider.get("provider_id") != str(self.provider_identity.provider_id)
-                    or provider.get("version") != self.provider_identity.version
-                    or provider.get("contract_version") != self.provider_identity.contract_version
+            if (provider.get("provider_id") != str(verifier_identity.provider_id)
+                    or provider.get("version") != verifier_identity.version
+                    or provider.get("contract_version") != verifier_identity.contract_version
                     or provider_receipt.get("correlation_id") != str(correlation)
                     or provider_receipt.get("request_digest") != provider_request_digest(inspection_request).hex
                     or provider_receipt.get("provenance_ref") != str(command.operation_id)
@@ -1305,10 +1349,13 @@ class VerificationService:
         self._authorize_read(authority, bearer_token, actor, capability_id, auth_requirement)
         if requirement.verification is None:
             raise VerificationDeniedError("requirement has no verification contract")
+        if not self._supports(requirement.verification, requirement.required_evidence):
+            raise VerificationProviderUnavailableError("no configured provider supports this authored verification contract")
+        verifier_identity = self._identity_for_contract(requirement.verification)
         if requirement.verification.kind is VerificationKind.DOMAIN_PROVIDER:
             config = requirement.verification.config
-            if (str(self.provider_identity.provider_id) != config["provider_id"]
-                    or self.provider_identity.version != config["provider_version"]):
+            if (str(verifier_identity.provider_id) != config["provider_id"]
+                    or verifier_identity.version != config["provider_version"]):
                 raise VerificationDeniedError("configured verifier identity does not match the authored domain provider")
         return actor, capability_id, attempt, workspace, plan_revision_id, plan, requirement
 
@@ -1345,15 +1392,16 @@ class VerificationService:
     def _prepare_request(
         self, *, actor: EntityRef, capability_id: StableId, attempt, workspace: WorkspaceQualification,
         requirement: Requirement, operation_id: StableId, idempotency_key: StableId,
-        source: SourceObservation,
+        source: SourceObservation, expected_authority_revision: int,
     ) -> VerificationRequest:
         contract = requirement.verification
         contract_digest = _contract_digest(contract)
+        verifier_identity = self._identity_for_contract(contract)
         return VerificationRequest(
             self._context(actor, capability_id, operation_id, attempt.work_item), attempt.ref,
-            requirement.ref, operation_id, idempotency_key, self.provider_identity.provider_id,
+            requirement.ref, operation_id, idempotency_key, verifier_identity.provider_id,
             source.source_digest, contract_digest, source.inputs, contract, workspace.workspace_id,
-            self.provider_identity.version, requirement.required_evidence,
+            verifier_identity.version, requirement.required_evidence, expected_authority_revision,
         )
 
     def _command_key(self, operation_id: StableId, phase: str) -> StableId:
@@ -1434,6 +1482,7 @@ class VerificationService:
         if not isinstance(idempotency_key, StableId):
             raise TypeError("idempotency_key must be a StableId")
         self._check_revision(authority, expected_revision)
+        prepared_authority_revision = self.auth._revision(authority, None)
         actor, capability_id = self._actor_and_capability(authority, bearer_token)
         existing = self._view_for_idempotency(authority, idempotency_key)
         if existing is not None:
@@ -1471,12 +1520,13 @@ class VerificationService:
         request = self._prepare_request(
             actor=actor, capability_id=capability_id, attempt=attempt, workspace=workspace,
             requirement=requirement, operation_id=operation_id, idempotency_key=idempotency_key, source=source,
+            expected_authority_revision=prepared_authority_revision,
         )
         request_json = _verification_request_json(request)
         now = self._now().isoformat(timespec="microseconds")
         command = _Prepare(
             attempt.ref, attempt.work_item, requirement.ref, plan_revision_id, operation_id,
-            idempotency_key, capability_id, self.provider_identity.provider_id, self.provider_identity.version,
+            idempotency_key, capability_id, request.verifier_id, request.verifier_version,
             _json(requirement.verification.to_mapping()), request.contract_digest, source.source_digest,
             _json(_inputs_value(source.inputs)),
             _json({"source": _source_value(source), "receipt": _receipt_value(source_receipt)}), request_json,
@@ -1574,8 +1624,9 @@ class VerificationService:
             )
             return
         try:
+            verifier_identity = self._identity_for_contract(request.contract)
             receipt = _provider_result_receipt(
-                result, self.provider_identity, request.operation_id, provider_request_digest(request),
+                result, verifier_identity, request.operation_id, provider_request_digest(request),
                 request.operation_id,
             )
             _receipt_time(receipt, now=self._now(), earliest=view.created_at)
@@ -1621,15 +1672,32 @@ class VerificationService:
         self, observation: VerificationObservation, request: VerificationRequest, receipt: ProviderReceipt,
         *, authorized_at: datetime,
     ) -> None:
+        verifier_identity = self._identity_for_contract(request.contract)
         if (observation.operation_id != request.operation_id
-                or observation.verifier_id != self.provider_identity.provider_id
-                or observation.verifier_version != self.provider_identity.version
-                or request.verifier_id != self.provider_identity.provider_id
-                or request.verifier_version != self.provider_identity.version
+                or observation.verifier_id != verifier_identity.provider_id
+                or observation.verifier_version != verifier_identity.version
+                or request.verifier_id != verifier_identity.provider_id
+                or request.verifier_version != verifier_identity.version
                 or observation.source_digest != request.expected_source
                 or observation.contract_digest != request.contract_digest
                 or _inputs_value(observation.inputs) != _inputs_value(request.inputs)):
             raise VerificationObservationMismatchError("verification observation does not bind the exact operation, source, contract, or inputs")
+        if request.contract is not None and request.contract.kind is VerificationKind.COMMAND:
+            command = observation.command_observation
+            if command is None or observation.command_receipt is None:
+                raise VerificationObservationMismatchError("command verification omitted its typed execution result or receipt")
+            validator = getattr(self.provider, "validate_observation", None)
+            if not callable(validator) or not validator(request, observation):
+                raise VerificationObservationMismatchError("command execution receipt does not bind the exact authored request")
+            if (command.operation_id != request.operation_id
+                    or command.timed_out and observation.verdict is not EvidenceResult.INCONCLUSIVE
+                    or not command.timed_out and command.exit_code in request.contract.config["expected_exit_codes"]
+                    and observation.verdict is not EvidenceResult.PASS
+                    or not command.timed_out and command.exit_code not in request.contract.config["expected_exit_codes"]
+                    and observation.verdict is not EvidenceResult.FAIL):
+                raise VerificationObservationMismatchError("command verdict differs from its authored exit policy")
+        elif observation.command_observation is not None:
+            raise VerificationObservationMismatchError("non-command verification carried command execution data")
         if (receipt.correlation_id != request.operation_id or receipt.request_digest != provider_request_digest(request)
                 or receipt.provenance_ref != request.operation_id):
             raise VerificationObservationMismatchError("verification receipt does not bind the exact operation request")
@@ -1854,6 +1922,7 @@ class VerificationService:
                     and observation.source not in {SourceSafety.CLEAN, SourceSafety.DIRTY}):
                 raise VerificationDeniedError("recovery host observation does not establish the required safe state")
         request = self._load_stored_request(authority, view.operation)
+        verifier_identity = self._identity_for_contract(request.contract)
         approved_source_digest = approval.expected_source_digest
         if (approved_source_digest is None
                 and intent_kind == "reconcile_observed_effect"):
@@ -1863,8 +1932,8 @@ class VerificationService:
                 or request.contract_digest != view.contract_digest
                 or request.verifier_id != view.verifier.provider_id
                 or request.verifier_version != view.verifier.version
-                or request.verifier_id != self.provider_identity.provider_id
-                or request.verifier_version != self.provider_identity.version):
+                or request.verifier_id != verifier_identity.provider_id
+                or request.verifier_version != verifier_identity.version):
             raise VerificationObservationMismatchError("recovery request differs from its durable operation identity")
         return approval
 
@@ -1946,10 +2015,12 @@ class VerificationService:
         if view.state not in {VerificationState.EXECUTING, VerificationState.UNKNOWN, VerificationState.NOT_STARTED}:
             return view
         request = self._load_stored_request(authority, operation_ref)
+        verifier_identity = self._identity_for_contract(request.contract)
         context = self._context(actor, capability_id, operation_ref.entity_id, view.target)
         correlation = _id("vinspect", f"{operation_ref.entity_id}:{idempotency_key}")
         inspection_request = EffectInspectionRequest(
             context, operation_ref.entity_id, request.idempotency_key, view.request_digest, correlation,
+            verification_request=request,
         )
         try:
             result = self.provider.inspect(inspection_request)
@@ -1990,7 +2061,7 @@ class VerificationService:
                     "reason": None if result.reason_code is None else str(result.reason_code)}))
             return self.read_operation(authority, operation_ref)
         receipt = _provider_result_receipt(
-            result, self.provider_identity, correlation, provider_request_digest(inspection_request),
+            result, verifier_identity, correlation, provider_request_digest(inspection_request),
             operation_ref.entity_id,
         )
         _receipt_time(receipt, now=self._now(), earliest=view.created_at)
@@ -2021,7 +2092,7 @@ class VerificationService:
             original_receipt = inspection.original_receipt
             if original_receipt is None:
                 raise VerificationObservationMismatchError("completed inspection omitted the original execution receipt")
-            if (original_receipt.provider != self.provider_identity
+            if (original_receipt.provider != verifier_identity
                     or original_receipt.correlation_id != request.operation_id
                     or original_receipt.request_digest != provider_request_digest(request)
                     or original_receipt.provenance_ref != request.operation_id):
@@ -2091,6 +2162,7 @@ class VerificationService:
                 VERIFY_ACTION, view.target, attempt.run, attempt.assignment, attempt.ref,
             ))
         request = self._load_stored_request(authority, operation_ref)
+        verifier_identity = self._identity_for_contract(request.contract)
         recovery_inspection_json = None
         retry_key = None
         if _recovery:
@@ -2099,6 +2171,7 @@ class VerificationService:
                 self._context(actor, capability_id, view.operation.entity_id, view.target),
                 view.operation.entity_id, request.idempotency_key, view.request_digest,
                 _id("vrecovery-inspect", f"{view.operation.entity_id}:{retry_key}"),
+                verification_request=request,
             )
             try:
                 inspection_result = self.provider.inspect(inspection_request)
@@ -2114,7 +2187,7 @@ class VerificationService:
                     or inspection_result.value.original_receipt is not None):
                 raise VerificationStateError("recovery retry requires a fresh exact NOT_STARTED provider inspection")
             inspection_receipt = _provider_result_receipt(
-                inspection_result, self.provider_identity, inspection_request.correlation_id,
+                inspection_result, verifier_identity, inspection_request.correlation_id,
                 provider_request_digest(inspection_request), view.operation.entity_id,
             )
             _receipt_time(inspection_receipt, now=self._now(), earliest=view.created_at)

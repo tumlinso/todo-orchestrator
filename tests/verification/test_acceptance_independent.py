@@ -401,9 +401,12 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
             document["requirements"].append({
                 "id": identifier, "work_item_id": "verify", "kind": "check",
                 "description": "Independent check " + identifier, "check_key": identifier,
-                "verification": {"kind": "command", "version": 1,
-                                 "config": {"argv": [identifier], "timeout_seconds": 30}},
-                "required_evidence": [{"name": identifier + "-report", "kind": "command_result", "version": 1}],
+                "verification": {"kind": "domain_provider", "version": 1, "config": {
+                    "provider_id": str(VERIFIER_IDENTITY.provider_id), "provider_version": VERIFIER_IDENTITY.version,
+                    "contract_id": "v02-test-verification", "contract_version": 1,
+                    "parameters": {"scenario": identifier},
+                }},
+                "required_evidence": [{"name": identifier + "-report", "kind": "provider_receipt", "version": 1}],
             })
 
         encoded = json.dumps(document, ensure_ascii=False, sort_keys=True)
@@ -529,7 +532,7 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
             ).fetchone()
             self.assertEqual((persisted["canonical_json"], persisted["content_digest"]), immutable)
 
-    def test_artifact_reference_without_an_artifact_identifier_cannot_be_accepted(self):
+    def test_artifact_reference_without_identifier_stays_unresolved_and_cannot_be_reported(self):
         f = self.fixture
         self.require_artifact_fact()
         dispatched = self.dispatch("verify", "v03-dispatch-missing-artifact")
@@ -541,14 +544,12 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
                 expected_revision=f.revision(),
             )
         self.assertEqual(missing_artifact.state, "unknown")
-        _, candidate = self.report(
-            dispatched.bearer_token, dispatched.attempt.ref, OutcomeDisposition.COMPLETED,
-            "v03-report-missing-artifact",
-        )
         before = self.snapshot()
         with self.assertRaises(CandidateDeniedError):
-            self.accept(f.owner.bearer_token, dispatched.attempt.ref, candidate,
-                        "v03-accept-missing-artifact")
+            self.report(
+                dispatched.bearer_token, dispatched.attempt.ref, OutcomeDisposition.COMPLETED,
+                "v03-report-missing-artifact",
+            )
         self.assertEqual(self.snapshot(), before)
 
     def test_artifact_disappearance_blocks_acceptance_and_stales_only_current_applicability(self):

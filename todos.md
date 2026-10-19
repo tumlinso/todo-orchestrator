@@ -3,7 +3,7 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # Todo Orchestrator v2 Projection
 
-Project revision: `180`
+Project revision: `221`
 
 ## Workstreams
 - `TO-A01` | kind: task | status: done | parent: TO-AUTHORITY | objective: Design one local transactional store for canonical work, plans, attempts, capabilities, coordination, evidence and effect intents. Maintain schema migration discipline and explicit read-only opens.
@@ -20,16 +20,16 @@ Project revision: `180`
 - `TO-C03` | kind: task | status: done | parent: TO-COORDINATION | objective: Keep bounded messages, questions/answers, decisions, interface changes, rendezvous and blockers, with explicit recipient and authority scopes; do not turn the ledger into a transcript store.
 - `TO-C04` | kind: task | status: done | parent: TO-COORDINATION | objective: Generate a task/assignment context capsule from the accepted plan, current decisions and source references. Version contextual findings separately; do not copy previously authored prose into successive task briefs as a source of truth.
 - `TO-C05` | kind: task | status: done | parent: TO-COORDINATION | objective: Allow an authorized parent attempt to delegate bounded read/write work and receive candidate results. Children cannot become independent plan/run authorities or self-accept final outcomes.
-- `TO-I01` | kind: task | status: in_progress | parent: TO-INTEGRATION | objective: Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.
-- `TO-I04` | kind: task | status: planned | parent: TO-INTEGRATION | objective: Define how standalone Todo requests externally owned resource permits and execution receipts. Keep background worker supervision and CUDA-specific paths outside the canonical engine.
+- `TO-I01` | kind: task | status: done | parent: TO-INTEGRATION | objective: Build clean domain-oriented application APIs, `todo` CLI entry points and a standalone SKILL.md that teaches agents how to plan and execute. Expose bounded receipts, errors and actionable next steps; keep internal state machines private.
+- `TO-I04` | kind: task | status: done | parent: TO-INTEGRATION | objective: Define how standalone Todo requests externally owned resource permits and execution receipts. Keep background worker supervision and CUDA-specific paths outside the canonical engine.
 - `TO-P01` | kind: task | status: done | parent: TO-PLANNING | objective: Implement a documented, expressive plan input that supports authored objectives, structured work, scope, decisions, acceptance, alternatives, provenance and explicit unknowns. Compile deterministically to the canonical domain model, independent of running workers.
 - `TO-P02` | kind: task | status: done | parent: TO-PLANNING | objective: Unify tasks, checkpoints, interfaces, decisions, barriers, rendezvous and result requirements under one typed dependency engine. Verify whole-graph cycles and explain unsatisfied, unavailable, and unresolved states.
 - `TO-P03` | kind: task | status: done | parent: TO-PLANNING | objective: Diff compiled declarations against accepted definitions without simulating arbitrary writes on a copied database. Produce precise additions, updates, retirements, impacts and conflicts, preserving historical intent and omitted fields.
 - `TO-P04` | kind: task | status: done | parent: TO-PLANNING | objective: Commit typed change sets transactionally with optimistic authority preconditions, explicit actor authorization and stable idempotency. Treat mutation of active or completed work as a guarded lifecycle change.
-- `TO-Q01` | kind: task | status: in_progress | parent: TO-QUALIFICATION | objective: Build disposable fixtures from the old Todo implementation for plans, claim contention, delegation, gates, integration, dirty recovery, and semantics. Classify intentional behavior changes.
-- `TO-Q02` | kind: validation | status: planned | parent: TO-QUALIFICATION | objective: Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.
-- `TO-Q03` | kind: validation | status: planned | parent: TO-QUALIFICATION | objective: Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.
-- `TO-Q05` | kind: validation | status: planned | parent: TO-QUALIFICATION | objective: Complete standalone README, API/CLI/skill reference, schema and backup/restore docs, operational guide, release/source pin, and qualification evidence.
+- `TO-Q01` | kind: task | status: done | parent: TO-QUALIFICATION | objective: Build disposable fixtures from the old Todo implementation for plans, claim contention, delegation, gates, integration, dirty recovery, and semantics. Classify intentional behavior changes.
+- `TO-Q02` | kind: validation | status: done | parent: TO-QUALIFICATION | objective: Exercise property-based or model-based tests of graph validity, no-op ingestion, competing claims, capability revocation, lane scheduling and decision consistency.
+- `TO-Q03` | kind: validation | status: done | parent: TO-QUALIFICATION | objective: Inject failures at each external-operation stage, changing file contents during gates, interrupted workspace creation and conflicting integration. Prove quarantine and historical proof invariants.
+- `TO-Q05` | kind: validation | status: done | parent: TO-QUALIFICATION | objective: Complete standalone README, API/CLI/skill reference, schema and backup/restore docs, operational guide, release/source pin, and qualification evidence.
 - `TO-R01` | kind: task | status: done | parent: TO-RECOVERY | objective: Determine authoritative reconciliation from attempt, lease, workspace, evidence and external-effect records. Distinguish expired, unknown-live, dirty, irrecoverable and safely retryable states.
 - `TO-R02` | kind: task | status: done | parent: TO-RECOVERY | objective: Prepare approved recovery actions, revalidate the exact authority inside the mutation transaction, and preserve state, workspaces and tokens that cannot be safely revoked.
 - `TO-R03` | kind: task | status: done | parent: TO-RECOVERY | objective: Make plan supersession and quiescent run retirement explicit, with successor lineage, preserving accepted work and user-authorized handoffs. Avoid special-purpose SQL rewriting as the only route.
@@ -41,10 +41,10 @@ Project revision: `180`
 - `TO-AUTHORITY` | kind: workstream | status: done | parent: TO-ROOT | objective: Own project-local transactional state, authorization, resource-independent admission, and history.
 - `TO-COORDINATION` | kind: workstream | status: done | parent: TO-ROOT | objective: Coordinate concurrent human or automated workers without adopting an agent runtime.
 - `TO-FOUNDATION` | kind: workstream | status: done | parent: TO-ROOT | objective: Define the standalone product, baseline semantics, and trust boundaries before changing source.
-- `TO-INTEGRATION` | kind: workstream | status: planned | parent: TO-ROOT | objective: Expose independently usable Python, CLI, and skill interfaces with trusted provider contracts.
+- `TO-INTEGRATION` | kind: workstream | status: done | parent: TO-ROOT | objective: Expose independently usable Python, CLI, and skill interfaces with trusted provider contracts.
 - `TO-PLANNING` | kind: workstream | status: done | parent: TO-ROOT | objective: Make structured plan compilation, dependency validation, and safe change-set application first-class.
-- `TO-QUALIFICATION` | kind: workstream | status: planned | parent: TO-ROOT | objective: Prove standalone safety, compatibility, packaging, recovery, and release readiness.
+- `TO-QUALIFICATION` | kind: workstream | status: done | parent: TO-ROOT | objective: Prove standalone safety, compatibility, packaging, recovery, and release readiness.
 - `TO-RECOVERY` | kind: workstream | status: done | parent: TO-ROOT | objective: Reconcile interruptions and preserve work, evidence, and authoritative provenance.
 - `TO-VERIFICATION` | kind: workstream | status: done | parent: TO-ROOT | objective: Verify outputs against precise source/input identities and use external providers for effects.
-- `TO-ROOT` | kind: epic | status: planned | parent: - | objective: Deliver an independently usable, transactional workflow and planning engine for Todo Orchestrator.
+- `TO-ROOT` | kind: epic | status: done | parent: - | objective: Deliver an independently usable, transactional workflow and planning engine for Todo Orchestrator.
 <!-- todo-orchestrator:v2-managed:end -->

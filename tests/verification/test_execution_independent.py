@@ -214,10 +214,6 @@ class LedgerVerifier:
 
     @staticmethod
     def _request_value(request: VerificationRequest):
-        fact_name = StableId(str(request.requirement.entity_id).removeprefix("check-") + "-report")
-        fact_digest = Sha256Digest(hashlib.sha256(
-            (str(request.operation_id) + ":report").encode("utf-8")
-        ).hexdigest())
         return {
             "operation_id": str(request.operation_id),
             "verifier_id": str(request.verifier_id),
@@ -225,9 +221,12 @@ class LedgerVerifier:
             "contract_digest": request.contract_digest.hex,
             "inputs": [{"name": str(item.name), "digest": item.digest.hex} for item in request.inputs],
             "evidence_facts": [{
-                "name": str(fact_name), "kind": EvidenceKind.COMMAND_RESULT.value,
-                "version": 1, "digest": fact_digest.hex,
-            }],
+                "name": str(item.name), "kind": item.kind.value,
+                "version": item.version,
+                "digest": hashlib.sha256(
+                    (str(request.operation_id) + ":" + str(item.name)).encode("utf-8")
+                ).hexdigest(),
+            } for item in request.required_evidence],
         }
 
     @staticmethod
@@ -272,8 +271,8 @@ class LedgerVerifier:
         )
 
     def verify(self, request: VerificationRequest):
-        command = request.contract.config["argv"][0]
-        if command in self.unavailable_commands:
+        scenario = request.contract.config.get("parameters", {}).get("scenario", "")
+        if scenario in self.unavailable_commands:
             return ProviderResult(
                 ProviderStatus.UNAVAILABLE, request.operation_id,
                 reason_code=StableId("configured-verifier-unavailable"),
@@ -360,24 +359,33 @@ def package_json():
         "requirements": [
             {
                 "id": "check-verify", "work_item_id": "verify", "kind": "check",
-                "description": "Run the authored verification command", "check_key": "check-verify",
-                "verification": {"kind": "command", "version": 1,
-                                 "config": {"argv": ["verify-result"], "timeout_seconds": 30}},
-                "required_evidence": [{"name": "verify-report", "kind": "command_result", "version": 1}],
+                "description": "Run the authored domain verification", "check_key": "check-verify",
+                "verification": {"kind": "domain_provider", "version": 1, "config": {
+                    "provider_id": str(VERIFIER_IDENTITY.provider_id), "provider_version": VERIFIER_IDENTITY.version,
+                    "contract_id": "v02-test-verification", "contract_version": 1,
+                    "parameters": {"scenario": "verify-result"},
+                }},
+                "required_evidence": [{"name": "verify-report", "kind": "provider_receipt", "version": 1}],
             },
             {
                 "id": "check-missing", "work_item_id": "missing", "kind": "check",
                 "description": "Run a check with an unavailable verifier", "check_key": "check-missing",
-                "verification": {"kind": "command", "version": 1,
-                                 "config": {"argv": ["missing-verifier"], "timeout_seconds": 30}},
-                "required_evidence": [{"name": "missing-report", "kind": "command_result", "version": 1}],
+                "verification": {"kind": "domain_provider", "version": 1, "config": {
+                    "provider_id": str(VERIFIER_IDENTITY.provider_id), "provider_version": VERIFIER_IDENTITY.version,
+                    "contract_id": "v02-test-verification", "contract_version": 1,
+                    "parameters": {"scenario": "missing-verifier"},
+                }},
+                "required_evidence": [{"name": "missing-report", "kind": "provider_receipt", "version": 1}],
             },
             {
                 "id": "check-other", "work_item_id": "other", "kind": "check",
                 "description": "Run an unrelated check", "check_key": "check-other",
-                "verification": {"kind": "command", "version": 1,
-                                 "config": {"argv": ["other-result"], "timeout_seconds": 30}},
-                "required_evidence": [{"name": "other-report", "kind": "command_result", "version": 1}],
+                "verification": {"kind": "domain_provider", "version": 1, "config": {
+                    "provider_id": str(VERIFIER_IDENTITY.provider_id), "provider_version": VERIFIER_IDENTITY.version,
+                    "contract_id": "v02-test-verification", "contract_version": 1,
+                    "parameters": {"scenario": "other-result"},
+                }},
+                "required_evidence": [{"name": "other-report", "kind": "provider_receipt", "version": 1}],
             },
             {
                 "id": "needs-base", "work_item_id": "blocked", "kind": "prerequisite",
@@ -553,7 +561,7 @@ class IndependentVerificationExecutionTests(unittest.TestCase):
             "pass", "4" * 64,
         ))
         self.assertEqual(tuple(tuple(row) for row in facts),
-                         (("verify-report", "command_result", 1),))
+                         (("verify-report", "provider_receipt", 1),))
 
     def test_dispatch_derives_verification_rights_and_heartbeat_renews_exact_child_grant(self):
         with self.open_writer() as authority:

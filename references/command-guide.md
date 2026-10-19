@@ -96,6 +96,41 @@ the factory can perform the operations allowed by the providers it returns.
 Use the same explicit base and integration refs that the provider configuration
 requires; the CLI does not infer them from a checkout.
 
+### Command checks and resource permits
+
+An authored `command` verification check is run through the normal `todo verify`
+workflow only when `ProviderComposition` includes a command execution provider
+and identity plus a source observer and identity. The accepted contract supplies
+a tool ID, argument vector, working directory, timeout, and allowed exit codes.
+The host-controlled provider
+decides how to interpret the tool ID. Todo does not execute a shell string or
+store raw process output; provider receipts and output digests flow through the
+usual verification and acceptance checks. A successful command check does not
+accept the work item.
+
+Resource permits currently have a Python API, not CLI subcommands. Configure
+`resource_permit_provider` and its identity in `ProviderComposition`, then call
+the session methods with the exact attempt and idempotency key:
+
+```python
+from todo_orchestrator.contracts import StableId
+
+permit = session.reserve_resource(
+    attempt_ref, "cpu-slot", 1, idempotency_key=StableId("reserve-cpu-slot")
+)
+current = session.inspect_resource(permit.operation_id)  # read-only
+```
+
+The external provider owns the physical permit and capacity. Todo stores the
+durable request, provider identity, receipt, state, and a digest of the opaque
+permit reference. If the operation becomes unknown, inspect and reconcile it;
+the service retries a reservation only after a fresh observation proves that
+the same request is absent, or retries a release only while the same permit is
+still held. Expiry alone does not release the permit. Unresolved permit
+operations block attempt release and outcome reporting/acceptance. See
+[external execution and resource permits](../docs/architecture/external-providers.md)
+for the complete method set and failure states.
+
 The current CLI exposes these command shapes:
 
 ```text

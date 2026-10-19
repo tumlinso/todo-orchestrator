@@ -29,6 +29,24 @@ prerequisites are satisfied. Preserve provider receipts and evidence provenance;
 reporting a candidate is separate from accepting its result. Finish work through
 the supported lifecycle operation.
 
+For authored command checks, use the versioned command contract and an explicitly
+configured `command_execution_provider`. The command adapter passes a tool ID and
+argument vector to that trusted provider; it does not construct or execute a shell
+string. Raw stdout and stderr are not stored in Todo evidence. An allowed exit
+code can satisfy the check, a disallowed exit code fails it, and timeout or
+unknown execution remains inconclusive. Passing a check is not outcome acceptance.
+
+Resource permits are external-provider operations. Through the Python session
+API, use `reserve_resource`, `inspect_resource`, `reconcile_resource`,
+`retry_resource`, and `release_resource`. The configured resource provider owns
+physical capacity; Todo records a bounded logical permit and receipt. An unknown
+or ambiguous permit remains unresolved and blocks attempt release and outcome
+reporting or acceptance. Inspect before retry; the service retries a reserve
+only after proving the same request absent, or a release only while the same
+permit is still held. Permit expiry alone does not prove release. A delegated
+worker receives a provider action only when its parent capability explicitly
+includes that action. These methods are not CLI subcommands.
+
 For interrupted work, inspect first and apply only a current, explicitly authorized
 recovery intent. For backups, distinguish the sanitized read model from the full
 SQLite backup. Restore only to a new path with an explicit manifest and expected

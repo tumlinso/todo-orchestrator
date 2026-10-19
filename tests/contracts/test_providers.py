@@ -203,7 +203,7 @@ class ProviderContractTests(unittest.TestCase):
             CONTEXT, sid("source-base-call"), expected_source=DIGEST,
             base_ref=sid("refs/heads/main"),
         )
-        self.assertEqual(PROVIDER_CONTRACT_VERSION, 8)
+        self.assertEqual(PROVIDER_CONTRACT_VERSION, 9)
         self.assertIsNone(request.attempt)
         self.assertIsNone(request.workspace_id)
         self.assertIsNone(request.target)
@@ -278,7 +278,7 @@ class ProviderContractTests(unittest.TestCase):
             PROVIDER, sid("permit-receipt"),
         )
         request = ResourcePermitRequest(CONTEXT, ATTEMPT, sid("reserve-op"), sid("reserve-retry"),
-                                        sid("gpu-class"), 1)
+                                        sid("gpu-class"), 1, sid("resource-scope"), 7)
         self.assertEqual(permit.issuer, PROVIDER)
         self.assertEqual(request.resource_class, permit.resource_class)
 

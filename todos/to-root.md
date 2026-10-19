@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-ROOT: Deliver standalone todo-orchestrator v1
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `221`; current project revision is in `todo-status.md`.
 
 ## Objective
 Deliver an independently usable, transactional workflow and planning engine for Todo Orchestrator.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `inactive`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._

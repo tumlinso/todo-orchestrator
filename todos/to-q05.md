@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-Q05: Deliver standalone release and operator documentation
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `217`; current project revision is in `todo-status.md`.
 
 ## Objective
 Complete standalone README, API/CLI/skill reference, schema and backup/restore docs, operational guide, release/source pin, and qualification evidence.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `validated`
 
 ## Next Action
 _None._

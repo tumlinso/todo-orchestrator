@@ -25,9 +25,11 @@ from todo_orchestrator.authority.attempts import (
     AttemptHost,
     AttemptNotFoundError,
     AttemptObservationMismatchError,
+    AttemptTransitionError,
     _attempt_from_row,
     _check_observation,
     _observation_audit,
+    _require_recovery_operations_resolved,
     _stored_attempt,
     _stored_workspace,
 )
@@ -729,6 +731,10 @@ class _ReportHandler:
                 or attempt.lease is None):
             raise CandidateDeniedError("only the live attempt owner can report its current candidate")
         _require_children_resolved(context._connection, attempt.attempt_id)
+        try:
+            _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
+        except AttemptTransitionError as exc:
+            raise CandidateDeniedError("an external operation is unresolved for this attempt") from exc
         if attempt.lease.expires_at <= now:
             raise CandidateDeniedError("attempt lease expired before candidate report")
         _, plan = _fresh_plan(context._connection, context.project, command.target)
@@ -814,6 +820,10 @@ class _FinalizeHandler:
             raise CandidateStateError("candidate is not pending on a reported attempt")
         attempt, attempt_row = _stored_attempt(context._connection, context.project, command.attempt)
         _require_children_resolved(context._connection, attempt.attempt_id)
+        try:
+            _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
+        except AttemptTransitionError as exc:
+            raise CandidateDeniedError("an external operation is unresolved for this attempt") from exc
         now = self.service._now()
         if (attempt.work_item != command.target or attempt.run != command.run or attempt.assignment != command.assignment
                 or row["work_item_id"] != str(command.target.entity_id)

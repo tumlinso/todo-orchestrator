@@ -14,7 +14,7 @@ from .domain import EntityKind, EntityRef, EvidenceInput, EvidenceResult, Sha256
 from .verification import EvidenceKind, EvidenceRequirement, VerificationContract
 
 
-PROVIDER_CONTRACT_VERSION = 8
+PROVIDER_CONTRACT_VERSION = 9
 T = TypeVar("T")
 
 
@@ -429,6 +429,9 @@ class EffectInspectionRequest:
     original_request_digest: Sha256Digest
     correlation_id: StableId
     git_effect_request: GitEffectRequest | None = None
+    verification_request: VerificationRequest | None = None
+    resource_permit_request: ResourcePermitRequest | None = None
+    resource_permit_release_request: ResourcePermitReleaseRequest | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -447,6 +450,29 @@ class EffectInspectionRequest:
                     or self.git_effect_request.idempotency_key != self.idempotency_key
                     or provider_request_digest(self.git_effect_request) != self.original_request_digest):
                 raise ValueError("git_effect_request must match the inspected operation identity and digest")
+        if self.verification_request is not None:
+            if not isinstance(self.verification_request, VerificationRequest):
+                raise TypeError("verification_request must be a VerificationRequest")
+            if (self.verification_request.operation_id != self.operation_id
+                    or self.verification_request.idempotency_key != self.idempotency_key
+                    or provider_request_digest(self.verification_request) != self.original_request_digest):
+                raise ValueError("verification_request must match the inspected operation identity and digest")
+        resource_requests = tuple(
+            value for value in (self.resource_permit_request, self.resource_permit_release_request)
+            if value is not None
+        )
+        if len(resource_requests) > 1:
+            raise ValueError("only one original resource permit request may be supplied")
+        if self.resource_permit_request is not None:
+            if (self.resource_permit_request.operation_id != self.operation_id
+                    or self.resource_permit_request.idempotency_key != self.idempotency_key
+                    or provider_request_digest(self.resource_permit_request) != self.original_request_digest):
+                raise ValueError("resource_permit_request must match the inspected operation and digest")
+        if self.resource_permit_release_request is not None:
+            if (self.resource_permit_release_request.operation_id != self.operation_id
+                    or self.resource_permit_release_request.idempotency_key != self.idempotency_key
+                    or provider_request_digest(self.resource_permit_release_request) != self.original_request_digest):
+                raise ValueError("resource_permit_release_request must match the inspected operation and digest")
 
 
 class GitOperationKind(str, Enum):
@@ -580,6 +606,8 @@ class CommandExecutionRequest:
     tool_id: StableId
     argv: tuple[str, ...]
     timeout_ms: int
+    workspace_id: StableId | None = None
+    cwd: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -602,6 +630,13 @@ class CommandExecutionRequest:
             raise ValueError("argv items must not contain NUL characters")
         if type(self.timeout_ms) is not int or self.timeout_ms < 1:
             raise ValueError("timeout_ms must be positive")
+        if self.workspace_id is not None:
+            _id(self.workspace_id, "workspace_id")
+        if self.cwd is not None:
+            if (not isinstance(self.cwd, str) or not self.cwd or self.cwd != self.cwd.strip()
+                    or self.cwd.startswith(("/", "\\")) or "\\" in self.cwd
+                    or (self.cwd != "." and any(part in {"", ".", ".."} for part in self.cwd.split("/")))):
+                raise ValueError("cwd must be a normalized repository-relative POSIX path")
 
 
 @dataclass(frozen=True)
@@ -648,6 +683,7 @@ class CommandExecutionInspection:
     operation_id: StableId
     state: CommandInspectionState
     observation: CommandObservation | None = None
+    original_receipt: ProviderReceipt | None = None
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -658,8 +694,12 @@ class CommandExecutionInspection:
                 raise ValueError("completed inspection requires a CommandObservation")
             if self.observation.operation_id != self.operation_id:
                 raise ValueError("observation must match the inspected operation")
+            if not isinstance(self.original_receipt, ProviderReceipt):
+                raise ValueError("completed inspection requires the original execution receipt")
         elif self.observation is not None:
             raise ValueError("running or not-started inspection cannot contain a completion observation")
+        elif self.original_receipt is not None:
+            raise ValueError("running or not-started inspection cannot contain an execution receipt")
 
 
 @dataclass(frozen=True)
@@ -670,6 +710,10 @@ class ResourcePermitRequest:
     idempotency_key: StableId
     resource_class: StableId
     units: int
+    scope_id: StableId | None = None
+    expected_authority_revision: int | None = None
+    lease_id: StableId | None = None
+    lease_expires_at: datetime | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -683,8 +727,20 @@ class ResourcePermitRequest:
             (self.resource_class, "resource_class"),
         ):
             _id(value, name)
+        if self.scope_id is not None:
+            _id(self.scope_id, "scope_id")
         if type(self.units) is not int or self.units < 1:
             raise ValueError("units must be a positive integer")
+        if self.expected_authority_revision is not None and (
+            type(self.expected_authority_revision) is not int or self.expected_authority_revision < 1
+        ):
+            raise ValueError("expected_authority_revision must be positive when supplied")
+        if self.lease_id is not None:
+            _id(self.lease_id, "lease_id")
+        if self.lease_expires_at is not None:
+            _aware(self.lease_expires_at, "lease_expires_at")
+        if (self.lease_id is None) != (self.lease_expires_at is None):
+            raise ValueError("lease_id and lease_expires_at must be supplied together")
 
 
 @dataclass(frozen=True)
@@ -719,6 +775,7 @@ class ResourcePermitReleaseRequest:
     operation_id: StableId
     idempotency_key: StableId
     permit: ResourcePermitRef
+    expected_authority_revision: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -731,6 +788,10 @@ class ResourcePermitReleaseRequest:
         _id(self.idempotency_key, "idempotency_key")
         if not isinstance(self.permit, ResourcePermitRef):
             raise TypeError("permit must be a ResourcePermitRef")
+        if self.expected_authority_revision is not None and (
+            type(self.expected_authority_revision) is not int or self.expected_authority_revision < 1
+        ):
+            raise ValueError("expected_authority_revision must be positive when supplied")
 
 
 @dataclass(frozen=True)
@@ -792,6 +853,7 @@ class VerificationRequest:
     workspace_id: StableId | None = None
     verifier_version: str | None = None
     required_evidence: tuple[EvidenceRequirement, ...] = ()
+    expected_authority_revision: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.context, ProviderCallContext):
@@ -817,6 +879,9 @@ class VerificationRequest:
             _id(self.workspace_id, "workspace_id")
         if self.verifier_version is not None:
             _text(self.verifier_version, "verifier_version")
+        if (self.expected_authority_revision is not None
+                and (type(self.expected_authority_revision) is not int or self.expected_authority_revision < 1)):
+            raise ValueError("expected_authority_revision must be positive when supplied")
         _tuple(self.required_evidence, "required_evidence", EvidenceRequirement, unique=True)
         if len({item.name for item in self.required_evidence}) != len(self.required_evidence):
             raise ValueError("required_evidence must not repeat names")
@@ -884,6 +949,8 @@ class VerificationObservation:
     inputs: tuple[EvidenceInput, ...]
     artifact_ids: tuple[StableId, ...]
     evidence_facts: tuple[VerificationEvidenceFact, ...] = ()
+    command_observation: CommandObservation | None = None
+    command_receipt: ProviderReceipt | None = None
 
     def __post_init__(self) -> None:
         _id(self.operation_id, "operation_id")
@@ -903,6 +970,15 @@ class VerificationObservation:
         artifact_refs = [item.artifact_id for item in self.evidence_facts if item.artifact_id is not None]
         if len(set(artifact_refs)) != len(artifact_refs) or any(item not in self.artifact_ids for item in artifact_refs):
             raise ValueError("evidence artifact references must be unique members of artifact_ids")
+        if (self.command_observation is None) != (self.command_receipt is None):
+            raise ValueError("command observation and execution receipt must be supplied together")
+        if self.command_observation is not None:
+            if not isinstance(self.command_observation, CommandObservation):
+                raise TypeError("command_observation must be a CommandObservation")
+            if self.command_observation.operation_id != self.operation_id:
+                raise ValueError("command observation must match the verification operation")
+            if not isinstance(self.command_receipt, ProviderReceipt):
+                raise TypeError("command_receipt must be a ProviderReceipt")
 
 
 class VerificationProvider(Protocol):

@@ -1,0 +1,73 @@
+{
+  "format": "todo-orchestrator.legacy-qualification-corpus",
+  "version": 1,
+  "reference": {
+    "baseline": "docs/product/reference-baseline.json",
+    "source_name": "skills-dev standalone package",
+    "revision": "bfa9238985dfeb2368bad076f1cc51bfdadbae92",
+    "default_root": "/home/tumlinson/skills_dev/todo-orchestrator",
+    "import_name": "todo_orchestrator"
+  },
+  "cases": [
+    {
+      "id": "q01.legacy.plan.omitted-preservation",
+      "category": "plans",
+      "reference_test": "tests.test_workflow_plan_snapshot.WorkflowPlanSnapshotTests.test_v3_plan_reapply_reconciles_idle_lane_order_and_preserves_omitted_tasks",
+      "reference_file": "tests/test_workflow_plan_snapshot.py",
+      "observes": "Reapplying with lane task order C,A yields queued order C,A,B; omitted task B remains queued at position 2."
+    },
+    {
+      "id": "q01.legacy.claim.single-winner",
+      "category": "claim contention",
+      "reference_test": "tests.test_v2_concurrency.V2ConcurrencyTests.test_multiple_processes_one_task_exactly_one_wins",
+      "reference_file": "tests/test_v2_concurrency.py",
+      "observes": "Eight independent CLI processes contend for one task; one claims it and seven report no work."
+    },
+    {
+      "id": "q01.legacy.delegation.attenuated-child",
+      "category": "delegation",
+      "reference_test": "tests.test_child_execution_core.ChildExecutionCoreTests.test_child_token_is_restricted_and_never_completes_parent",
+      "reference_file": "tests/test_child_execution_core.py",
+      "observes": "A child token cannot authenticate as a parent claim, and a child result does not complete the parent task."
+    },
+    {
+      "id": "q01.legacy.gate.input-invalidation",
+      "category": "gates",
+      "reference_test": "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_gate_inputs_are_precisely_invalidated",
+      "reference_file": "tests/test_v2_recovery_migration_context.py",
+      "observes": "Changing a declared gate input is detected and reconciliation invalidates that gate."
+    },
+    {
+      "id": "q01.legacy.integration.complete-isolation-proof",
+      "category": "integration",
+      "reference_test": "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_complete_managed_contract_allows_overlapping_first_class_claims",
+      "reference_file": "tests/test_workflow_isolated_claims.py",
+      "observes": "Overlapping isolated work is admitted when the disposable Git fixture has both workspaces and an exclusive integration destination."
+    },
+    {
+      "id": "q01.legacy.integration.missing-destination-blocks",
+      "category": "integration",
+      "reference_test": "tests.test_workflow_isolated_claims.WorkflowIsolatedClaimTests.test_missing_integrator_destination_keeps_overlap_blocked",
+      "reference_file": "tests/test_workflow_isolated_claims.py",
+      "observes": "The second overlapping claim remains blocked when the exclusive integration destination is missing."
+    },
+    {
+      "id": "q01.legacy.recovery.dirty-quarantine",
+      "category": "dirty recovery",
+      "reference_test": "tests.test_v2_recovery_migration_context.V2RecoveryMigrationContextTests.test_expired_dirty_claim_is_quarantined",
+      "reference_file": "tests/test_v2_recovery_migration_context.py",
+      "observes": "An expired attempt with changed owned paths is not silently reclaimed or released; inspection reports dirty state and explicit adoption is exercised."
+    },
+    {
+      "id": "q01.legacy.semantics.monotonic-events",
+      "category": "semantics",
+      "reference_test": "tests.test_v2_foundation.V2FoundationTests.test_event_revisions_are_unique_and_monotonic",
+      "reference_file": "tests/test_v2_foundation.py",
+      "observes": "Applying a plan, claiming and pulsing produce unique contiguous event revisions."
+    }
+  ],
+  "excluded": [
+    "Legacy markdown importer",
+    "Project Control adapters and cutover"
+  ]
+}

@@ -6,6 +6,7 @@ import unittest
 from datetime import timedelta
 
 from todo_orchestrator.contracts import OutcomeDisposition, StableId
+from todo_orchestrator.authority.attempts import AttemptTransitionError
 from todo_orchestrator.planning import ExplicitRetirement
 from todo_orchestrator.model import (
     AttemptScopeSnapshot, LaneSpec, QueuePolicy, RunCharter, RunSchedule, ScheduledWork,
@@ -376,7 +377,7 @@ class LifecycleIndependentTests(unittest.TestCase):
         self.assertEqual(retired.schedule.lanes, run.lanes)
         self.assertEqual(retired.schedule_digest, reviewed.schedule_digest)
 
-    def test_unresolved_verification_effect_blocks_retirement_after_attempt_release(self):
+    def test_unresolved_verification_effect_blocks_attempt_release_and_run_retirement(self):
         f = self.f
         with f.open_writer() as authority:
             owner = f.auth.login_local_owner(
@@ -421,17 +422,18 @@ class LifecycleIndependentTests(unittest.TestCase):
             )
         self.assertEqual(interrupted.state, VerificationState.UNKNOWN)
         lease_id = dispatched.attempt.lease.lease_id
+        before = self._authority_snapshot(run_id)
         with f.open_writer() as authority:
-            f.attempts.release(
-                authority, dispatched.bearer_token, dispatched.attempt.ref, lease_id,
-                idempotency_key=StableId("r03-release-after-interrupted-check"),
-                expected_revision=f.revision(),
-            )
+            with self.assertRaises(AttemptTransitionError):
+                f.attempts.release(
+                    authority, dispatched.bearer_token, dispatched.attempt.ref, lease_id,
+                    idempotency_key=StableId("r03-release-after-interrupted-check"),
+                    expected_revision=f.revision(),
+                )
 
         lifecycle = RunLifecycleService(f.auth)
         with f.open_reader() as authority:
             reviewed = lifecycle.read_lifecycle(authority, run.run.ref)
-        before = self._authority_snapshot(run_id)
         with f.open_writer() as authority:
             with self.assertRaises(RunNotQuiescentError):
                 lifecycle.retire_run(

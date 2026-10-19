@@ -63,7 +63,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
     def open_writer(self, *, project_value: Project | None = None, busy_timeout: float = 5) -> SQLiteAuthority:
         return SQLiteAuthority.open_writer(self.path, project_value or self.project, busy_timeout=busy_timeout)
 
-    def test_initialization_records_identity_and_schema_v18_in_normalized_tables(self):
+    def test_initialization_records_identity_and_schema_v20_in_normalized_tables(self):
         with self.open_reader() as authority:
             connection = authority.connection
             self.assertEqual(connection.execute("PRAGMA application_id").fetchone()[0], APPLICATION_ID)
@@ -399,7 +399,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v19"
+                InvalidAuthorityError, "frozen schema-v20"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)
@@ -415,7 +415,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v19"
+                InvalidAuthorityError, "frozen schema-v20"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -431,7 +431,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(self.path, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v19"
+                InvalidAuthorityError, "frozen schema-v20"
             ):
                 operation()
             self.assertEqual(self.path.read_bytes(), original)
@@ -458,7 +458,7 @@ class SQLiteAuthorityTests(unittest.TestCase):
             lambda: SQLiteAuthority.migrate(malformed, self.project),
         ):
             with self.subTest(operation=operation), self.assertRaisesRegex(
-                InvalidAuthorityError, "frozen schema-v19"
+                InvalidAuthorityError, "frozen schema-v20"
             ):
                 operation()
             self.assertEqual(malformed.read_bytes(), original)

@@ -682,7 +682,9 @@ class RecoveryInspectionService:
         context = self._context(actor, capability_id, query_id, target)
         query = EffectInspectionRequest(
             context, StableId(ext["operation_id"]), StableId(ext["idempotency_key"]),
-            original_digest, query_id, request if kind == "git" else None,
+            original_digest, query_id,
+            request if kind == "git" else None,
+            request if kind == "verification" else None,
         )
         try:
             result = provider.inspect(query)

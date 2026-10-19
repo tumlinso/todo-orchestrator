@@ -6,6 +6,7 @@ import json
 import unittest
 
 from todo_orchestrator.contracts import (
+    CommandObservation,
     EntityKind,
     EntityRef,
     EvidenceInput,
@@ -35,10 +36,21 @@ PROJECT_ID = StableId("execution-boundary-project")
 IDENTITY = ProviderIdentity(StableId("execution-boundary-verifier"), "v1")
 
 
+class _CommandObservationValidator:
+    def validate_observation(self, request, observation):
+        receipt = observation.command_receipt
+        return bool(
+            receipt is not None and receipt.provider == IDENTITY
+            and receipt.correlation_id == request.operation_id
+            and receipt.provenance_ref == request.operation_id
+        )
+
+
 class VerificationBoundaryTests(unittest.TestCase):
     def setUp(self):
         self.service = object.__new__(VerificationService)
         self.service.provider_identity = IDENTITY
+        self.service.provider = _CommandObservationValidator()
         self.service.clock = lambda: NOW
         self.contract = VerificationContract.from_mapping({
             "kind": "command", "version": 1, "config": {"argv": ["test-check"]},
@@ -72,6 +84,9 @@ class VerificationBoundaryTests(unittest.TestCase):
             self.operation, EvidenceResult.PASS, IDENTITY.provider_id, version,
             self.request.expected_source, self.request.contract_digest, self.request.inputs,
             (), (self.fact if fact is None else fact,),
+            CommandObservation(self.operation, 0, False, NOW - timedelta(seconds=1), NOW),
+            ProviderReceipt(StableId("execution-boundary-command-receipt"), IDENTITY,
+                            self.operation, Sha256Digest("5" * 64), self.operation, NOW),
         )
 
     def receipt(self, *, observed_at=NOW):

@@ -26,7 +26,7 @@ from todo_orchestrator.contracts.verification import EvidenceRequirement, Verifi
 
 
 APPLICATION_ID = 0x544F444F  # ASCII "TODO"
-SCHEMA_VERSION = 19
+SCHEMA_VERSION = 20
 DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
 MAX_BUSY_TIMEOUT_SECONDS = 60.0
 
@@ -1031,6 +1031,74 @@ _SCHEMA_STATEMENTS = (
             OR (OLD.state = 'observed' AND NEW.state IN ('finalized', 'failed', 'unknown'))
         )
         BEGIN SELECT RAISE(ABORT, 'external operation state transition is invalid'); END""",
+    """CREATE TABLE resource_permit_operations (
+        operation_id TEXT PRIMARY KEY,
+        operation_kind TEXT NOT NULL CHECK (operation_kind IN ('reserve', 'release')),
+        attempt_id TEXT NOT NULL,
+        work_item_id TEXT NOT NULL,
+        definition_revision_id TEXT NOT NULL,
+        run_id TEXT,
+        assignment_id TEXT,
+        actor_id TEXT NOT NULL,
+        actor_incarnation_id TEXT NOT NULL,
+        resource_class_id TEXT NOT NULL,
+        units INTEGER NOT NULL CHECK (units > 0),
+        scope_id TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL UNIQUE,
+        request_json TEXT NOT NULL,
+        request_digest TEXT NOT NULL CHECK (
+            length(request_digest) = 64 AND request_digest NOT GLOB '*[^0-9a-f]*'
+        ),
+        expected_authority_revision INTEGER NOT NULL CHECK (expected_authority_revision > 0),
+        original_operation_id TEXT,
+        state TEXT NOT NULL CHECK (state IN (
+            'prepared', 'executing', 'held', 'released', 'unknown', 'not_applied', 'failed'
+        )),
+        permit_json TEXT,
+        provider_receipt_json TEXT,
+        inspection_json TEXT,
+        reason_code TEXT,
+        provider_identity_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK ((operation_kind = 'reserve' AND original_operation_id IS NULL)
+            OR (operation_kind = 'release' AND original_operation_id IS NOT NULL)),
+        CHECK (state NOT IN ('held', 'released') OR (permit_json IS NOT NULL AND provider_receipt_json IS NOT NULL)),
+        FOREIGN KEY (operation_id) REFERENCES external_operations(operation_id),
+        FOREIGN KEY (attempt_id) REFERENCES attempts(attempt_id),
+        FOREIGN KEY (work_item_id, definition_revision_id)
+            REFERENCES work_items(work_item_id, definition_revision_id),
+        FOREIGN KEY (run_id) REFERENCES runs(run_id),
+        FOREIGN KEY (assignment_id) REFERENCES assignments(assignment_id),
+        FOREIGN KEY (actor_id, actor_incarnation_id) REFERENCES actors(actor_id, incarnation_id),
+        FOREIGN KEY (original_operation_id) REFERENCES resource_permit_operations(operation_id)
+    )""",
+    """CREATE TRIGGER resource_permit_operation_identity_immutable
+        BEFORE UPDATE ON resource_permit_operations
+        WHEN OLD.operation_id IS NOT NEW.operation_id OR OLD.operation_kind IS NOT NEW.operation_kind
+          OR OLD.attempt_id IS NOT NEW.attempt_id OR OLD.work_item_id IS NOT NEW.work_item_id
+          OR OLD.definition_revision_id IS NOT NEW.definition_revision_id
+          OR OLD.run_id IS NOT NEW.run_id OR OLD.assignment_id IS NOT NEW.assignment_id
+          OR OLD.actor_id IS NOT NEW.actor_id OR OLD.actor_incarnation_id IS NOT NEW.actor_incarnation_id
+          OR OLD.resource_class_id IS NOT NEW.resource_class_id OR OLD.units IS NOT NEW.units
+          OR OLD.scope_id IS NOT NEW.scope_id OR OLD.idempotency_key IS NOT NEW.idempotency_key
+          OR OLD.request_json IS NOT NEW.request_json OR OLD.request_digest IS NOT NEW.request_digest
+          OR OLD.expected_authority_revision IS NOT NEW.expected_authority_revision
+          OR OLD.original_operation_id IS NOT NEW.original_operation_id OR OLD.created_at IS NOT NEW.created_at
+        BEGIN SELECT RAISE(ABORT, 'resource permit intent identity is immutable'); END""",
+    """CREATE TRIGGER resource_permit_operation_state_transition_guard
+        BEFORE UPDATE ON resource_permit_operations
+        WHEN NOT (
+            (OLD.state = 'prepared' AND NEW.state IN ('executing', 'unknown', 'not_applied'))
+            OR (OLD.state = 'executing' AND NEW.state IN ('held', 'released', 'unknown', 'failed', 'not_applied'))
+            OR (OLD.state = 'unknown' AND NEW.state IN ('held', 'released', 'unknown', 'not_applied'))
+            OR (OLD.state = 'not_applied' AND NEW.state IN ('executing', 'unknown'))
+            OR (OLD.state = 'held' AND NEW.state IN ('held', 'released', 'unknown'))
+        )
+        BEGIN SELECT RAISE(ABORT, 'resource permit state transition is invalid'); END""",
+    """CREATE TRIGGER resource_permit_operations_no_delete
+        BEFORE DELETE ON resource_permit_operations
+        BEGIN SELECT RAISE(ABORT, 'resource permit operations are append-only'); END""",
     """CREATE TABLE git_effect_operations (
         operation_id TEXT PRIMARY KEY,
         request_json TEXT NOT NULL,
@@ -1318,7 +1386,7 @@ def _compile_schema_signature() -> tuple[tuple[object, ...], ...]:
         connection.close()
 
 
-# Schema v19 is frozen. Compare SQLite definitions with a signature compiled
+# Schema v20 is frozen. Compare SQLite definitions with a signature compiled
 # once from the trusted source DDL rather than validating table names alone.
 _SCHEMA_SIGNATURE = _compile_schema_signature()
 
@@ -1333,7 +1401,7 @@ _REQUIRED_TABLES = frozenset({
     "child_stop_observations",
     "artifacts", "evidence", "evidence_inputs", "evidence_artifacts", "evidence_facts",
     "outcomes", "outcome_evidence", "outcome_candidates", "outcome_provenance",
-    "external_operations", "git_effect_operations", "verification_attempts", "authority_events",
+    "external_operations", "git_effect_operations", "verification_attempts", "resource_permit_operations", "authority_events",
     "declaration_facts", "coordination_messages", "coordination_message_recipients",
     "coordination_message_cursors",
     "context_finding_versions", "context_finding_invalidations",
@@ -1999,7 +2067,7 @@ def _validate(connection: sqlite3.Connection, project: Project) -> None:
 
     try:
         if _schema_signature(connection) != _SCHEMA_SIGNATURE:
-            raise InvalidAuthorityError("authority schema does not match the frozen schema-v19 definition")
+            raise InvalidAuthorityError("authority schema does not match the frozen schema-v20 definition")
     except sqlite3.Error as exc:
         raise InvalidAuthorityError(f"authority schema is unreadable: {exc}") from exc
 
@@ -2063,7 +2131,7 @@ class SQLiteAuthority:
         *,
         busy_timeout: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
     ) -> None:
-        """Create a new schema-v19 authority without replacing an existing path.
+        """Create a new schema-v20 authority without replacing an existing path.
 
         The database is built in a private same-directory temporary file and
         published with an atomic hard link, so readers see either no authority

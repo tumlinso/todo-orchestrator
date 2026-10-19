@@ -17,6 +17,10 @@ from todo_orchestrator.authority.auth import (
     AuthorizationRequirement,
     CapabilityDeniedError,
     RECOVERY_INSPECT_ACTION,
+    RESOURCE_READ_ACTION,
+    RESOURCE_RECONCILE_ACTION,
+    RESOURCE_RELEASE_ACTION,
+    RESOURCE_RESERVE_ACTION,
     _password_bytes,
     _unique_actions,
     _validate_grant,
@@ -84,6 +88,19 @@ from todo_orchestrator.providers.git import (
     INTEGRATE_ACTION,
     GitEffectOperationView,
     GitEffectService,
+)
+from todo_orchestrator.providers.execution.command import (
+    COMMAND_VERIFIER_IDENTITY,
+    CommandExecutionVerifier,
+    RoutedVerificationProvider,
+)
+from todo_orchestrator.providers.resources.service import (
+    RESOURCE_READ_ACTION,
+    RESOURCE_RECONCILE_ACTION,
+    RESOURCE_RELEASE_ACTION,
+    RESOURCE_RESERVE_ACTION,
+    ResourcePermitOperationView,
+    ResourcePermitService,
 )
 from todo_orchestrator.verification import (
     ACCEPT_OUTCOME_ACTION,
@@ -156,12 +173,29 @@ class _ServiceBundle:
         self.declarations = DeclarationService(self.auth)
         self.context = ContextService(self.auth, clock=providers.clock)
         self.verification = None
-        if providers.source_observer is not None and providers.source_identity is not None and providers.verification_provider is not None and providers.verification_identity is not None:
+        has_verification = (
+            providers.verification_provider is not None
+            and providers.verification_identity is not None
+        ) or providers.command_execution_provider is not None
+        if providers.source_observer is not None and providers.source_identity is not None and has_verification:
+            command_adapter = None
+            if providers.command_execution_provider is not None:
+                command_adapter = CommandExecutionVerifier(
+                    providers.command_execution_provider,
+                    execution_identity=providers.command_execution_identity,
+                    adapter_identity=COMMAND_VERIFIER_IDENTITY,
+                )
+            routed = RoutedVerificationProvider(
+                fallback=providers.verification_provider,
+                fallback_identity=providers.verification_identity,
+                command=command_adapter,
+            )
+            service_identity = providers.verification_identity or COMMAND_VERIFIER_IDENTITY
             self.verification = VerificationService(
                 self.auth, source_observer=providers.source_observer,
                 source_identity=providers.source_identity,
-                provider=providers.verification_provider,
-                provider_identity=providers.verification_identity,
+                provider=routed,
+                provider_identity=service_identity,
                 clock=providers.clock,
             )
         self.outcomes = None
@@ -182,6 +216,13 @@ class _ServiceBundle:
                 source_identity=providers.source_identity,
                 clock=providers.clock,
             )
+        self.resource_permits = None
+        if providers.resource_permit_provider is not None:
+            self.resource_permits = ResourcePermitService(
+                self.auth, providers.resource_permit_provider,
+                provider_identity=providers.resource_permit_identity,
+                clock=providers.clock,
+            )
         self.lifecycle = RunLifecycleService(self.auth)
         self.export = AuthorityExportService(self.auth)
         self.inspection = None
@@ -190,8 +231,8 @@ class _ServiceBundle:
             inspectors = {}
             if providers.git_provider is not None:
                 inspectors["git"] = providers.git_provider
-            if providers.verification_provider is not None:
-                inspectors["verification"] = providers.verification_provider
+            if self.verification is not None:
+                inspectors["verification"] = self.verification.provider
             self.inspection = RecoveryInspectionService(
                 self.auth, host=providers.attempt_host, operation_inspectors=inspectors,
                 source_observer=providers.source_observer, clock=providers.clock,
@@ -208,6 +249,7 @@ DEFAULT_OWNER_ACTIONS = tuple(sorted({
     FINISH_ACTION,
     RUN_SCHEDULE_ACTION, RUN_DISPATCH_ACTION, ATTEMPT_FINISH_ACTION,
     VERIFY_ACTION, VERIFICATION_RECONCILE_ACTION, RECONCILE_ACTION,
+    RESOURCE_RESERVE_ACTION, RESOURCE_RELEASE_ACTION, RESOURCE_READ_ACTION, RESOURCE_RECONCILE_ACTION,
     OUTCOME_REPORT_ACTION, REPORT_CANDIDATE_ACTION, ACCEPT_OUTCOME_ACTION,
     REJECT_CANDIDATE_ACTION, CREATE_WORKSPACE_ACTION, INTEGRATE_ACTION,
     RECOVERY_INSPECT_ACTION, RECOVERY_APPLY_ACTION_ID,
@@ -729,6 +771,49 @@ class TodoSession:
             return verifier.execute(authority, self._bearer_token, attempt, requirement,
                                     idempotency_key=idempotency_key,
                                     expected_revision=expected_revision)
+
+    def reserve_resource(self, attempt_ref: EntityRef | StableId, resource_class: StableId | str, units: int, *,
+                         idempotency_key: StableId, expected_revision: int | None = None) -> ResourcePermitOperationView:
+        service = self._required(self._services.resource_permits, "resource_permit_provider")
+        attempt = attempt_ref if isinstance(attempt_ref, EntityRef) else self.attempt_ref(attempt_ref)
+        resource = resource_class if isinstance(resource_class, StableId) else StableId(resource_class)
+        with self._writer() as authority:
+            return service.reserve(authority, self._bearer_token, attempt, resource, units,
+                                   idempotency_key=idempotency_key, expected_revision=expected_revision)
+
+    def inspect_resource(self, operation_ref: EntityRef | StableId) -> ResourcePermitOperationView:
+        service = self._required(self._services.resource_permits, "resource_permit_provider")
+        operation = operation_ref if isinstance(operation_ref, EntityRef) else operation_ref
+        with self._reader() as authority:
+            return service.inspect(authority, self._bearer_token, operation)
+
+    def reconcile_resource(self, operation_ref: EntityRef | StableId, *, idempotency_key: StableId,
+                           expected_revision: int | None = None) -> ResourcePermitOperationView:
+        service = self._required(self._services.resource_permits, "resource_permit_provider")
+        operation = operation_ref if isinstance(operation_ref, EntityRef) else operation_ref
+        with self._writer() as authority:
+            return service.reconcile(authority, self._bearer_token, operation,
+                                     idempotency_key=idempotency_key,
+                                     expected_revision=expected_revision)
+
+    def retry_resource(self, operation_ref: EntityRef | StableId, *, idempotency_key: StableId,
+                       expected_revision: int | None = None) -> ResourcePermitOperationView:
+        """Retry only a same-identity effect freshly proven not applied."""
+        service = self._required(self._services.resource_permits, "resource_permit_provider")
+        operation = operation_ref if isinstance(operation_ref, EntityRef) else operation_ref
+        with self._writer() as authority:
+            return service.retry(authority, self._bearer_token, operation,
+                                 idempotency_key=idempotency_key,
+                                 expected_revision=expected_revision)
+
+    def release_resource(self, operation_ref: EntityRef | StableId, *, idempotency_key: StableId,
+                         expected_revision: int | None = None) -> ResourcePermitOperationView:
+        service = self._required(self._services.resource_permits, "resource_permit_provider")
+        operation = operation_ref if isinstance(operation_ref, EntityRef) else operation_ref
+        with self._writer() as authority:
+            return service.release(authority, self._bearer_token, operation,
+                                   idempotency_key=idempotency_key,
+                                   expected_revision=expected_revision)
 
     def report(self, attempt_ref: EntityRef | StableId, disposition: OutcomeDisposition | str, *,
                idempotency_key: StableId, expected_revision: int | None = None,

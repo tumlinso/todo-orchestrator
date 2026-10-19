@@ -22,6 +22,14 @@ from .metadata import (
     read_project_metadata,
 )
 from .providers import ProviderComposition, ProviderUnavailableError
+from todo_orchestrator.providers.resources import (
+    RESOURCE_READ_ACTION,
+    RESOURCE_RECONCILE_ACTION,
+    RESOURCE_RELEASE_ACTION,
+    RESOURCE_RESERVE_ACTION,
+    ResourcePermitOperationView,
+    ResourcePermitState,
+)
 from todo_orchestrator.views.export import AuthorityBackupManifest, AuthorityBackupResult, AuthorityReadModelV1
 from .serialization import (
     ApiDocumentV1,
@@ -46,6 +54,8 @@ __all__ = [
     "PlanPreviewV1", "ProjectIdentityError", "ProjectMetadataError", "ProjectMetadataExistsError",
     "ProjectMetadataV1", "ProjectUnavailableError", "ProviderComposition", "ProviderUnavailableError",
     "TodoApplication", "TodoApplicationError", "TodoAuthenticationError", "TodoSession",
+    "RESOURCE_READ_ACTION", "RESOURCE_RECONCILE_ACTION", "RESOURCE_RELEASE_ACTION",
+    "RESOURCE_RESERVE_ACTION", "ResourcePermitOperationView", "ResourcePermitState",
     "authority_path", "main", "project_metadata_path", "public_value", "read_project_metadata",
     "recovery_intent_from_json", "serialize_public_document",
 ]

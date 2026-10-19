@@ -3,16 +3,16 @@
 <!-- todo-orchestrator:v2-managed:start -->
 # TO-I04: Define standalone external execution and resource providers
 
-Task revision: `2`; current project revision is in `todo-status.md`.
+Task revision: `210`; current project revision is in `todo-status.md`.
 
 ## Objective
 Define how standalone Todo requests externally owned resource permits and execution receipts. Keep background worker supervision and CUDA-specific paths outside the canonical engine.
 
 ## State
-- Lifecycle: `planned`
-- Execution: `ready`
+- Lifecycle: `done`
+- Execution: `closed`
 - Parallel policy: `serial`
-- Result: `-`
+- Result: `implemented`
 
 ## Next Action
 _None._

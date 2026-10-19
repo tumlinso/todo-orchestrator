@@ -43,8 +43,8 @@ receipt was durably recorded, inspection does not invent one. See
 [local Git effects](git-effects.md) for the implemented provider and service.
 
 Provider contract version 7 allowed source observations for an exact workspace
-and target before an attempt is attached. The current provider contract version
-is 8. A base-ref-only source observation can establish the current qualified
+and target before an attempt is attached. Provider contract version 8 added
+base-ref-only source observations. A base-ref-only source observation can establish the current qualified
 commit and tree for a pre-effect recovery preview; its request digest includes
 the ref, and its receipt is correlated to that query. It is a read-only
 observation, not a durable effect receipt or a guarantee that the ref cannot
@@ -53,5 +53,14 @@ carry the actual caller's read or accept action alongside its actor and
 capability. The native observer checks current scope, context, expiry and
 revocation, allowing an independent authorized approver without borrowing the
 worker's grant. An omitted authorization action yields unknown native status.
+
+Provider contract version 9 binds command checks to their selected workspace,
+repository-relative working directory, and expected authority revision. It
+also carries the exact original typed verification or resource-permit request
+inside provider inspection queries. Resource reservation requests can bind the
+current attempt lease and authority revision; inspection remains read-only.
+Command completion contains only exit/timing fields and stdout/stderr digests,
+not output text. See [external execution and resource permits](external-providers.md)
+for the adapter and public service behavior.
 
 The contracts use `PROVIDER_CONTRACT_VERSION` for this interface and carry provider-specific versions in identities and receipts. A host decides which versions it trusts. `SourceObservationRequest` supports an attempt plus exact workspace/target, an unattached exact workspace/target, or a base-only exact ref; these forms cannot be mixed. A workspace is never accepted without its target. Provider instances are optional: abstract planning and other operations that need no external observation/effect remain usable when a provider is absent. An operation that requires an unavailable provider returns a typed `UNAVAILABLE` result. These contracts add no Project Control adapter, discovery registry, process/Git implementation, network runner, or hardware authority.

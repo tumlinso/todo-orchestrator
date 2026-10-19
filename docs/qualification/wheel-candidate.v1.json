@@ -1,0 +1,32 @@
+{
+  "build": {
+    "command": "pip wheel --no-index --no-deps --no-build-isolation",
+    "python": "3.13.11",
+    "readme_sha256": "809cd424c08ae36480d178f29f790072c34b80a6036809649166bc22e4a9d907",
+    "source_copy": "temporary disposable copy of pyproject.toml, final README.md, and src/todo_orchestrator/"
+  },
+  "distribution": "todo-orchestrator",
+  "distribution_version": "0.1.0",
+  "format": "todo-orchestrator.offline-wheel-candidate",
+  "install_smoke": {
+    "checks": [
+      "module origins under installed target",
+      "CLI version 0.1.0",
+      "CLI help",
+      "project_control unavailable and not imported"
+    ],
+    "mode": "temporary --target with python -I -S",
+    "result": "passed"
+  },
+  "readme_sha256": "809cd424c08ae36480d178f29f790072c34b80a6036809649166bc22e4a9d907",
+  "release_status": "qualified 0.1.0 alpha candidate on fixtures; not a production qualification or publication",
+  "source_pin": "docs/qualification/release-source-pin.json",
+  "source_pin_file_count": 159,
+  "source_pin_file_sha256": "31acc615c7bb2be4016b23edbc163051b925cabc5d5dbc550370c7420212b9c0",
+  "source_set_sha256": "ab5b5ae3d84d3e1e59818e80fd996588082340fcdb0040e895b2d5b9f7e2dc2f",
+  "version": 1,
+  "wheel": "dist/todo_orchestrator-0.1.0-py3-none-any.whl",
+  "wheel_python_file_count": 62,
+  "wheel_python_files_match_source_pin": true,
+  "wheel_sha256": "dee4b5e8f95d033934bbc0445ed37d9ed5f705bf8f29c4dd980fbd84e25efdff"
+}

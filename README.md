@@ -1,41 +1,57 @@
 # Todo Orchestrator
 
-Todo Orchestrator is being prepared as a standalone, independently usable workflow engine. The redesign will draw on the existing implementation while progressively copying and adapting functionality and preserving the original implementation throughout.
+Todo Orchestrator is a standalone, local-first workflow engine for versioned plans, safely admitted work, evidence-backed outcomes, and non-destructive recovery. Its SQLite authority is the semantic source of truth; reads do not create, repair, migrate, or restore state.
 
-Development has begun from the preserved bootstrap package. The Python library provides an authenticated SQLite authority, guarded plan revisions, shared admission and run/attempt coordination, durable verification, provenance-preserving outcome acceptance, native Git workspace/integration effects, scoped coordination messages, and authorized declaration facts. Messaging and declaration synchronization were accepted at development authority revision 131; bounded worker context was accepted at revision 136. Subordinate execution, recovery tooling, the complete workflow CLI, and release qualification remain under development.
+Todo Orchestrator **0.1.0 alpha** is fixture-qualified: 427 tests passed in 183.031 seconds on Python 3.13.11. The checks used disposable authorities, temporary Git repositories, and injected providers; they do not qualify production host supervision, real command executors, hardware resource scheduling, power-loss recovery, or network filesystems.
 
-- Repository: [tumlinso/todo-orchestrator](https://github.com/tumlinso/todo-orchestrator)
-- Project Control workspace and repository ID: `todo-orchestrator`.
-- Project identity and workflow configuration: `.todo-orchestrator/project.json`.
-- Codex guidance: [AGENTS.md](AGENTS.md). Future planning material: [planning/](planning/).
+Project Control integration, cutover, and the optional legacy-plan importer are excluded. The original implementation and active Project Control instance remain separate and unchanged.
 
-The [standalone development plan](planning/standalone-v1/README.md) tracks 32 deliverables. Project Control integration, cutover, and optional legacy import are excluded. The active Project Control instance, its other tools, the original implementation, and legacy authorities stay unchanged. Only this repository's development Todo authority is used for task tracking; its tracked snapshots and Markdown task files are generated projections.
+## Quick start
 
-See the [source baseline](docs/product/reference-baseline.md), [domain model](docs/architecture/domain-model.md), [provider boundary](docs/architecture/provider-contracts.md), [worker context](docs/architecture/worker-context.md), [child execution](docs/architecture/child-execution.md), [recovery inspection](docs/architecture/recovery-inspection.md), [recovery transitions](docs/architecture/recovery-transitions.md), and [SQLite policy](src/todo_orchestrator/authority/README.md). Follow `.editorconfig`, keep changes scoped, and run `git diff --check` before review.
-
-Python 3.11+ is required; there are no runtime dependencies. The `todo` CLI exposes explicit initialization, authentication, plan review, work coordination, recovery, read-model, and backup/restore commands. Run it from source without importing a preinstalled legacy Todo package:
+Use a fresh environment, never the active Project Control Python runtime. Python 3.11+ is required; the package has no runtime dependencies. The tested CLI reports version 0.1.0; the latest qualification runtime was Python 3.13.11. Build tooling must provide setuptools 68+.
 
 ```sh
-PYTHONPATH=src python -S -m todo_orchestrator --help
-PYTHONPATH=src python -S -m todo_orchestrator --version
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/todo --help
 ```
 
-The CLI uses `--root` to select a project-local `.todo-orchestrator/` authority. Provide bearer credentials through `--token-file` or `TODO_BEARER_TOKEN`; owner credentials can be read from a private file or `TODO_OWNER_CREDENTIAL`, with an interactive prompt as fallback. Tokens issued by `init` or `dispatch` are written only to a new mode-0600 file reserved before the state-changing command. The CLI does not discover provider code from a project. Provider-backed operations remain unavailable unless a trusted provider composition is supplied through the application API or an explicitly selected installed `--provider-factory package.module:callable`; the latter is executable trusted configuration. See [SKILL.md](SKILL.md) and the [command guide](references/command-guide.md) for syntax and safety boundaries.
-
-Run the checks:
+Initialize a new project explicitly. Keep the bearer file outside the repository; the CLI reserves a new mode-0600 file and never overwrites one. If no credential file is supplied, the CLI prompts for the owner credential without echoing it.
 
 ```sh
-python scripts/check_reference_baseline.py
-python -S -m unittest discover -s tests/reference -v
-PYTHONPATH=src python -S -m unittest discover -s tests/contracts -v
-PYTHONPATH=src python -S -m unittest discover -s tests/authority -v
-PYTHONPATH=src python -S -m unittest discover -s tests/planning -v
-PYTHONPATH=src python -S -m unittest discover -s tests/package -t tests -v
-PYTHONPATH=src python -S -m unittest discover -s tests/smoke -t tests -v
+umask 077
+mkdir -p "$HOME/.local/share/todo-orchestrator"
+.venv/bin/todo --root /path/to/new-project init \
+  --project-id example-project --repository-id example-repository \
+  --authority-id example-authority \
+  --token-output "$HOME/.local/share/todo-orchestrator/example.token"
 ```
 
-Package tests require locally installed pip and setuptools 68+ for an offline wheel build. They build and install only into temporary directories, then verify the installed module paths with site packages disabled. SQLite and Git smoke fixtures also use temporary directories; Git must be available to run its fixture test. For an editable development installation, use a fresh repository-local virtual environment; never install into the active Project Control runtime.
+Preview then commit a plan using the exact saved review. From the repository root, `references/quickstart-plan.json` is a complete two-work-item example whose `review` item depends on `write`.
 
-SQLite initialization currently requires a POSIX filesystem supporting hard links and directory synchronization. Schema v19 is the only supported version; reopening accepts v19, while the migration entry point rejects unsupported versions without rewriting them. There is no migration path for v1-v18. Runtime tests use disposable databases, never this repository's development Todo authority.
+```sh
+.venv/bin/todo --root /path/to/new-project \
+  --token-file "$HOME/.local/share/todo-orchestrator/example.token" \
+  plan preview references/quickstart-plan.json --output /tmp/plan-preview.json
 
-The optional `python scripts/check_reference_baseline.py --verify-external` checks the captured original source/test fingerprints read-only. These checks cover baseline integrity, value contracts, package isolation, and storage behavior. They do not qualify a complete workflow runtime or power-loss recovery.
+.venv/bin/todo --root /path/to/new-project \
+  --token-file "$HOME/.local/share/todo-orchestrator/example.token" \
+  plan commit references/quickstart-plan.json --preview /tmp/plan-preview.json \
+  --idempotency-key quickstart-initial-plan
+```
+
+Plan commit uses the preview's expected authority and plan revisions. Omitted plan records are preserved; deletion requires an explicit reviewed retirement.
+
+## Working safely
+
+Dispatch, verification, Git effects, and recovery that needs host observations require trusted providers. The default provider composition is empty and fails closed. A caller may pass a `ProviderComposition` through the Python API or explicitly select an installed `--provider-factory package.module:callable`. A factory is trusted executable code: do not load one from a plan or project directory, and configure its repository and refs deliberately. No provider means no fabricated “stopped”, “clean”, or “passed” evidence.
+
+The main command flow is `dispatch` → `verify` (when required) → `report` → separately authorized `accept`. `finish` safely releases an attempt without accepting an outcome; acceptance itself finalizes and revokes the attempt. Inspect recovery first and apply only the exact current intent it returns.
+
+See [the operator guide](docs/operations/operator-guide.md) for credentials, provider setup, backups, restore, recovery, and schema limits. See the [release evidence matrix](docs/qualification/release.md) and [source pin](docs/qualification/release-source-pin.json) for qualification evidence and boundaries.
+
+## Storage and compatibility
+
+Each project has a local `.todo-orchestrator/authority.sqlite3`. Schema v20 is the only supported schema. There is no automatic migration from v1–v19; earlier development fixtures must be recreated as disposable data. Backup/restore is explicit and restore refuses an existing destination. SQLite initialization currently requires a POSIX filesystem with hard-link and directory-sync support.
+
+Do not edit authority SQLite files or generated task projections by hand. Tests and examples use temporary projects. No part of this development setup authorizes changes to production authorities or the active Project Control instance.
