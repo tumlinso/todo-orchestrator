@@ -1397,10 +1397,11 @@ class VerificationService:
         contract = requirement.verification
         contract_digest = _contract_digest(contract)
         verifier_identity = self._identity_for_contract(contract)
+        inputs = tuple(sorted(source.inputs, key=lambda item: str(item.name)))
         return VerificationRequest(
             self._context(actor, capability_id, operation_id, attempt.work_item), attempt.ref,
             requirement.ref, operation_id, idempotency_key, verifier_identity.provider_id,
-            source.source_digest, contract_digest, source.inputs, contract, workspace.workspace_id,
+            source.source_digest, contract_digest, inputs, contract, workspace.workspace_id,
             verifier_identity.version, requirement.required_evidence, expected_authority_revision,
         )
 

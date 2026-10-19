@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from todo_orchestrator.api import (
     ProviderComposition,
@@ -26,6 +27,7 @@ from todo_orchestrator.contracts import (
     ProviderResult,
     ProviderStatus,
     Sha256Digest,
+    SourceObservation,
     StableId,
     provider_request_digest,
 )
@@ -484,6 +486,46 @@ class ExternalProviderIndependentTests(unittest.TestCase):
             encoded_events = json.dumps(event_payloads, sort_keys=True)
             self.assertNotIn(COMMAND_OUTPUT, encoded_events)
             self.assertNotIn(COMMAND_OUTPUT, json.dumps(observation, sort_keys=True))
+
+    def test_attempt_session_verification_canonicalizes_source_input_order(self):
+        _project, project_root, session, composition, provider, _clock = self._project()
+        source_observer = composition.source_observer
+        original_observe = source_observer.observe
+        seen_input_orders = []
+
+        def observe_reverse_sorted(request):
+            result = original_observe(request)
+            if result.status is not ProviderStatus.OBSERVED_SUCCESS or result.value is None:
+                return result
+            source = result.value
+            inputs = tuple(sorted(source.inputs, key=lambda item: str(item.name), reverse=True))
+            seen_input_orders.append(tuple(str(item.name) for item in inputs))
+            return ProviderResult(
+                result.status, result.correlation_id, result.provider,
+                SourceObservation(
+                    source.repository_id, source.source_digest, source.base_digest,
+                    source.working_tree, inputs, source.artifacts, source.source_revision,
+                ),
+                result.receipt,
+            )
+
+        with session:
+            dispatched = self._dispatch(session)
+            with patch.object(source_observer, "observe", side_effect=observe_reverse_sorted):
+                with TodoApplication.open(
+                    project_root, bearer_token=dispatched.bearer_token, providers=composition,
+                ) as attempt_session:
+                    operation = attempt_session.verify(
+                        dispatched.attempt_ref.entity_id, StableId("check-verify"),
+                        idempotency_key=StableId("i04-derived-command-verify-input-order"),
+                    )
+
+        self.assertEqual(operation.state, "finalized")
+        self.assertEqual(provider.counts(), (1, 0))
+        self.assertGreaterEqual(len(seen_input_orders), 2)
+        for inputs in seen_input_orders:
+            self.assertGreater(len(inputs), 1)
+            self.assertEqual(inputs, tuple(sorted(inputs, reverse=True)))
 
     def test_ambiguous_command_is_inspected_after_reopen_without_blind_retry(self):
         _project, project_root, session, composition, provider, clock = self._project(
