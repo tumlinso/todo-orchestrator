@@ -19,6 +19,14 @@ writer boundary, records immutable outcome provenance and revokes the derived
 attempt family only after safe finalization. Applicability reads require
 `todo.outcome.read` and preserve historical acceptance when inputs later change.
 
+An authenticated authoring handoff may pin an exact submitted Git commit and
+fence further edits to that attempt's workspace while its producer remains
+alive. This does not assert that the process stopped. A pending candidate can
+remain reviewable after its attempt lease expires only when a fresh host check
+revalidates that pin against the reported source, with children and external
+operations resolved. Without that proof, ordinary expiry and quiescence rules
+remain in force.
+
 `SourceObserver` is a trust boundary: its implementation must bind the exact
 attempt workspace and authored contract, enumerate relevant tracked and
 untracked content (including interface inputs), and provide content digests.

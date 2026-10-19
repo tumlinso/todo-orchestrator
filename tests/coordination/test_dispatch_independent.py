@@ -36,6 +36,7 @@ from todo_orchestrator.contracts import (
     Sha256Digest,
     StableId,
 )
+from todo_orchestrator.contracts.providers import AttemptCredentialRequest
 from todo_orchestrator.coordination import CoordinationService
 from todo_orchestrator.model import (
     AttemptSafetyObservation,
@@ -172,6 +173,28 @@ class TrustedHost:
             attempt.ref, attempt.state, attempt.lease.lease_id, attempt.lease.expires_at,
             workspace, SourceSafety.CLEAN, ProcessLiveness.STOPPED, ChildActivity.NONE, receipt,
         )
+
+
+class DurableAttemptCredentialVault:
+    """Small restartable host-vault fixture keyed by exact dispatch intent."""
+
+    def __init__(self, records):
+        self.records = records
+        self.calls = 0
+
+    def prepare_attempt_credential(self, request: AttemptCredentialRequest) -> str:
+        self.calls += 1
+        key = (str(request.project_id), str(request.authority_id), str(request.attempt_id),
+               str(request.capability_id), str(request.idempotency_key))
+        previous = self.records.get(key)
+        if previous is not None:
+            intent_digest, token = previous
+            if intent_digest != request.intent_digest.hex:
+                raise ValueError("durable attempt identity was reused for a different intent")
+            return token
+        token = "attempt-bearer-" + hashlib.sha256("/".join(key).encode("utf-8")).hexdigest()
+        self.records[key] = (request.intent_digest.hex, token)
+        return token
 
 
 class IndependentDispatchTests(unittest.TestCase):
@@ -377,6 +400,78 @@ with SQLiteAuthority.open_writer(Path(request["path"]), project) as authority:
             dump = "\n".join(authority.connection.iterdump())
         self.assertNotIn(selected.bearer_token, dump)
         self.assertNotIn(selected.bearer_token, json.dumps(selected.receipt.result, sort_keys=True))
+
+    def test_dispatch_recovers_durable_attempt_credential_after_committed_response_loss(self):
+        records = {}
+        first_vault = DurableAttemptCredentialVault(records)
+        first_auth = AuthorityAuthService(
+            CommandDispatcher(), clock=self.clock, authenticator=TestAuthenticator(),
+        )
+        first_attempts = AttemptService(
+            first_auth, eligibility=EligibilityAdapter(clock=self.clock),
+            host=self.host, clock=self.clock,
+        )
+        first_coordination = CoordinationService(
+            first_auth, attempts=first_attempts,
+            attempt_credential_provider=first_vault,
+        )
+        expected_revision = self.revision()
+        idempotency_key = StableId("dispatch-credential-recover")
+        workspace_id = StableId("workspace-dispatch-credential-recover")
+        target = self.work("work-gamma")
+        committed_receipts = []
+        execute = first_auth.execute
+
+        def commit_then_lose_response(*args, **kwargs):
+            result = execute(*args, **kwargs)
+            committed_receipts.append(result.receipt)
+            raise RuntimeError("simulated host restart after authority commit")
+
+        with self.open_writer() as authority:
+            with patch.object(first_auth, "execute", side_effect=commit_then_lose_response):
+                with self.assertRaisesRegex(RuntimeError, "simulated host restart"):
+                    first_coordination.dispatch(
+                        authority, self.owner.bearer_token, self.plan,
+                        workspace_id=workspace_id, work_item=target,
+                        idempotency_key=idempotency_key, expected_revision=expected_revision,
+                    )
+        self.assertEqual(first_vault.calls, 1)
+        self.assertEqual(len(committed_receipts), 1)
+        after_commit = self.state_snapshot()
+
+        # Recreate the trusted services and vault handle as if the host process
+        # restarted. The same durable intent returns the original bearer.
+        recovered_vault = DurableAttemptCredentialVault(records)
+        recovered_auth = AuthorityAuthService(
+            CommandDispatcher(), clock=self.clock, authenticator=TestAuthenticator(),
+        )
+        recovered_attempts = AttemptService(
+            recovered_auth, eligibility=EligibilityAdapter(clock=self.clock),
+            host=self.host, clock=self.clock,
+        )
+        recovered_coordination = CoordinationService(
+            recovered_auth, attempts=recovered_attempts,
+            attempt_credential_provider=recovered_vault,
+        )
+        with self.open_writer() as authority:
+            recovered = recovered_coordination.dispatch(
+                authority, self.owner.bearer_token, self.plan,
+                workspace_id=workspace_id, work_item=target,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+
+        self.assertEqual(recovered.receipt, committed_receipts[0])
+        self.assertEqual(recovered_vault.calls, 1)
+        self.assertEqual(len(records), 1)
+        self.assertEqual(self.state_snapshot(), after_commit)
+        with self.open_reader() as authority:
+            attempt_count = authority.connection.execute(
+                "SELECT count(*) FROM attempts WHERE work_item_id = ?", (str(target.entity_id),)
+            ).fetchone()[0]
+            dump = "\n".join(authority.connection.iterdump())
+        self.assertEqual(attempt_count, 1)
+        self.assertNotIn(recovered.bearer_token, dump)
+        self.assertNotIn(recovered.bearer_token, json.dumps(recovered.receipt.result, sort_keys=True))
 
     def test_dispatch_failure_after_claim_rolls_back_attempt_and_grant(self):
         before = self.state_snapshot()

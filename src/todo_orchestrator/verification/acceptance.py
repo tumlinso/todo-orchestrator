@@ -71,6 +71,7 @@ from todo_orchestrator.contracts import (
     provider_request_digest,
 )
 from todo_orchestrator.model import (
+    AttemptAuthoringHandoff,
     AttemptSafetyObservation,
     ChildActivity,
     CommandEffect,
@@ -181,7 +182,8 @@ class OutcomeApplicabilityView:
 
 class _Report:
     def __init__(self, attempt, target, candidate_id, disposition, note, source_json, receipt_json, request_digest,
-                 source_identity, run, assignment, at):
+                 source_identity, run, assignment, at,
+                 host_observation: AttemptSafetyObservation | None = None):
         self.attempt = attempt
         self.target = target
         self.candidate_id = candidate_id
@@ -194,6 +196,7 @@ class _Report:
         self.run = run
         self.assignment = assignment
         self.at = at
+        self.host_observation = host_observation
 
     def __deepcopy__(self, memo):
         return self
@@ -202,7 +205,8 @@ class _Report:
 class _Finalize:
     def __init__(self, action, attempt, target, candidate_id, source_json, source_receipt_json,
                  source_request_digest, safety_json, applicability_json, declaration_json, plan_revision_id,
-                 required_manual_actions, run, assignment, provider_capability_id, at):
+                 required_manual_actions, run, assignment, provider_capability_id, at,
+                 authoring_handoff: AttemptAuthoringHandoff | None = None):
         self.action = action
         self.attempt = attempt
         self.target = target
@@ -216,6 +220,7 @@ class _Finalize:
         self.plan_revision_id = plan_revision_id
         self.required_manual_actions = required_manual_actions
         self.provider_capability_id = provider_capability_id
+        self.authoring_handoff = authoring_handoff
         self.run = run
         self.assignment = assignment
         self.at = at
@@ -263,6 +268,53 @@ def _source_receipt_value(receipt: ProviderReceipt) -> dict[str, object]:
         "correlation_id": str(receipt.correlation_id), "request_digest": receipt.request_digest.hex,
         "provenance_ref": str(receipt.provenance_ref), "observed_at": _iso(receipt.observed_at),
     }
+
+
+def _authoring_handoff_value(handoff: AttemptAuthoringHandoff | None) -> dict[str, object] | None:
+    if handoff is None:
+        return None
+    receipt = handoff.receipt
+    return {
+        "attempt_id": str(handoff.attempt.entity_id),
+        "lease_id": str(handoff.lease_id),
+        "workspace_id": str(handoff.workspace_id),
+        "idempotency_key": str(handoff.request.idempotency_key),
+        "source_commit": str(handoff.source_commit),
+        "source_tree": str(handoff.source_tree),
+        "source_digest": handoff.source_digest.hex,
+        "receipt": {
+            "receipt_id": str(receipt.receipt_id),
+            "provider_id": str(receipt.provider.provider_id),
+            "provider_version": receipt.provider.version,
+            "provider_contract_version": receipt.provider.contract_version,
+            "correlation_id": str(receipt.correlation_id),
+            "request_digest": receipt.request_digest.hex,
+            "provenance_ref": str(receipt.provenance_ref),
+            "observed_at": _iso(receipt.observed_at),
+        },
+    }
+
+
+def _handoff_matches_source(
+    handoff: AttemptAuthoringHandoff | None,
+    *, project: Project, authority_id: StableId, attempt, workspace, source: Mapping[str, object],
+    host_identity: ProviderIdentity,
+) -> bool:
+    if handoff is None or attempt.lease is None:
+        return False
+    request = handoff.request
+    return (
+        request.project_id == project.project_id
+        and request.authority_id == authority_id
+        and request.attempt == attempt.ref
+        and request.lease_id == attempt.lease.lease_id
+        and request.workspace_id == workspace.workspace_id
+        and handoff.receipt.provider == host_identity
+        and handoff.receipt.correlation_id == attempt.attempt_id
+        and handoff.receipt.provenance_ref == handoff.source_commit
+        and source.get("source_digest") == handoff.source_digest.hex
+        and source.get("source_revision") == str(handoff.source_commit)
+    )
 
 
 def _decode_source(encoded: str) -> dict[str, object]:
@@ -711,6 +763,8 @@ class _ReportHandler:
                                 "contract_version": command.source_identity.contract_version},
             "run": None if command.run is None else _ref_value(command.run),
             "assignment": None if command.assignment is None else _ref_value(command.assignment),
+            "host_observation": None if command.host_observation is None
+                else _observation_audit(command.host_observation),
             "reported_at": command.at,
         }
 
@@ -753,6 +807,40 @@ class _ReportHandler:
                 }):
             raise CandidateObservationMismatchError("candidate source evidence is malformed or unbound")
         self.service._require_fresh_receipt(receipt_body, now, "candidate source")
+        if callable(getattr(self.service.host, "handoff_authoring", None)):
+            if command.host_observation is None:
+                raise CandidateDeniedError("host handoff-capable reports require a fresh safety observation")
+        if command.host_observation is not None:
+            try:
+                host_observation = _check_observation(
+                    command.host_observation, target=command.target, attempt_ref=command.attempt,
+                    row=row, workspace=_stored_workspace(context._connection, context.project, command.attempt),
+                    now=now, max_age=self.service.max_observation_age,
+                )
+            except Exception as exc:
+                raise CandidateObservationMismatchError(
+                    "candidate host safety observation is stale or mismatched"
+                ) from exc
+            if (host_observation.receipt.provider != self.service.host_identity
+                    or host_observation.source is not SourceSafety.CLEAN
+                    or host_observation.children is not ChildActivity.NONE
+                    or not host_observation.safe_to_release):
+                raise CandidateDeniedError(
+                    "candidate reporting requires a clean, child-free source and quiescent or handed-off authoring"
+                )
+            if (host_observation.authoring_handoff is not None
+                    and not _handoff_matches_source(
+                        host_observation.authoring_handoff,
+                        project=context.project,
+                        authority_id=context.project.authority_id,
+                        attempt=attempt,
+                        workspace=_stored_workspace(context._connection, context.project, command.attempt),
+                        source=request_body,
+                        host_identity=self.service.host_identity,
+                    )):
+                raise CandidateObservationMismatchError(
+                    "candidate source differs from the pinned authoring handoff"
+                )
         expected_artifacts = _artifact_expectations(context._connection, attempt.attempt_id)
         if request_body.get("artifacts") != _expected_artifact_value(expected_artifacts):
             raise CandidateObservationMismatchError("candidate artifact availability no longer matches authority records")
@@ -828,7 +916,7 @@ class _FinalizeHandler:
         if (attempt.work_item != command.target or attempt.run != command.run or attempt.assignment != command.assignment
                 or row["work_item_id"] != str(command.target.entity_id)
                 or row["definition_revision_id"] != str(command.target.definition_revision_id)
-                or attempt.lease is None or attempt.lease.expires_at <= now):
+                or attempt.lease is None):
             raise CandidateDeniedError("attempt target, context, or lease changed before outcome finalization")
         workspace = _stored_workspace(context._connection, context.project, command.attempt)
         source = _decode_source(command.source_json)
@@ -837,6 +925,20 @@ class _FinalizeHandler:
         final_receipt = json.loads(command.source_receipt_json)
         if source != report_source:
             raise CandidateObservationMismatchError("source identity or inputs changed since candidate report")
+        handoff_valid = _handoff_matches_source(
+            command.authoring_handoff,
+            project=context.project,
+            authority_id=context.project.authority_id,
+            attempt=attempt,
+            workspace=workspace,
+            source=source,
+            host_identity=self.service.host_identity,
+        )
+        if attempt.lease.expires_at <= now and not handoff_valid:
+            raise CandidateDeniedError("attempt lease expired without an exact authoring handoff")
+        safety = json.loads(command.safety_json)
+        if safety.get("authoring_handoff") != _authoring_handoff_value(command.authoring_handoff):
+            raise CandidateObservationMismatchError("host safety proof differs from the typed authoring handoff")
         expected_artifacts = _artifact_expectations(context._connection, attempt.attempt_id)
         if source.get("artifacts") != _expected_artifact_value(expected_artifacts):
             raise CandidateObservationMismatchError("current artifact set or digest differs from candidate report")
@@ -846,12 +948,11 @@ class _FinalizeHandler:
                 or final_receipt.get("observed_at") > command.at):
             raise CandidateObservationMismatchError("final source receipt is not a fresh observation of the same workspace")
         self.service._require_fresh_receipt(final_receipt, now, "final source")
-        safety = json.loads(command.safety_json)
         if (safety.get("source") != SourceSafety.CLEAN.value
-                or safety.get("process") not in {
+                or (safety.get("process") not in {
                     ProcessLiveness.STOPPED.value,
                     ProcessLiveness.EXTERNAL_PRODUCER_QUIESCENT.value,
-                }
+                } and not handoff_valid)
                 or safety.get("children") != ChildActivity.NONE.value
                 or safety.get("attempt_id") != str(attempt.attempt_id)
                 or safety.get("lease_id") != str(attempt.lease.lease_id)
@@ -899,10 +1000,11 @@ class _FinalizeHandler:
             "writer:" + str(command.candidate_id), self.service._now(), authority=context.authority,
         )
         commit_now = self.service._now()
-        if attempt.lease is None or attempt.lease.expires_at <= commit_now:
+        if attempt.lease is None or (attempt.lease.expires_at <= commit_now and not handoff_valid):
             raise CandidateDeniedError("attempt lease expired before guarded outcome write")
         self.service._require_fresh_receipt(final_receipt, commit_now, "final source")
-        self.service._require_fresh_receipt(report_receipt, commit_now, "candidate report source")
+        if not handoff_valid:
+            self.service._require_fresh_receipt(report_receipt, commit_now, "candidate report source")
         self.service._require_fresh_receipt(safety_receipt, commit_now, "host safety")
         self.service._require_fresh_receipt(writer_source_receipt, commit_now, "writer source")
         declaration_statuses = self.service._validated_declaration_statuses(
@@ -1233,6 +1335,9 @@ class OutcomeAcceptanceService:
         with authority.read_transaction() as connection:
             artifacts = _artifact_expectations(connection, attempt.attempt_id)
         request = _source_request(context, attempt_ref, target, workspace, candidate_id, artifacts)
+        host_observation = None
+        if callable(getattr(self.host, "handoff_authoring", None)):
+            host_observation = self._safety(attempt_ref, attempt, row, workspace, now)
         result = self.source_observer.observe(request)
         observed_now = self._now()
         source, receipt = _provider_source(result, request, self.source_identity, workspace, observed_now, self.max_observation_age)
@@ -1241,6 +1346,7 @@ class OutcomeAcceptanceService:
         command = _Report(
             attempt_ref, target, candidate_id, disposition, note, source_json, receipt_json,
             provider_request_digest(request), self.source_identity, run, assignment, _iso(observed_now),
+            host_observation,
         )
         result = self.auth.execute(authority, bearer_token, command, idempotency_key=idempotency_key,
                                    expected_revision=revision if expected_revision is None else expected_revision)
@@ -1489,8 +1595,20 @@ class OutcomeAcceptanceService:
             return replay
         now = self._now()
         if attempt.state is not AttemptState.REPORTED or attempt.lease is None:
-            raise CandidateStateError("candidate finalization requires a reported live attempt")
+            raise CandidateStateError("candidate finalization requires a reported attempt with its lease record")
         safety_observation = self._safety(attempt_ref, attempt, attempt_row, workspace, now)
+        report_source = _decode_source(row["report_source_json"])
+        handoff_valid = _handoff_matches_source(
+            safety_observation.authoring_handoff,
+            project=authority.project,
+            authority_id=authority.project.authority_id,
+            attempt=attempt,
+            workspace=workspace,
+            source=report_source,
+            host_identity=self.host_identity,
+        )
+        if not handoff_valid and not safety_observation.process.quiescent:
+            raise CandidateDeniedError("live attempt review requires an exact source-bound authoring handoff")
         context = self._provider_context(actor, bearer_token, action, target,
                                          self.auth._actor_for_token(authority, _token_digest(bearer_token))[1],
                                          _id("candidate-final", str(candidate_ref.entity_id)))
@@ -1498,8 +1616,8 @@ class OutcomeAcceptanceService:
         request = _source_request(context, attempt_ref, target, workspace, correlation, artifacts)
         source_result = self.source_observer.observe(request)
         observed_now = self._now()
-        if attempt.lease.expires_at <= observed_now:
-            raise CandidateDeniedError("attempt lease expired while collecting source observation")
+        if attempt.lease.expires_at <= observed_now and not handoff_valid:
+            raise CandidateDeniedError("attempt lease expired without an exact authoring handoff")
         source, receipt = _provider_source(source_result, request, self.source_identity, workspace, observed_now, self.max_observation_age)
         source_json = _json(_source_value(source))
         receipt_json = _json(_source_receipt_value(receipt))
@@ -1509,6 +1627,7 @@ class OutcomeAcceptanceService:
             "process": safety_observation.process.value, "children": safety_observation.children.value,
             "workspace_id": str(safety_observation.workspace.workspace_id),
             "receipt": _source_receipt_value(safety_observation.receipt),
+            "authoring_handoff": _authoring_handoff_value(safety_observation.authoring_handoff),
         })
         required_manual_actions = tuple(sorted({
             MANUAL_OWNER_ACTIONS[req.verification.config["approver_role"]]
@@ -1520,7 +1639,8 @@ class OutcomeAcceptanceService:
         ) if action == ACCEPT_OUTCOME_ACTION else []
         command = _Finalize(action, attempt_ref, target, candidate_ref.entity_id, source_json, receipt_json,
                             provider_request_digest(request), safety_json, "{}", _json(declaration_records), plan_revision,
-                            required_manual_actions, run, assignment, capability_id, _iso(self._now()))
+                            required_manual_actions, run, assignment, capability_id, _iso(self._now()),
+                            safety_observation.authoring_handoff)
         return self.auth.execute(authority, bearer_token, command, idempotency_key=idempotency_key,
                                  expected_revision=revision if expected_revision is None else expected_revision)
 

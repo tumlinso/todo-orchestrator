@@ -95,6 +95,37 @@ class ProviderIdentity:
 
 
 @dataclass(frozen=True)
+class AttemptCredentialRequest:
+    """Stable dispatch identity supplied before an attempt grant is committed.
+
+    A trusted host credential provider uses this request to durably prepare a
+    recoverable bearer. Reusing the same identities and intent digest must
+    return the same bearer; changing the digest for an already prepared
+    attempt/capability identity must be refused.
+    """
+
+    project_id: StableId
+    authority_id: StableId
+    attempt_id: StableId
+    capability_id: StableId
+    idempotency_key: StableId
+    intent_digest: Sha256Digest
+
+    def __post_init__(self) -> None:
+        for name in ("project_id", "authority_id", "attempt_id", "capability_id", "idempotency_key"):
+            _id(getattr(self, name), name)
+        if not isinstance(self.intent_digest, Sha256Digest):
+            raise TypeError("intent_digest must be a Sha256Digest")
+
+
+class AttemptCredentialProvider(Protocol):
+    """Host-owned durable delivery for an attempt-scoped bearer capability."""
+
+    def prepare_attempt_credential(self, request: AttemptCredentialRequest) -> str:
+        """Persist and return the same secret for retries of this exact request."""
+
+
+@dataclass(frozen=True)
 class ProviderReceipt:
     """Provider-supplied observation identity, not a cryptographic attestation."""
 
@@ -1016,6 +1047,7 @@ class VerificationInspection:
 
 
 __all__ = [
+    "AttemptCredentialProvider", "AttemptCredentialRequest",
     "PROVIDER_CONTRACT_VERSION", "ProviderIdentity", "ProviderReceipt", "ProviderStatus", "ProviderResult",
     "provider_request_digest",
     "ProviderCallContext", "TrustedContextRequest", "TrustedActorContext", "TrustedContextProvider",

@@ -35,6 +35,8 @@ from todo_orchestrator.model import (
     CHILD_STOP_RECONCILE_ACTION,
     CHILD_WRITE_ACTION,
     AttemptSafetyObservation,
+    AttemptAuthoringHandoff,
+    AttemptAuthoringHandoffRequest,
     AttemptScopeSnapshot,
     ChildActivity,
     CommandEffect,
@@ -65,8 +67,9 @@ from .auth import (
     RESOURCE_RECONCILE_ACTION,
     RESOURCE_RELEASE_ACTION,
     RESOURCE_RESERVE_ACTION,
+    _token_digest,
 )
-from .commands import MutationContext
+from .commands import MutationContext, StaleAuthorityRevisionError
 from .eligibility import (
     EligibilityAdapter,
     _load_attempt_scope_snapshots,
@@ -173,6 +176,11 @@ class AttemptHost(Protocol):
         self, attempt: Attempt, workspace: WorkspaceQualification
     ) -> AttemptSafetyObservation:
         """Inspect the stored attempt's exact workspace, source, process, and children."""
+
+    def handoff_authoring(
+        self, request: AttemptAuthoringHandoffRequest
+    ) -> AttemptAuthoringHandoff:
+        """Pin/fence this task's source scope without claiming the process stopped."""
 
 
 def _utc(value: datetime, name: str) -> datetime:
@@ -396,6 +404,26 @@ def _observation_audit(observation: AttemptSafetyObservation) -> dict[str, objec
     qualification = observation.workspace
     base = qualification.common_base
     destination = qualification.destination
+    handoff = observation.authoring_handoff
+    handoff_value = None if handoff is None else {
+        "attempt_id": str(handoff.attempt.entity_id),
+        "lease_id": str(handoff.lease_id),
+        "workspace_id": str(handoff.workspace_id),
+        "idempotency_key": str(handoff.request.idempotency_key),
+        "source_commit": str(handoff.source_commit),
+        "source_tree": str(handoff.source_tree),
+        "source_digest": handoff.source_digest.hex,
+        "receipt": {
+            "receipt_id": str(handoff.receipt.receipt_id),
+            "provider_id": str(handoff.receipt.provider.provider_id),
+            "provider_version": handoff.receipt.provider.version,
+            "provider_contract_version": handoff.receipt.provider.contract_version,
+            "correlation_id": str(handoff.receipt.correlation_id),
+            "request_digest": handoff.receipt.request_digest.hex,
+            "provenance_ref": str(handoff.receipt.provenance_ref),
+            "observed_at": _iso(handoff.receipt.observed_at),
+        },
+    }
     return {
         "source": observation.source.value,
         "source_digest": None if observation.source_digest is None else observation.source_digest.hex,
@@ -422,6 +450,7 @@ def _observation_audit(observation: AttemptSafetyObservation) -> dict[str, objec
             "provenance_ref": str(receipt.provenance_ref),
             "observed_at": _iso(receipt.observed_at),
         },
+        "authoring_handoff": handoff_value,
     }
 
 
@@ -454,6 +483,14 @@ def _check_observation(
         raise AttemptObservationMismatchError("attempt lease expiry changed while the host observation was being collected")
     if row["work_item_id"] != str(target.entity_id) or row["definition_revision_id"] != str(target.definition_revision_id):
         raise AttemptObservationMismatchError("attempt target differs from the qualified request")
+    handoff = observation.authoring_handoff
+    if handoff is not None and (
+        handoff.request.project_id != attempt_ref.project_id
+        or handoff.workspace_id != workspace.workspace_id
+        or handoff.receipt.provider != workspace.receipt.provider
+        or handoff.source_digest != observation.source_digest
+    ):
+        raise AttemptObservationMismatchError("authoring handoff differs from the exact observed source scope")
     _observation_age(observation, now, max_age)
     return observation
 
@@ -476,6 +513,99 @@ class _Claim(_ImmutableAttemptCommand):
     lease_id: StableId
     run: EntityRef | None
     assignment: EntityRef | None
+
+
+@dataclass(frozen=True)
+class _HandbackAuthoring(_ImmutableAttemptCommand):
+    target: EntityRef
+    attempt_ref: EntityRef
+    expected_lease_id: StableId
+    run: EntityRef | None
+    assignment: EntityRef | None
+    request: AttemptAuthoringHandoffRequest
+    handoff: AttemptAuthoringHandoff | None
+    observation: AttemptSafetyObservation | None
+
+
+class _HandbackAuthoringHandler:
+    kind = "todo.attempt.authoring_handoff"
+    command_type = _HandbackAuthoring
+
+    def __init__(self, service: "AttemptService") -> None:
+        self.service = service
+
+    def authorization_requirement(self, command: _HandbackAuthoring) -> AuthorizationRequirement:
+        return AuthorizationRequirement(
+            FINISH_ACTION, command.target, command.run,
+            command.assignment, command.attempt_ref,
+        )
+
+    def canonical_payload(self, command: _HandbackAuthoring) -> dict[str, object]:
+        # Bind the stable user intent, not a provider observation. A retry after
+        # a committed handoff must reach the same command receipt even though
+        # its fresh host inspection has a new timestamp and receipt ID.
+        return {
+            "attempt_id": str(command.attempt_ref.entity_id),
+            "target": str(command.target.entity_id),
+            "definition_revision_id": str(command.target.definition_revision_id),
+            "lease_id": str(command.expected_lease_id),
+            "workspace_id": str(command.request.workspace_id),
+            "request_idempotency_key": str(command.request.idempotency_key),
+        }
+
+    def apply(self, context: MutationContext, command: _HandbackAuthoring) -> CommandEffect:
+        attempt, row = _stored_attempt(context._connection, context.project, command.attempt_ref)
+        if (attempt.work_item != command.target or attempt.actor != context.actor
+                or attempt.run != command.run or attempt.assignment != command.assignment):
+            raise AttemptOwnershipError("authoring handoff must match the exact owning attempt scope")
+        if attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE} or attempt.lease is None:
+            raise AttemptTransitionError("authoring handoff requires a live admitted or active attempt")
+        if attempt.lease.lease_id != command.expected_lease_id:
+            raise AttemptLeaseMismatchError("authoring handoff lease is no longer current")
+        now = self.service._now()
+        if attempt.lease.expires_at <= now:
+            raise AttemptLeaseMismatchError("authoring handoff requires an unexpired lease")
+        if (command.request.project_id != context.project.project_id
+                or command.request.authority_id != context.project.authority_id
+                or command.request.attempt != attempt.ref
+                or command.request.lease_id != attempt.lease.lease_id
+                or command.request.workspace_id != _stored_workspace(
+                    context._connection, context.project, attempt.ref
+                ).workspace_id
+                or command.handoff is None
+                or command.handoff.request != command.request):
+            raise AttemptObservationMismatchError("authoring handoff request does not match the stored attempt")
+        _require_children_resolved(context._connection, attempt.attempt_id)
+        _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
+        workspace = _stored_workspace(context._connection, context.project, attempt.ref)
+        observation = _check_observation(
+            command.observation, target=attempt.work_item, attempt_ref=attempt.ref,
+            row=row, workspace=workspace, now=now,
+            max_age=self.service.max_observation_age,
+        )
+        if (observation.source is not SourceSafety.CLEAN
+                or observation.children is not ChildActivity.NONE
+                or observation.authoring_handoff != command.handoff
+                or observation.source_digest != command.handoff.source_digest
+                or command.handoff.receipt.provider != workspace.receipt.provider):
+            raise AttemptObservationMismatchError(
+                "host did not prove a clean, child-free workspace at the exact pinned source"
+            )
+        proof_time = _utc(command.handoff.receipt.observed_at, "handoff receipt timestamp")
+        if proof_time > now:
+            raise AttemptObservationMismatchError("authoring handoff receipt is from the future")
+        # The host's immutable marker can outlive its initial receipt timestamp.
+        # This command has already revalidated that marker through a fresh,
+        # bounded safety observation above, so it is the observation that must
+        # satisfy max_observation_age rather than the original marker receipt.
+        return CommandEffect(
+            # Host fencing is an external host effect. The authority records an
+            # idempotent command receipt, but no Todo semantic row changes here.
+            False,
+            {"attempt_id": str(attempt.attempt_id), "state": attempt.state.value,
+             "source_commit": str(command.handoff.source_commit),
+             "source_digest": command.handoff.source_digest.hex},
+        )
 
 
 @dataclass(frozen=True)
@@ -932,6 +1062,41 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
             command.observation, target=attempt.work_item, attempt_ref=attempt.ref, row=row,
             workspace=workspace, now=now, max_age=self.service.max_observation_age,
         )
+        if attempt.state is AttemptState.REPORTED:
+            pending = context._connection.execute(
+                "SELECT report_source_json FROM outcome_candidates "
+                "WHERE attempt_id = ? AND state = 'pending' ORDER BY reported_at, candidate_id",
+                (str(attempt.attempt_id),),
+            ).fetchall()
+            handoff = observation.authoring_handoff
+            handoff_matches_report = False
+            if handoff is not None:
+                for candidate in pending:
+                    try:
+                        reported_source = json.loads(candidate["report_source_json"])
+                        reported_digest = reported_source.get("source_digest")
+                    except (TypeError, ValueError):
+                        continue
+                    if (reported_digest == handoff.source_digest.hex
+                            and reported_source.get("source_revision") == str(handoff.source_commit)):
+                        handoff_matches_report = True
+                        break
+            if (pending and handoff is not None and handoff.attempt == attempt.ref
+                    and handoff.lease_id == attempt.lease.lease_id
+                    and handoff.workspace_id == workspace.workspace_id
+                    and observation.source is SourceSafety.CLEAN
+                    and observation.children is ChildActivity.NONE
+                    and handoff_matches_report):
+                _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
+                # An attempt-scoped authoring fence preserves the reported
+                # candidate for independent review after its execution lease
+                # expires. It proves neither producer death nor physical
+                # quiescence, so leave the REPORTED state and lease untouched.
+                return CommandEffect(False, {
+                    "attempt_id": str(attempt.attempt_id),
+                    "state": AttemptState.REPORTED.value,
+                    "authoring_handoff": True,
+                })
         if command.recovery:
             approved_observation = approval.host_observation
             if (approved_observation is None
@@ -943,6 +1108,18 @@ class _ReconcileExpiredHandler(_AttemptHandlerBase):
                     or approved_observation.source_digest != command.expected_source_digest
                     or observation.source_digest != command.expected_source_digest):
                 raise AttemptObservationMismatchError("fresh host proof differs from the approved recovery source")
+        handoff = observation.authoring_handoff
+        if handoff is not None and (
+            handoff.request.project_id != context.project.project_id
+            or handoff.request.authority_id != context.project.authority_id
+            or handoff.request.attempt != attempt.ref
+            or handoff.request.lease_id != attempt.lease.lease_id
+            or handoff.request.workspace_id != workspace.workspace_id
+            or handoff.source_digest != observation.source_digest
+        ):
+            raise AttemptObservationMismatchError(
+                "authoring handoff does not match the exact authority, attempt, lease, workspace, and source"
+            )
         state = _ReleaseHandler._safe_disposition(observation)
         preserved_dirty_workspace = False
         if command.recovery and command.preserve_dirty_workspace:
@@ -1059,7 +1236,7 @@ class AttemptService:
         self.lease_duration = lease_duration
         self.max_observation_age = max_observation_age
         for handler in (
-            _ClaimHandler(self), _HeartbeatHandler(self),
+            _ClaimHandler(self), _HandbackAuthoringHandler(self), _HeartbeatHandler(self),
             _ReleaseHandler(self), _ReconcileExpiredHandler(self),
         ):
             self.auth.dispatcher.register(handler)
@@ -1175,6 +1352,127 @@ class AttemptService:
                 # Authorization still runs before the handler returns not-found.
                 return None
             return attempt
+
+    def handback_authoring(
+        self,
+        authority: SQLiteAuthority,
+        bearer_token: str,
+        attempt_ref: EntityRef,
+        expected_lease_id: StableId,
+        *,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> CommandResult:
+        """Pin and fence one attempt's source while preserving process liveness."""
+        if not isinstance(authority, SQLiteAuthority) or authority.readonly:
+            raise ReadOnlyAuthorityError("authoring handback requires a writable authority")
+        if (not isinstance(attempt_ref, EntityRef) or attempt_ref.kind is not EntityKind.ATTEMPT
+                or attempt_ref.project_id != authority.project.project_id):
+            raise TypeError("attempt_ref must reference an attempt in this authority")
+        if not isinstance(expected_lease_id, StableId) or not isinstance(idempotency_key, StableId):
+            raise TypeError("expected_lease_id and idempotency_key must be StableId values")
+        if expected_revision is not None and (type(expected_revision) is not int or expected_revision < 0):
+            raise ValueError("expected_revision must be a non-negative integer or None")
+        if not callable(getattr(self.host, "handoff_authoring", None)):
+            raise AttemptHostUnavailableError("trusted host does not support scoped authoring handoff")
+
+        replay = self._has_idempotency_key(authority, idempotency_key)
+        bearer_digest = _token_digest(bearer_token)
+        actor, _ = self.auth._actor_for_token(authority, bearer_digest)
+        replay_revision = expected_revision
+        with authority.read_transaction() as connection:
+            revision_row = connection.execute(
+                "SELECT semantic_revision FROM authority_meta WHERE singleton = 1"
+            ).fetchone()
+            if revision_row is None:
+                raise AttemptObservationMismatchError("authority semantic revision is missing")
+            observed_revision = int(revision_row[0])
+            if not replay and expected_revision is not None and expected_revision != observed_revision:
+                raise StaleAuthorityRevisionError(
+                    f"expected semantic revision {expected_revision}, current revision is {observed_revision}"
+                )
+            if replay and replay_revision is None:
+                receipt_row = connection.execute(
+                    "SELECT r.command_kind, r.semantic_revision, r.changed FROM command_idempotency AS i "
+                    "JOIN command_receipts AS r USING(receipt_id) WHERE i.idempotency_key = ?",
+                    (str(idempotency_key),),
+                ).fetchone()
+                if (receipt_row is not None
+                        and receipt_row["command_kind"] == _HandbackAuthoringHandler.kind
+                        and not receipt_row["changed"]):
+                    # This command is deliberately a semantic no-op. Its
+                    # stored receipt revision is therefore the original
+                    # expected revision needed by the dispatcher digest.
+                    replay_revision = int(receipt_row["semantic_revision"])
+            attempt, row = _stored_attempt(connection, authority.project, attempt_ref)
+            workspace = _stored_workspace(connection, authority.project, attempt_ref)
+            requirement = AuthorizationRequirement(
+                FINISH_ACTION, attempt.work_item, attempt.run, attempt.assignment, attempt.ref,
+            )
+            self.auth._authorize_capability(
+                connection, authority.project, bearer_digest, actor, requirement,
+            )
+            if actor != attempt.actor:
+                raise AttemptOwnershipError("only the owning actor incarnation may hand back authoring")
+            if not replay:
+                if (attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE}
+                        or attempt.lease is None or attempt.lease.lease_id != expected_lease_id):
+                    raise AttemptLeaseMismatchError("authoring handback requires the exact current attempt lease")
+                if attempt.lease.expires_at <= self._now():
+                    raise AttemptLeaseMismatchError("authoring handback requires an unexpired attempt lease")
+                _require_children_resolved(connection, attempt.attempt_id)
+                _require_recovery_operations_resolved(connection, attempt.attempt_id)
+
+        request = AttemptAuthoringHandoffRequest(
+            authority.project.project_id, authority.project.authority_id,
+            attempt.ref, expected_lease_id, workspace.workspace_id, idempotency_key,
+        )
+        if replay:
+            # The dispatcher authenticates and compares the stable intent digest
+            # before it returns the exact durable receipt. Do not resample the
+            # host or regenerate volatile proof fields on a committed retry.
+            command = _HandbackAuthoring(
+                attempt.work_item, attempt.ref, expected_lease_id, attempt.run,
+                attempt.assignment, request, None, None,
+            )
+            return self.auth.execute(
+                authority, bearer_token, command, idempotency_key=idempotency_key,
+                expected_revision=(observed_revision if replay_revision is None else replay_revision),
+            )
+        try:
+            handoff = self.host.handoff_authoring(request)
+        except Exception as exc:
+            raise AttemptHostUnavailableError(
+                f"trusted host could not pin and fence attempt authoring: {type(exc).__name__}"
+            ) from exc
+        if not isinstance(handoff, AttemptAuthoringHandoff) or handoff.request != request:
+            raise AttemptObservationMismatchError("host returned no matching typed authoring handoff")
+        try:
+            observation = self.host.inspect_attempt(attempt, workspace)
+        except Exception as exc:
+            raise AttemptHostUnavailableError(
+                f"trusted host could not revalidate the authoring handoff: {type(exc).__name__}"
+            ) from exc
+        now = self._now()
+        observation = _check_observation(
+            observation, target=attempt.work_item, attempt_ref=attempt.ref, row=row,
+            workspace=workspace, now=now, max_age=self.max_observation_age,
+        )
+        if (observation.source is not SourceSafety.CLEAN
+                or observation.children is not ChildActivity.NONE
+                or observation.authoring_handoff != handoff
+                or observation.source_digest != handoff.source_digest):
+            raise AttemptObservationMismatchError(
+                "host did not revalidate a clean, child-free workspace at the pinned source"
+            )
+        command = _HandbackAuthoring(
+            attempt.work_item, attempt.ref, expected_lease_id, attempt.run,
+            attempt.assignment, request, handoff, observation,
+        )
+        return self.auth.execute(
+            authority, bearer_token, command, idempotency_key=idempotency_key,
+            expected_revision=observed_revision if expected_revision is None else expected_revision,
+        )
 
     def claim(
         self,

@@ -31,6 +31,7 @@ from todo_orchestrator.authority.attempts import (
     _Release,
     _ReleaseHandler,
     _attempt_from_row,
+    _plan_contexts,
     _stable_id,
     _stored_attempt,
     _workspace_map,
@@ -77,8 +78,10 @@ from todo_orchestrator.contracts import (
     PlanRevisionState,
     Run,
     RunState,
+    Sha256Digest,
     StableId,
 )
+from todo_orchestrator.contracts.providers import AttemptCredentialProvider, AttemptCredentialRequest
 from todo_orchestrator.model import (
     CHILD_CANDIDATE_SUBMIT_ACTION,
     CHILD_CANCEL_ACTION,
@@ -100,6 +103,7 @@ from todo_orchestrator.model import (
     RunScheduleView,
     ScheduledWork,
     DispatchResult,
+    NextWorkSelection,
 )
 from todo_orchestrator.planning import CompiledPlan, accepted_plan_payload, decode_accepted_plan
 
@@ -131,6 +135,10 @@ class DispatchSelectionError(CoordinationError):
 
 class AmbiguousDispatchError(DispatchSelectionError):
     """A selector matches more than one open assignment."""
+
+
+class AttemptCredentialUnavailableError(CoordinationError):
+    """A durable attempt bearer could not be prepared before grant issuance."""
 
 
 @dataclass(frozen=True)
@@ -676,13 +684,24 @@ class _OpenRunHandler:
 class CoordinationService:
     """Authenticated run scheduling with deterministic durable queue policy."""
 
-    def __init__(self, auth: AuthorityAuthService, *, attempts: AttemptService | None = None) -> None:
+    def __init__(
+        self,
+        auth: AuthorityAuthService,
+        *,
+        attempts: AttemptService | None = None,
+        attempt_credential_provider: AttemptCredentialProvider | None = None,
+    ) -> None:
         if not isinstance(auth, AuthorityAuthService):
             raise TypeError("auth must be an AuthorityAuthService")
         if attempts is not None and (not isinstance(attempts, AttemptService) or attempts.auth is not auth):
             raise TypeError("attempts must be an AttemptService using the same auth service")
+        if attempt_credential_provider is not None and not callable(
+            getattr(attempt_credential_provider, "prepare_attempt_credential", None)
+        ):
+            raise TypeError("attempt_credential_provider must implement prepare_attempt_credential")
         self.auth = auth
         self.attempts = attempts
+        self.attempt_credential_provider = attempt_credential_provider
         try:
             auth.dispatcher.register(_OpenRunHandler())
         except DuplicateCommandHandlerError:
@@ -744,6 +763,145 @@ class CoordinationService:
             raise RunScheduleNotFoundError(f"run schedule does not exist: {run_id}")
         return view
 
+    def select_next_work(
+        self,
+        authority: SQLiteAuthority,
+        bearer_token: str,
+        plan: CompiledPlan,
+        *,
+        run: EntityRef | None = None,
+        work_item: EntityRef | None = None,
+        assignment: EntityRef | None = None,
+    ) -> NextWorkSelection | None:
+        """Read the next native queue candidate without claiming or reserving it.
+
+        Selection shares dispatch's persisted queue resolution and claim
+        eligibility policy. A new workspace does not yet have a provider
+        qualification, so that candidate may be returned with UNKNOWN
+        eligibility and ``workspace_qualification_required`` set. Dispatch
+        repeats the policy under its writer lock after the host qualifies the
+        created workspace.
+        """
+        if self.attempts is None:
+            raise CoordinationError("next-work selection requires an injected AttemptService")
+        if not isinstance(authority, SQLiteAuthority):
+            raise TypeError("authority must be a SQLiteAuthority")
+        if not authority.readonly:
+            raise ReadOnlyAuthorityError("next-work selection requires a read-only authority")
+        if not isinstance(plan, CompiledPlan) or plan.project != authority.project:
+            raise ValueError("plan must be compiled for this authority project")
+        for value, kind, name in (
+            (work_item, EntityKind.WORK_ITEM, "work_item"),
+            (run, EntityKind.RUN, "run"),
+            (assignment, EntityKind.ASSIGNMENT, "assignment"),
+        ):
+            if value is not None and (
+                not isinstance(value, EntityRef) or value.kind is not kind
+                or value.project_id != authority.project.project_id
+            ):
+                raise ValueError(f"{name} must be a project-local {kind.value} reference")
+        if assignment is not None and run is None:
+            with authority.read_transaction() as connection:
+                row = connection.execute(
+                    "SELECT run_id FROM assignments WHERE assignment_id = ?",
+                    (str(assignment.entity_id),),
+                ).fetchone()
+            authorization_run = (
+                EntityRef(authority.project.project_id, EntityKind.RUN, StableId(row[0]))
+                if row is not None else None
+            )
+        else:
+            authorization_run = run
+        actor, _ = self.auth._actor_for_token(authority, _token_digest(bearer_token))
+        plan_payload_json = json.dumps(
+            accepted_plan_payload(plan), ensure_ascii=True, allow_nan=False,
+            sort_keys=True, separators=(",", ":"),
+        )
+        command = _Dispatch(
+            plan.revision.plan_revision_id, plan_payload_json, StableId("selection-workspace"),
+            work_item, run, assignment, authorization_run,
+            StableId("selection-attempt"), StableId("selection-lease"),
+            StableId("selection-capability"), _token_digest(bearer_token), "0" * 64,
+            StableId("selection-idempotency"),
+        )
+        automatic = work_item is None and assignment is None
+        with authority.read_transaction() as connection:
+            revision_row = connection.execute(
+                "SELECT semantic_revision FROM authority_meta WHERE singleton = 1"
+            ).fetchone()
+            if revision_row is None:
+                raise CoordinationError("authority semantic revision is missing")
+            revision = int(revision_row[0])
+            context = type("_SelectionContext", (), {
+                "_connection": connection, "project": authority.project,
+            })()
+            if run is None and work_item is None and assignment is None:
+                candidates = tuple(
+                    (entry.assignment.work_item, view.run.ref, entry.assignment.ref, entry)
+                    for view in _DispatchHandler._open_views(context)
+                    if view.run.plan_revision == plan.revision.ref
+                    for entry in view.entries
+                )
+            else:
+                candidates = _DispatchHandler(self)._resolve_candidates(context, plan, command)
+            qualifications = _workspace_map(connection, authority.project)
+            pending_workspace_candidate: NextWorkSelection | None = None
+            for target, candidate_run, candidate_assignment, entry in candidates:
+                if not any(item.definition.ref == target for item in plan.work_items):
+                    if automatic:
+                        continue
+                    raise DispatchSelectionError("selected work item is absent from the accepted plan")
+                try:
+                    for action in (CLAIM_ACTION, RUN_DISPATCH_ACTION):
+                        self.auth._authorize_capability(
+                            connection, authority.project, command.parent_bearer_digest,
+                            actor, AuthorizationRequirement(
+                                action, target, candidate_run, candidate_assignment,
+                            ),
+                        )
+                    if entry is not None and entry.required_role is not None:
+                        self.auth._authorize_capability(
+                            connection, authority.project, command.parent_bearer_digest,
+                            actor, AuthorizationRequirement(
+                                entry.required_role, target, candidate_run, candidate_assignment,
+                            ),
+                        )
+                except CapabilityDeniedError:
+                    if automatic:
+                        continue
+                    raise
+                request = EligibilityRequest(
+                    target, actor, CLAIM_ACTION, revision, candidate_run, candidate_assignment,
+                )
+                candidate_qualifications = dict(qualifications)
+                # A stored qualification belongs to a previous workspace; the
+                # caller still has to create and qualify this dispatch's one.
+                candidate_qualifications.pop(target, None)
+                decision = self.attempts.eligibility.evaluate_read_in_transaction(
+                    authority, connection, request, plan,
+                    scope_contexts=_plan_contexts(plan),
+                    workspace_qualifications=candidate_qualifications,
+                )
+                if decision.status is EligibilityStatus.BLOCKED:
+                    continue
+                if decision.status is EligibilityStatus.UNKNOWN:
+                    if not decision.causes or any(
+                        cause.code != "lane_candidate_workspace_unqualified"
+                        for cause in decision.causes
+                    ):
+                        continue
+                    if pending_workspace_candidate is None:
+                        pending_workspace_candidate = NextWorkSelection(
+                            target, plan.revision.ref, decision.authority_revision,
+                            decision, candidate_run, candidate_assignment, True,
+                        )
+                    continue
+                return NextWorkSelection(
+                    target, plan.revision.ref, decision.authority_revision,
+                    decision, candidate_run, candidate_assignment, True,
+                )
+        return pending_workspace_candidate
+
     def dispatch(
         self,
         authority: SQLiteAuthority,
@@ -800,21 +958,60 @@ class CoordinationService:
             accepted_plan_payload(plan), ensure_ascii=True, allow_nan=False,
             sort_keys=True, separators=(",", ":"),
         )
-        token = _bearer()
-        command = _Dispatch(
+        attempt_id = _stable_id("attempt", idempotency_key)
+        lease_id = _stable_id("lease", idempotency_key)
+        capability_id = _stable_id("dispatch-capability", idempotency_key)
+        provisional = _Dispatch(
             plan.revision.plan_revision_id, plan_payload_json, workspace_id,
             work_item, run, assignment, authorization_run,
-            _stable_id("attempt", idempotency_key),
-            _stable_id("lease", idempotency_key),
-            _stable_id("dispatch-capability", idempotency_key),
-            _token_digest(bearer_token), _token_digest(token), idempotency_key,
+            attempt_id, lease_id, capability_id,
+            _token_digest(bearer_token), "0" * 64, idempotency_key,
+        )
+        credential_provider = self.attempt_credential_provider
+        if credential_provider is None:
+            token = _bearer()
+        else:
+            # Do not ask the host vault to prepare a bearer for an unauthenticated
+            # or out-of-scope dispatch request. The command path repeats this
+            # check under its writer transaction before applying anything.
+            actor, _ = self.auth._actor_for_token(authority, _token_digest(bearer_token))
+            with authority.read_transaction() as connection:
+                requirement = _DispatchHandler(self).authorization_requirement(provisional)
+                self.auth._authorize_capability(
+                    connection, authority.project, _token_digest(bearer_token), actor, requirement,
+                )
+            payload_json = json.dumps(
+                _DispatchHandler(self).canonical_payload(provisional),
+                ensure_ascii=True, allow_nan=False, sort_keys=True, separators=(",", ":"),
+            )
+            intent_digest = Sha256Digest(hashlib.sha256(payload_json.encode("utf-8")).hexdigest())
+            request = AttemptCredentialRequest(
+                authority.project.project_id, authority.project.authority_id,
+                attempt_id, capability_id, idempotency_key, intent_digest,
+            )
+            try:
+                token = credential_provider.prepare_attempt_credential(request)
+            except Exception as exc:
+                raise AttemptCredentialUnavailableError(
+                    "host could not durably prepare the attempt bearer before authority mutation"
+                ) from exc
+            if not isinstance(token, str) or not token:
+                raise AttemptCredentialUnavailableError(
+                    "host credential provider returned no attempt bearer"
+                )
+        command = _Dispatch(
+            provisional.plan_revision_id, provisional.plan_payload_json, provisional.workspace_id,
+            provisional.target, provisional.requested_run, provisional.assignment,
+            provisional.authorization_run, attempt_id, lease_id, capability_id,
+            provisional.parent_bearer_digest, _token_digest(token), idempotency_key,
         )
         result = self.auth.execute(
             authority, bearer_token, command, idempotency_key=idempotency_key,
             expected_revision=expected_revision,
         )
         if result.replayed:
-            raise CapabilityDeliveryUncertainError(result.receipt)
+            if credential_provider is None:
+                raise CapabilityDeliveryUncertainError(result.receipt)
         with authority.read_transaction() as connection:
             attempt, _ = _stored_attempt(
                 connection, authority.project,
@@ -822,11 +1019,24 @@ class CoordinationService:
             )
             row = _stored_capability(connection, command.capability_id)
             if row is None or row["revoked"]:
+                if result.replayed:
+                    raise CapabilityDeliveryUncertainError(result.receipt)
                 raise CoordinationError("dispatched attempt capability was not durably stored")
+            if row["token_digest"] != command.child_token_digest:
+                if result.replayed:
+                    raise CapabilityDeliveryUncertainError(result.receipt)
+                raise CoordinationError("prepared attempt bearer does not match its durable capability")
+            if result.replayed:
+                if attempt.lease is None or attempt.lease.lease_id != command.lease_id:
+                    raise CapabilityDeliveryUncertainError(result.receipt)
+                if attempt.lease.expires_at <= self.attempts._now():
+                    raise CapabilityDeliveryUncertainError(result.receipt)
             capability_actor = attempt.actor
             scope = _scope_from_row(authority.project, row)
             cap_run, cap_assignment, cap_attempt = _context_from_row(authority.project, row)
             expires = None if row["expires_at"] is None else datetime.fromisoformat(row["expires_at"])
+            if result.replayed and expires is not None and expires <= self.attempts._now():
+                raise CapabilityDeliveryUncertainError(result.receipt)
             capability = _capability_from_values(
                 authority.project, command.capability_id, capability_actor, scope,
                 _stored_actions(connection, command.capability_id), cap_run,

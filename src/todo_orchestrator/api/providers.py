@@ -7,7 +7,11 @@ from datetime import datetime
 from typing import Callable
 
 from todo_orchestrator.contracts import ProviderIdentity
-from todo_orchestrator.contracts.providers import CommandExecutionProvider, ResourcePermitProvider
+from todo_orchestrator.contracts.providers import (
+    AttemptCredentialProvider,
+    CommandExecutionProvider,
+    ResourcePermitProvider,
+)
 from todo_orchestrator.authority.auth import PrincipalAuthenticator
 from todo_orchestrator.providers.git import GitRepositoryConfig, GitRepositoryProvider
 
@@ -29,6 +33,7 @@ class ProviderComposition:
     """
 
     attempt_host: object | None = None
+    attempt_credential_provider: AttemptCredentialProvider | None = None
     host_identity: ProviderIdentity | None = None
     source_observer: object | None = None
     source_identity: ProviderIdentity | None = None
@@ -66,6 +71,10 @@ class ProviderComposition:
             for method in ("qualify_workspace", "inspect_attempt")
         ):
             raise TypeError("attempt_host must implement qualify_workspace and inspect_attempt")
+        if self.attempt_credential_provider is not None and not callable(
+            getattr(self.attempt_credential_provider, "prepare_attempt_credential", None)
+        ):
+            raise TypeError("attempt_credential_provider must implement prepare_attempt_credential")
         if self.source_observer is not None and not callable(getattr(self.source_observer, "observe", None)):
             raise TypeError("source_observer must implement observe")
         if self.verification_provider is not None and not all(

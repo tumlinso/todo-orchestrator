@@ -7,25 +7,22 @@ description: Use the standalone Todo Orchestrator CLI to inspect workflow state,
 
 ## Project Control workspaces
 
-For a repository registered in Project Control, use the host's native `todo_*`
-MCP tools for workflow state. Project Control binds the workspace, registered
-repository, host identity, profile, credentials, and providers; do not pass
-filesystem roots or bearer tokens to these tools. Use `todo_read_authority` for
-bounded state, `todo_preview_plan` followed by `todo_commit_plan` for reviewed
-plan changes (commit the exact returned preview with an idempotency key), and
-the `todo_open_run`, `todo_create_workspace`, `todo_dispatch_attempt`,
-`todo_verify_attempt`, `todo_report_outcome`, `todo_accept_outcome`,
-`todo_finish_attempt`, and `todo_inspect_attempt` tools for the corresponding
-lifecycle steps. Each mutating call that accepts an idempotency key needs a
-fresh stable key for that intent.
+For a repository registered in Project Control, use the compact Project Control
+workflow: `next_task` prepares or resumes work, `inspect_task` returns bounded
+context, `coordinate_task` handles typed coordination, and `finish_task`
+completes, hands off, blocks, or releases work. Continue with the opaque
+workflow handle and actions returned by the host. The host binds the workspace,
+registered repository, identity, profile, credentials, and providers; routine
+agents do not manage native authority IDs, leases, credentials, or retry keys.
+Use the live host manifest for exact schemas and permissions.
 
-Imported state is read through `todo_read_legacy_current_tasks`,
-`todo_search_legacy_history`, and `todo_read_legacy_project_context`. Legacy
-completion assertions do not constitute native evidence, and unknown external
-effects are surfaced for attention rather than replayed. Snapshot import tools
-are restricted to the Project Control mutator profile and the explicit cutover
-procedure. For the complete registered tool schemas, rely on the active host
-manifest; this skill names only common operations.
+Use Project Control's established read tools for registered workspace context
+and migrated Todo status/history; observer reads do not require a task claim and
+cannot mutate workflow state. Privileged plan and operational recovery remain
+on their established Project Control tools. Imported completion assertions do
+not constitute native verification, and unknown external effects require
+attention rather than replay. Project Control handles snapshot import through
+its explicit privileged procedure.
 
 The standalone CLI and public application interface below apply only when
 operating a separately managed standalone authority. They do not select or

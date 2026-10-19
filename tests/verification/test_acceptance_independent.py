@@ -8,6 +8,7 @@ from dataclasses import replace
 
 from todo_orchestrator.authority import CapabilityDeniedError, IdempotencyConflictError, SQLiteAuthority
 from todo_orchestrator.coordination import RUN_DISPATCH_ACTION
+from todo_orchestrator.authority.attempts import RECONCILE_ACTION
 from todo_orchestrator.contracts import (
     ArtifactAvailability, EntityKind, EntityRef, EvidenceInput, EvidenceKind, EvidenceResult, OutcomeDisposition,
     ProviderIdentity, ProviderReceipt, Sha256Digest, StableId, VerificationEvidenceFact,
@@ -22,6 +23,12 @@ from todo_orchestrator.verification.acceptance import (
     CandidateDeniedError,
     CandidateObservationMismatchError,
     OutcomeAcceptanceService,
+)
+from todo_orchestrator.model import (
+    AttemptAuthoringHandoff,
+    AttemptAuthoringHandoffRequest,
+    ProcessLiveness,
+    authoring_handoff_request_digest,
 )
 
 from tests.verification.test_execution_independent import (
@@ -50,7 +57,55 @@ REPORT_ACTIONS = OWNER_ACTIONS + (
     REJECT_CANDIDATE_ACTION,
     MANUAL_OWNER_ACTIONS["owner"],
     READ_OUTCOME_ACTION,
+    RECONCILE_ACTION,
 )
+
+
+class HandoffFixtureAttemptHost:
+    """Attempt host fixture with a persistent source pin and live producer."""
+
+    def __init__(self, wrapped, clock):
+        self.wrapped = wrapped
+        self.clock = clock
+        self.proofs = {}
+        self.handoff_calls = 0
+        self.inspect_calls = 0
+        self.last_process = None
+
+    def qualify_workspace(self, workspace_id, target, correlation_id):
+        return self.wrapped.qualify_workspace(workspace_id, target, correlation_id)
+
+    def handoff_authoring(self, request: AttemptAuthoringHandoffRequest):
+        self.handoff_calls += 1
+        suffix = hashlib.sha256(str(request.attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        source_tree = StableId("tree-" + suffix)
+        source_digest = Sha256Digest("4" * 64)
+        receipt = ProviderReceipt(
+            _receipt_id("v03-authoring-handoff", request.attempt.entity_id), HOST_IDENTITY,
+            request.attempt.entity_id,
+            authoring_handoff_request_digest(request, source_commit, source_tree, source_digest),
+            source_commit, self.clock(),
+        )
+        proof = AttemptAuthoringHandoff(
+            request, source_commit, source_tree, source_digest, receipt,
+        )
+        self.proofs[str(request.attempt.entity_id)] = proof
+        return proof
+
+    def inspect_attempt(self, attempt, workspace):
+        self.inspect_calls += 1
+        observation = self.wrapped.inspect_attempt(attempt, workspace)
+        proof = self.proofs.get(str(attempt.attempt_id))
+        if proof is not None:
+            observation = replace(
+                observation,
+                process=ProcessLiveness.LIVE,
+                source_digest=proof.source_digest,
+                authoring_handoff=proof,
+            )
+        self.last_process = observation.process
+        return observation
 
 
 class ArtifactVerifier(LedgerVerifier):
@@ -156,6 +211,28 @@ class ArtifactAwareSourceObserver(FixtureSourceObserver):
             for item in request.artifacts
         )
         return replace(result, value=replace(result.value, artifacts=availability))
+
+
+class PinnedSourceObserver(ArtifactAwareSourceObserver):
+    def __init__(self, clock, source_commit):
+        super().__init__(clock)
+        self.source_commit = source_commit
+
+    def observe(self, request):
+        result = super().observe(request)
+        return replace(result, value=replace(result.value, source_revision=self.source_commit))
+
+
+class ChangedPinnedSourceObserver(PinnedSourceObserver):
+    """Report a clean source revision that changed after the durable handoff."""
+
+    def observe(self, request):
+        result = super().observe(request)
+        return replace(result, value=replace(
+            result.value,
+            source_digest=Sha256Digest("5" * 64),
+            source_revision=StableId("commit-after-handoff"),
+        ))
 
 
 class MissingArtifactSourceObserver(ArtifactAwareSourceObserver):
@@ -420,6 +497,119 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
                 expected_plan_revision_id=preview.expected_revision_id,
             )
             f.plan = f.plans.load_accepted_plan(authority)
+
+    def test_scoped_handoff_preserves_review_after_expiry_without_claiming_stop(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-handoff-review-claim")
+        suffix = hashlib.sha256(str(attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        f.source = PinnedSourceObserver(f.clock, source_commit)
+        self.acceptance.source_observer = f.source
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),)
+            ).fetchone()
+        lease_id = StableId(row["lease_id"])
+        handback_revision = f.revision()
+
+        with f.open_writer() as authority:
+            handback = f.attempts.handback_authoring(
+                authority, f.owner.bearer_token, attempt, lease_id,
+                idempotency_key=StableId("v03-handoff-review-key"),
+                expected_revision=handback_revision,
+            )
+        self.assertFalse(handback.receipt.changed)
+        self.assertEqual(handback.receipt.result["source_commit"], str(source_commit))
+        self.assertEqual(handback.receipt.result["source_digest"], "4" * 64)
+        self.assertEqual(host.last_process, ProcessLiveness.LIVE)
+        self.assertEqual(host.handoff_calls, 1)
+
+        _, candidate = self.report(
+            f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED, "v03-handoff-review-report",
+        )
+        # Simulate a response loss after the handback commit followed by other
+        # authority work. The exact retry must reuse its original receipt and
+        # must not call or regenerate a time-varying host observation.
+        with f.open_writer() as authority:
+            handback_replay = f.attempts.handback_authoring(
+                authority, f.owner.bearer_token, attempt, lease_id,
+                idempotency_key=StableId("v03-handoff-review-key"),
+                expected_revision=handback_revision,
+            )
+        self.assertTrue(handback_replay.replayed)
+        self.assertEqual(handback_replay.receipt, handback.receipt)
+        self.assertEqual(host.handoff_calls, 1)
+
+        f.clock.value += timedelta(minutes=6)
+        revision_before_reconcile = f.revision()
+        with f.open_writer() as authority:
+            reconciled = f.attempts.reconcile_expired(
+                authority, f.owner.bearer_token, attempt,
+                idempotency_key=StableId("v03-handoff-review-reconcile"),
+                expected_revision=revision_before_reconcile,
+            )
+        self.assertFalse(reconciled.receipt.changed)
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT state, lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),)
+            ).fetchone()
+        self.assertEqual(row["state"], "reported")
+        self.assertEqual(row["lease_id"], str(lease_id))
+
+        accepted = self.accept(
+            f.owner.bearer_token, attempt, candidate, "v03-handoff-review-accept",
+        )
+        self.assertEqual(accepted.receipt.result["state"], "accepted")
+        self.assertEqual(host.last_process, ProcessLiveness.LIVE)
+
+        # A stopped-process observation by itself does not let a stale report
+        # bypass its expired lease; only the exact scoped pin does.
+        other_attempt = f.claim("verify", f.owner.bearer_token, key="v03-no-handoff-claim")
+        _, other_candidate = self.report(
+            f.owner.bearer_token, other_attempt, OutcomeDisposition.COMPLETED, "v03-no-handoff-report",
+        )
+        f.clock.value += timedelta(minutes=6)
+        with self.assertRaises(CandidateDeniedError):
+            self.accept(
+                f.owner.bearer_token, other_attempt, other_candidate, "v03-no-handoff-accept",
+            )
+
+    def test_handoff_report_rejects_a_source_edit_after_the_pin(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-handoff-source-drift-claim")
+        suffix = hashlib.sha256(str(attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        f.source = PinnedSourceObserver(f.clock, source_commit)
+        self.acceptance.source_observer = f.source
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),)
+            ).fetchone()
+        with f.open_writer() as authority:
+            f.attempts.handback_authoring(
+                authority, f.owner.bearer_token, attempt, StableId(row["lease_id"]),
+                idempotency_key=StableId("v03-handoff-source-drift-key"),
+                expected_revision=f.revision(),
+            )
+
+        # Model an edit after the host's fence. Reporting must not attach a new
+        # source observation to the earlier handoff receipt.
+        self.acceptance.source_observer = ChangedPinnedSourceObserver(f.clock, source_commit)
+        before = f.state_snapshot()
+        with self.assertRaises(CandidateObservationMismatchError):
+            self.report(
+                f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED,
+                "v03-handoff-source-drift-report",
+            )
+        self.assertEqual(f.state_snapshot(), before)
 
     def test_dispatched_check_is_accepted_by_a_distinct_scoped_actor_and_history_is_immutable(self):
         f = self.fixture

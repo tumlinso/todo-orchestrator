@@ -1278,7 +1278,7 @@ class EligibilityAdapter:
         if not authority.readonly:
             raise ReadOnlyAuthorityError("advisory eligibility requires an explicitly read-only authority")
         with authority.read_transaction() as connection:
-            return self._evaluate(
+            return self.evaluate_read_in_transaction(
                 authority, connection, request, plan,
                 blocker_observations=blocker_observations,
                 check_observations=check_observations,
@@ -1287,6 +1287,35 @@ class EligibilityAdapter:
                 workspace_qualifications=workspace_qualifications,
                 approved_participants=approved_participants,
             )
+
+    def evaluate_read_in_transaction(
+        self,
+        authority: SQLiteAuthority,
+        connection,
+        request: EligibilityRequest,
+        plan: CompiledPlan,
+        *,
+        blocker_observations: Mapping[EntityRef, ConditionResult] = MappingProxyType({}),
+        check_observations: Mapping[StableId, ConditionResult] = MappingProxyType({}),
+        decision_observations: Mapping[str, DecisionObservation] = MappingProxyType({}),
+        scope_contexts: Mapping[EntityRef, WorkItemContext] = MappingProxyType({}),
+        workspace_qualifications: Mapping[EntityRef, WorkspaceQualification] = MappingProxyType({}),
+        approved_participants: Mapping[EntityRef, frozenset[EntityRef]] = MappingProxyType({}),
+    ) -> EligibilityDecision:
+        """Evaluate within a caller-held read snapshot for coherent selection."""
+        if not authority.readonly:
+            raise ReadOnlyAuthorityError("advisory eligibility requires an explicitly read-only authority")
+        if connection is not authority.connection or not connection.in_transaction:
+            raise EligibilityAdapterError("read evaluation requires this authority's active read transaction")
+        return self._evaluate(
+            authority, connection, request, plan,
+            blocker_observations=blocker_observations,
+            check_observations=check_observations,
+            decision_observations=decision_observations,
+            scope_contexts=scope_contexts,
+            workspace_qualifications=workspace_qualifications,
+            approved_participants=approved_participants,
+        )
 
     def evaluate_in_transaction(
         self,

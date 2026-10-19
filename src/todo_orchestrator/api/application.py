@@ -81,6 +81,7 @@ from todo_orchestrator.model import (
     CommandResult,
     DispatchResult,
     RunSchedule,
+    NextWorkSelection,
 )
 from todo_orchestrator.model.context import ContextExpansion, ContextFragmentKind, ContextFragmentRef, ContextManifest
 from todo_orchestrator.migration import (
@@ -213,7 +214,10 @@ class _ServiceBundle:
         self.attempts = None
         if providers.attempt_host is not None:
             self.attempts = AttemptService(self.auth, host=providers.attempt_host, clock=providers.clock)
-        self.coordination = CoordinationService(self.auth, attempts=self.attempts)
+        self.coordination = CoordinationService(
+            self.auth, attempts=self.attempts,
+            attempt_credential_provider=providers.attempt_credential_provider,
+        )
         self.declarations = DeclarationService(self.auth)
         self.context = ContextService(self.auth, clock=providers.clock)
         self.messaging = MessagingService(self.auth)
@@ -1431,6 +1435,46 @@ class TodoSession:
                     raise RunScheduleNotFoundError(f"run schedule does not exist: {run}")
                 return view
 
+    def select_next_work(
+        self,
+        run_id: StableId | EntityRef | None = None,
+        *,
+        target: StableId | EntityRef | None = None,
+        assignment: StableId | EntityRef | None = None,
+        plan_revision_id: StableId | None = None,
+    ) -> NextWorkSelection | None:
+        """Select one read-only native queue candidate before workspace creation."""
+        run_ref = self._selector_ref(run_id, EntityKind.RUN)
+        assignment_ref = self._selector_ref(assignment, EntityKind.ASSIGNMENT)
+        if plan_revision_id is None and run_ref is not None:
+            # Queue selection is advisory and must not require permission to
+            # create schedules. A dispatch-scoped caller may read the exact
+            # run's accepted plan identity, then native selection repeats its
+            # claim/dispatch checks for each returned candidate.
+            with self._reader() as authority:
+                with authority.read_transaction() as connection:
+                    self._authorize_exact_action(
+                        connection, RUN_DISPATCH_ACTION, run_ref, run=run_ref,
+                    )
+                    row = connection.execute(
+                        "SELECT plan_revision_id FROM runs WHERE run_id = ?",
+                        (str(run_ref.entity_id),),
+                    ).fetchone()
+                    if row is None:
+                        raise RunScheduleNotFoundError(
+                            f"run schedule does not exist: {run_ref.entity_id}"
+                        )
+                    plan_revision_id = StableId(row["plan_revision_id"])
+        plan = self._accepted_plan(plan_revision_id)
+        target_ref = self._selector_ref(target, EntityKind.WORK_ITEM, plan_revision_id=plan_revision_id)
+        coordination = self._required(self._services.attempts, "attempt_host")
+        del coordination
+        with self._reader() as authority:
+            return self._services.coordination.select_next_work(
+                authority, self._bearer_token, plan,
+                run=run_ref, work_item=target_ref, assignment=assignment_ref,
+            )
+
     def run_schedule_digest(self, run_id: StableId | str) -> Sha256Digest:
         """Read the authenticated immutable schedule digest for close/retire CAS."""
         run = run_id if isinstance(run_id, StableId) else StableId(run_id)
@@ -1658,6 +1702,25 @@ class TodoSession:
         lease = lease_id if isinstance(lease_id, StableId) else StableId(lease_id)
         with self._writer() as authority:
             result = self._services.coordination.finish(
+                authority, self._bearer_token, attempt, lease,
+                idempotency_key=idempotency_key, expected_revision=expected_revision,
+            )
+        return ApiReceiptV1.from_result(result)
+
+    def handback_attempt(
+        self,
+        attempt_ref: EntityRef | StableId,
+        lease_id: StableId | str,
+        *,
+        idempotency_key: StableId,
+        expected_revision: int | None = None,
+    ) -> ApiReceiptV1:
+        """Fence the exact attempt's source for review without asserting process death."""
+        attempts = self._required(self._services.attempts, "attempt_host_authoring_handoff")
+        attempt = attempt_ref if isinstance(attempt_ref, EntityRef) else self.attempt_ref(attempt_ref)
+        lease = lease_id if isinstance(lease_id, StableId) else StableId(lease_id)
+        with self._writer() as authority:
+            result = attempts.handback_authoring(
                 authority, self._bearer_token, attempt, lease,
                 idempotency_key=idempotency_key, expected_revision=expected_revision,
             )

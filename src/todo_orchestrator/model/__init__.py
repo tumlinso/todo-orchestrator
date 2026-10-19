@@ -21,10 +21,13 @@ from .eligibility import (
     WorkspaceQualification,
 )
 from .attempts import (
+    AttemptAuthoringHandoff,
+    AttemptAuthoringHandoffRequest,
     AttemptSafetyObservation,
     ChildActivity,
     ProcessLiveness,
     SourceSafety,
+    authoring_handoff_request_digest,
 )
 from .coordination import (
     DispatchResult,
@@ -37,6 +40,7 @@ from .coordination import (
     RunScheduleView,
     ScheduledWork,
 )
+from .selection import NextWorkSelection
 from .context import (
     ContextCapsule,
     ContextCapsuleStatus,
@@ -88,9 +92,12 @@ __all__ = [
     "WorkspaceIsolation",
     "WorkspaceQualification",
     "AttemptSafetyObservation",
+    "AttemptAuthoringHandoff",
+    "AttemptAuthoringHandoffRequest",
     "ChildActivity",
     "ProcessLiveness",
     "SourceSafety",
+    "authoring_handoff_request_digest",
     "DispatchResult",
     "IsolationPolicy",
     "LaneSpec",
@@ -100,6 +107,7 @@ __all__ = [
     "RunSchedule",
     "RunScheduleView",
     "ScheduledWork",
+    "NextWorkSelection",
     "ContextCapsule",
     "ContextCapsuleStatus",
     "ContextChangeKind",

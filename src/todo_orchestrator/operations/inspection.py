@@ -1167,15 +1167,42 @@ class RecoveryInspectionService:
         intents: list[RecoveryIntent] = []
         op_refs = tuple(item.operation for item in operations)
         all_ops_resolved = all(item.status is RecoveryOperationStatus.COMPLETE for item in operations)
+        handoff = None if host is None else host.authoring_handoff
+        handoff_valid = bool(
+            host is not None and handoff is not None
+            and host.source is SourceSafety.CLEAN
+            and host.source_digest is not None
+            and host.children is ChildActivity.NONE
+            and handoff.request.project_id == authority.project.project_id
+            and handoff.request.authority_id == authority.project.authority_id
+            and handoff.request.attempt == attempt.ref
+            and lease is not None and handoff.request.lease_id == lease.lease_id
+            and snapshot.workspace is not None
+            and handoff.request.workspace_id == snapshot.workspace.workspace_id
+            and handoff.receipt.provider == snapshot.workspace.receipt.provider
+            and handoff.source_digest == host.source_digest
+            and (source is None or source.source_digest == handoff.source_digest)
+        )
+        authoring_quiescent = bool(host is not None and (host.process.quiescent or handoff_valid))
         if (expired is True and attempt.state is not AttemptState.REPORTED and not pending_candidates
-                and host is not None and host.source_digest is not None and host.safe_to_release and all_ops_resolved
+                and host is not None and host.source_digest is not None and host.safe_to_release
+                and authoring_quiescent and all_ops_resolved
                 and not any(item.state != "stopped" or item.candidate_pending_review for item in snapshot.children)
                 and consistent):
+            release_preconditions = tuple(
+                item for item in preconditions
+                if item.code not in {"process_stopped", "external_producer_quiescent"}
+            ) + (
+                RecoveryPrecondition(
+                    "authoring_quiescent", authoring_quiescent, attempt.ref,
+                    "writer quiescent or exact scoped authoring handoff is current",
+                ),
+            )
             intents.append(RecoveryIntent(
                 RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT, attempt.ref, attempt.work_item,
                 op_refs, snapshot.revision, lease.lease_id,
                 (source.source_digest if source is not None else host.source_digest),
-                None if snapshot.workspace is None else snapshot.workspace.workspace_id, tuple(preconditions),
+                None if snapshot.workspace is None else snapshot.workspace.workspace_id, release_preconditions,
             ))
         dirty_handoff_operations_resolved = all(
             item.status in {RecoveryOperationStatus.COMPLETE, RecoveryOperationStatus.IRRECOVERABLE}

@@ -7,8 +7,13 @@ import unittest
 from tests.verification import test_git_independent as git_fixture
 from tests.verification import test_execution_independent as verification_fixture
 from todo_orchestrator.authority import CapabilityDeniedError, SQLiteAuthority
-from todo_orchestrator.contracts import EntityKind, EntityRef, Sha256Digest, StableId
-from todo_orchestrator.model import ChildActivity, ProcessLiveness, SourceSafety
+from todo_orchestrator.contracts import (
+    EntityKind, EntityRef, ProviderReceipt, Sha256Digest, StableId,
+)
+from todo_orchestrator.model import (
+    AttemptAuthoringHandoff, AttemptAuthoringHandoffRequest, ChildActivity,
+    ProcessLiveness, SourceSafety, authoring_handoff_request_digest,
+)
 from todo_orchestrator.operations.inspection import (
     RecoveryInspectionService, RecoveryStatus,
 )
@@ -103,7 +108,7 @@ class RecoveryInspectionIndependentTests(unittest.TestCase):
         self.assertEqual(
             {item.code for item in intent.preconditions},
             {"authority_revision_unchanged", "stored_workspace_binding_valid", "source_clean",
-             "process_stopped", "external_producer_quiescent", "no_active_children",
+             "authoring_quiescent", "no_active_children",
              "host_state_matches_exact_lease"},
         )
         self.assertEqual(result.state, active.state)
@@ -122,9 +127,46 @@ class RecoveryInspectionIndependentTests(unittest.TestCase):
         self.assertEqual(tuple(item.kind for item in result.intents),
                          (RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT,))
         checks = {item.code: item.satisfied for item in result.intents[0].preconditions}
-        self.assertFalse(checks["process_stopped"])
-        self.assertTrue(checks["external_producer_quiescent"])
+        self.assertTrue(checks["authoring_quiescent"])
+        self.assertNotIn("process_stopped", checks)
+        self.assertNotIn("external_producer_quiescent", checks)
         self.assertTrue(checks["no_active_children"])
+
+    def test_expired_scoped_authoring_handoff_previews_release_without_claiming_process_stop(self):
+        active = self.inspect()
+        workspace = active.host_observation.workspace
+        source_digest = Sha256Digest("4" * 64)
+        source_commit = StableId("inspection-handoff-commit")
+        source_tree = StableId("inspection-handoff-tree")
+        request = AttemptAuthoringHandoffRequest(
+            verification_fixture.PROJECT.project_id,
+            verification_fixture.PROJECT.authority_id,
+            self.attempt_ref,
+            active.lease_id,
+            workspace.workspace_id,
+            StableId("inspection-handoff-key"),
+        )
+        receipt = ProviderReceipt(
+            StableId("inspection-handoff-receipt"), workspace.receipt.provider,
+            self.attempt_ref.entity_id,
+            authoring_handoff_request_digest(request, source_commit, source_tree, source_digest),
+            source_commit, self.fixture.clock(),
+        )
+        handoff = AttemptAuthoringHandoff(request, source_commit, source_tree, source_digest, receipt)
+        self.host.override = lambda observation: replace(
+            observation, process=ProcessLiveness.LIVE, source_digest=source_digest,
+            authoring_handoff=handoff,
+        )
+        self.fixture.clock.value = active.lease_expires_at + timedelta(seconds=1)
+
+        result = self.inspect()
+
+        self.assertEqual(tuple(intent.kind for intent in result.intents),
+                         (RecoveryIntentKind.RELEASE_EXPIRED_ATTEMPT,))
+        checks = {item.code: item.satisfied for item in result.intents[0].preconditions}
+        self.assertTrue(checks["authoring_quiescent"])
+        self.assertNotIn("process_stopped", checks)
+        self.assertNotIn("external_producer_quiescent", checks)
 
     def test_external_producer_quiescence_preserves_dirty_workspace_as_explicit_handoff(self):
         active = self.inspect()
