@@ -1,13 +1,22 @@
 """Public accepted-source integration checks using disposable Git and Todo state."""
 
+from dataclasses import replace
 from datetime import timedelta
 from pathlib import Path
 import json
 import subprocess
 import unittest
+from unittest.mock import patch
 
 from todo_orchestrator.authority import AuthorityAuthService, CommandDispatcher, SQLiteAuthority
-from todo_orchestrator.contracts import EntityKind, OutcomeDisposition, StableId
+from todo_orchestrator.contracts import (
+    EntityKind,
+    OutcomeDisposition,
+    ProviderResult,
+    ProviderStatus,
+    SourceObservation,
+    StableId,
+)
 from todo_orchestrator.model import ChildActivity, ProcessLiveness
 from todo_orchestrator.providers.git import GitRepositoryConfig, GitRepositoryProvider
 from todo_orchestrator.providers.git.service import (
@@ -151,6 +160,44 @@ class GitEffectServiceIntegrationTests(unittest.TestCase):
                          str(integrated.observation.external_ref))
         parents = _git(self.repository, "show", "-s", "--format=%P", self.destination_ref.value).split()
         self.assertEqual(parents, [self.base_commit, accepted_source])
+
+    def test_integration_canonicalizes_accepted_source_input_order(self):
+        dispatched, accepted_source = self._accept_verified_source()
+        original_observe = self.provider.observe
+        observed_orders = []
+
+        def observe_reverse_sorted_inputs(request):
+            result = original_observe(request)
+            if (result.status is not ProviderStatus.OBSERVED_SUCCESS
+                    or not isinstance(result.value, SourceObservation)):
+                return result
+            source = result.value
+            inputs = tuple(sorted(source.inputs, key=lambda item: str(item.name), reverse=True))
+            observed_orders.append(tuple(str(item.name) for item in inputs))
+            return ProviderResult(
+                result.status,
+                result.correlation_id,
+                result.provider,
+                replace(source, inputs=inputs),
+                result.receipt,
+                result.reason_code,
+            )
+
+        with patch.object(self.provider, "observe", side_effect=observe_reverse_sorted_inputs):
+            with self.fixture.open_writer() as authority:
+                integrated = self.effects.integrate_attempt(
+                    authority,
+                    self.git_owner.bearer_token,
+                    dispatched.attempt.ref,
+                    idempotency_key=StableId("accepted-git-integrate-input-order"),
+                    expected_revision=self.fixture.revision(),
+                )
+
+        self.assertEqual(integrated.state, GitEffectState.FINALIZED)
+        self.assertEqual(integrated.request.source_commit, StableId(accepted_source))
+        self.assertTrue(observed_orders)
+        self.assertGreater(len(observed_orders[0]), 1)
+        self.assertEqual(observed_orders[0], tuple(sorted(observed_orders[0], reverse=True)))
 
     def test_clean_commit_after_acceptance_is_refused_without_intent_or_ref_churn(self):
         dispatched, _accepted_source = self._accept_verified_source()

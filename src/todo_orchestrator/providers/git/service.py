@@ -436,7 +436,10 @@ def _source_value(value: SourceObservation | None) -> dict[str, object] | None:
         "base_digest": None if value.base_digest is None else value.base_digest.hex,
         "source_revision": None if value.source_revision is None else str(value.source_revision),
         "working_tree": value.working_tree.value,
-        "inputs": [{"name": str(item.name), "digest": item.digest.hex} for item in value.inputs],
+        "inputs": [
+            {"name": str(item.name), "digest": item.digest.hex}
+            for item in sorted(value.inputs, key=lambda item: str(item.name))
+        ],
         "artifacts": [{"artifact_id": str(item.artifact_id), "available": item.available,
                        "content_digest": None if item.content_digest is None else item.content_digest.hex}
                       for item in value.artifacts],
