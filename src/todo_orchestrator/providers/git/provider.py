@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import base64
 import hashlib
@@ -21,6 +21,7 @@ import os
 from pathlib import Path, PurePosixPath
 import secrets
 import shutil
+import stat
 import subprocess
 import tempfile
 from typing import Protocol
@@ -103,6 +104,7 @@ class GitRepositoryConfig:
     provider_id: StableId = StableId("todo.git.local")
     version: str = "git-cli-3"
     command_timeout_seconds: float = 30.0
+    gitlink_policy: str = "reject"
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -135,6 +137,8 @@ class GitRepositoryConfig:
             raise ValueError("integration_ref must be a full local branch ref")
         if not isinstance(self.version, str) or not self.version.strip():
             raise ValueError("version must be non-empty text")
+        if self.gitlink_policy not in {"reject", "opaque_clean"}:
+            raise ValueError("gitlink_policy must be 'reject' or 'opaque_clean'")
         if (isinstance(self.command_timeout_seconds, bool) or not isinstance(self.command_timeout_seconds, (int, float))
                 or self.command_timeout_seconds <= 0):
             raise ValueError("command_timeout_seconds must be positive")
@@ -160,6 +164,7 @@ class _ManifestEntry:
     path: bytes
     mode: str
     digest: str
+    coverage: str | None = field(default=None, compare=False)
 
 
 class GitRepositoryProvider:
@@ -338,10 +343,11 @@ class GitRepositoryProvider:
             raise GitProviderError("workspace journal identity does not match the requested workspace")
         return record
 
-    def _commit_manifest(self, commit: str) -> tuple[_ManifestEntry, ...]:
-        output = self._git(["ls-tree", "-r", "-z", "--full-tree", commit])
+    def _commit_manifest(self, commit: str, *, cwd: Path | None = None,
+                         excluded_paths: tuple[str, ...] | None = None) -> tuple[_ManifestEntry, ...]:
+        output = self._git(["ls-tree", "-r", "-z", "--full-tree", commit], cwd=cwd)
         result: list[_ManifestEntry] = []
-        excluded = self.config.excluded_paths
+        excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
         for item in output.split(b"\0"):
             if not item:
                 continue
@@ -354,16 +360,141 @@ class GitRepositoryProvider:
             if self._excluded(path, excluded):
                 continue
             if object_type == "commit":
-                raise GitProviderError("Git submodules require a separate trusted source observer")
+                if mode != "160000" or self.config.gitlink_policy != "opaque_clean":
+                    raise GitProviderError("Git submodules require an explicitly trusted committed-pointer policy")
+                result.append(self._gitlink_entry(name, oid, "committed-pointer"))
+                continue
             if object_type != "blob":
                 raise GitProviderError("unsupported Git tree entry type")
-            blob = self._git(["cat-file", "blob", oid])
+            blob = self._git(["cat-file", "blob", oid], cwd=cwd)
             result.append(_ManifestEntry(name, mode, hashlib.sha256(blob).hexdigest()))
         return tuple(sorted(result, key=lambda entry: entry.path))
 
-    def _filesystem_manifest(self, root: Path) -> tuple[_ManifestEntry, ...]:
+    @staticmethod
+    def _gitlink_entry(path: bytes, oid: str, coverage: str) -> _ManifestEntry:
+        if len(oid) not in {40, 64} or any(char not in "0123456789abcdef" for char in oid):
+            raise GitProviderError("Git returned an invalid gitlink object ID")
+        digest = hashlib.sha256(b"todo-orchestrator-gitlink-pointer-v1\0" + oid.encode("ascii")).hexdigest()
+        return _ManifestEntry(path, "160000", digest, coverage)
+
+    def _commit_gitlinks(self, commit: str, *, cwd: Path | None = None,
+                         excluded_paths: tuple[str, ...] | None = None) -> dict[bytes, str]:
+        output = self._git(["ls-tree", "-r", "-z", "--full-tree", commit], cwd=cwd)
+        excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
+        gitlinks: dict[bytes, str] = {}
+        for item in output.split(b"\0"):
+            if not item:
+                continue
+            try:
+                metadata, name = item.split(b"\t", 1)
+                mode, object_type, oid = metadata.decode("ascii").split(" ")
+            except (ValueError, UnicodeError) as exc:
+                raise GitProviderError("Git returned an invalid tree entry") from exc
+            if mode == "160000" or object_type == "commit":
+                if mode != "160000" or object_type != "commit":
+                    raise GitProviderError("Git returned an invalid gitlink entry")
+                if self._excluded(PurePosixPath(os.fsdecode(name)).as_posix(), excluded):
+                    continue
+                gitlinks[name] = oid
+        return gitlinks
+
+    def _observe_gitlink_path(self, root: Path, relative: bytes, oid: str) -> str:
+        """Validate one committed gitlink without fetching or initializing it."""
+        path = root / Path(os.fsdecode(relative))
+        current = root
+        for part in Path(os.fsdecode(relative)).parts[:-1]:
+            current = current / part
+            try:
+                parent_info = current.lstat()
+            except FileNotFoundError:
+                return "uninitialized-pointer-only"
+            except OSError as exc:
+                raise GitProviderError(f"cannot inspect gitlink parent {current}: {exc}") from exc
+            if not stat.S_ISDIR(parent_info.st_mode):
+                raise GitProviderError(f"gitlink path traverses a non-directory parent: {current}")
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return "uninitialized-pointer-only"
+        except OSError as exc:
+            raise GitProviderError(f"cannot inspect gitlink {os.fsdecode(relative)}: {exc}") from exc
+        if not path.is_dir() or path.is_symlink():
+            raise GitProviderError(f"gitlink path is not a real directory: {os.fsdecode(relative)}")
+
+        gitfile = path / ".git"
+        try:
+            git_info = gitfile.lstat()
+        except FileNotFoundError:
+            try:
+                with os.scandir(path) as children:
+                    has_children = next(children, None) is not None
+            except OSError as exc:
+                raise GitProviderError(f"cannot inspect uninitialized gitlink {os.fsdecode(relative)}: {exc}") from exc
+            if has_children:
+                raise GitProviderError(
+                    f"uninitialized gitlink contains unverified content: {os.fsdecode(relative)}"
+                )
+            return "uninitialized-pointer-only"
+        except OSError as exc:
+            raise GitProviderError(f"cannot inspect gitlink metadata {os.fsdecode(relative)}: {exc}") from exc
+
+        if os.path.islink(gitfile) or not stat.S_ISREG(git_info.st_mode):
+            raise GitProviderError(f"gitlink .git metadata is not a regular gitfile: {os.fsdecode(relative)}")
+        try:
+            lines = gitfile.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            raise GitProviderError(f"cannot read gitlink gitfile {os.fsdecode(relative)}: {exc}") from exc
+        if len(lines) != 1 or not lines[0].startswith("gitdir: ") or not lines[0][8:].strip():
+            raise GitProviderError(f"gitlink .git metadata is malformed: {os.fsdecode(relative)}")
+        raw_gitdir = Path(lines[0][8:].strip())
+        declared_gitdir = raw_gitdir if raw_gitdir.is_absolute() else path / raw_gitdir
+        try:
+            declared_gitdir = declared_gitdir.resolve(strict=True)
+            common = self._common_git_dir(root)
+            modules_path = common / "modules"
+            modules_info = modules_path.lstat()
+            if not stat.S_ISDIR(modules_info.st_mode):
+                raise GitProviderError("configured Git modules directory is not a real directory")
+            trusted_modules = modules_path.resolve(strict=True)
+        except (OSError, GitProviderError) as exc:
+            raise GitProviderError(f"gitlink Git metadata cannot be resolved: {os.fsdecode(relative)}") from exc
+        if declared_gitdir == trusted_modules or trusted_modules not in declared_gitdir.parents:
+            raise GitProviderError(f"gitlink gitdir escapes the configured repository: {os.fsdecode(relative)}")
+        if not declared_gitdir.is_dir():
+            raise GitProviderError(f"gitlink gitdir is not a directory: {os.fsdecode(relative)}")
+
+        top = Path(os.fsdecode(self._git(["rev-parse", "--show-toplevel"], cwd=path).strip())).resolve(strict=True)
+        if top != path.resolve(strict=True):
+            raise GitProviderError(f"gitlink worktree root does not match its path: {os.fsdecode(relative)}")
+        actual_gitdir = self._git_dir(path)
+        if actual_gitdir != declared_gitdir:
+            raise GitProviderError(f"gitlink Git metadata resolves inconsistently: {os.fsdecode(relative)}")
+        superproject = os.fsdecode(self._git(["rev-parse", "--show-superproject-working-tree"], cwd=path).strip())
+        if not superproject or Path(superproject).resolve(strict=True) != root.resolve(strict=True):
+            raise GitProviderError(f"gitlink is not bound to this superproject: {os.fsdecode(relative)}")
+        actual_head = os.fsdecode(self._git(["rev-parse", "--verify", "HEAD^{commit}"], cwd=path).strip())
+        if actual_head != oid:
+            raise GitProviderError(f"initialized gitlink does not match its committed pointer: {os.fsdecode(relative)}")
+
+        # Nested gitlinks would require another level of trust/coverage policy.
+        nested_tree = self._git(["ls-tree", "-r", "-z", "--full-tree", actual_head], cwd=path)
+        if any(item.split(b"\t", 1)[0].split(b" ")[1:2] == [b"commit"]
+               for item in nested_tree.split(b"\0") if item):
+            raise GitProviderError(f"nested gitlinks are not covered by this provider: {os.fsdecode(relative)}")
+        nested_baseline = self._commit_manifest(actual_head, cwd=path, excluded_paths=())
+        nested_files = self._filesystem_manifest(path, actual_head, excluded_paths=())
+        nested_index = self._index_manifest(path, excluded_paths=())
+        if nested_files != nested_baseline or nested_index != nested_baseline:
+            raise GitProviderError(f"initialized gitlink contains unverified changes: {os.fsdecode(relative)}")
+        return "initialized-clean-at-committed-pointer"
+
+    def _filesystem_manifest(self, root: Path, head: str | None = None, *,
+                             excluded_paths: tuple[str, ...] | None = None) -> tuple[_ManifestEntry, ...]:
         entries: list[_ManifestEntry] = []
-        excluded = self.config.excluded_paths
+        excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
+        gitlinks = self._commit_gitlinks(head, cwd=root, excluded_paths=excluded) \
+            if head is not None and self.config.gitlink_policy == "opaque_clean" else {}
+        observed_gitlinks: set[bytes] = set()
 
         def walk(directory: Path, prefix: bytes = b"") -> None:
             try:
@@ -375,6 +506,12 @@ class GitRepositoryProvider:
                 relative = name if not prefix else prefix + b"/" + name
                 relative_text = PurePosixPath(os.fsdecode(relative)).as_posix()
                 if self._excluded(relative_text, excluded):
+                    continue
+                gitlink_oid = gitlinks.get(relative)
+                if gitlink_oid is not None:
+                    coverage = self._observe_gitlink_path(root, relative, gitlink_oid)
+                    entries.append(self._gitlink_entry(relative, gitlink_oid, coverage))
+                    observed_gitlinks.add(relative)
                     continue
                 try:
                     info = child.stat(follow_symlinks=False)
@@ -399,13 +536,20 @@ class GitRepositoryProvider:
                     raise GitProviderError(f"unsupported special source entry: {relative_text}")
 
         walk(root)
+        for relative, oid in gitlinks.items():
+            if relative not in observed_gitlinks:
+                coverage = self._observe_gitlink_path(root, relative, oid)
+                entries.append(self._gitlink_entry(relative, oid, coverage))
         return tuple(sorted(entries, key=lambda entry: entry.path))
 
-    def _index_manifest(self, root: Path) -> tuple[_ManifestEntry, ...]:
+    def _index_manifest(self, root: Path, *,
+                        excluded_paths: tuple[str, ...] | None = None) -> tuple[_ManifestEntry, ...]:
         """Read the staged tree, including staged blobs absent from the worktree."""
-        output = self._git(["ls-files", "--stage", "-z"], cwd=root)
+        # Reading the index can otherwise launch a repository-configured
+        # fsmonitor hook. Source observation must remain a local byte read.
+        output = self._git(["-c", "core.fsmonitor=false", "ls-files", "--stage", "-z"], cwd=root)
         result: list[_ManifestEntry] = []
-        excluded = self.config.excluded_paths
+        excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
         for item in output.split(b"\0"):
             if not item:
                 continue
@@ -418,11 +562,17 @@ class GitRepositoryProvider:
                 raise GitProviderError("Git returned an invalid index entry")
             if self._excluded(PurePosixPath(os.fsdecode(name)).as_posix(), excluded):
                 continue
-            blob = self._git(["cat-file", "blob", oid])
             # Stage zero matches the committed-tree format. Preserve conflict
             # stages in the manifest so distinct unmerged indexes stay distinct.
             indexed_mode = mode if stage == "0" else f"{mode}:{stage}"
-            result.append(_ManifestEntry(name, indexed_mode, hashlib.sha256(blob).hexdigest()))
+            if mode == "160000":
+                if self.config.gitlink_policy != "opaque_clean":
+                    raise GitProviderError("Git submodules require an explicitly trusted committed-pointer policy")
+                entry = self._gitlink_entry(name, oid, "index-pointer")
+                result.append(_ManifestEntry(name, indexed_mode, entry.digest, entry.coverage))
+            else:
+                blob = self._git(["cat-file", "blob", oid], cwd=root)
+                result.append(_ManifestEntry(name, indexed_mode, hashlib.sha256(blob).hexdigest()))
         return tuple(sorted(result, key=lambda entry: (entry.path, entry.mode, entry.digest)))
 
     @staticmethod
@@ -492,7 +642,7 @@ class GitRepositoryProvider:
     def _path_state(self, root: Path, head: str) -> tuple[
         tuple[_ManifestEntry, ...], tuple[_ManifestEntry, ...], SourceSafety,
     ]:
-        current = self._filesystem_manifest(root)
+        current = self._filesystem_manifest(root, head)
         index = self._index_manifest(root)
         baseline = self._commit_manifest(head)
         safety = SourceSafety.CLEAN if current == baseline and index == baseline else SourceSafety.DIRTY
@@ -695,7 +845,9 @@ class GitRepositoryProvider:
                 source_digest = self._source_digest(entries, index_entries)
                 inputs = tuple(
                     EvidenceInput(
-                        StableId("file-" + hashlib.sha256(entry.path).hexdigest()),
+                        StableId(("gitlink-" + (entry.coverage or "pointer") + "-"
+                                  if entry.mode.startswith("160000") else "file-")
+                                 + hashlib.sha256(entry.path).hexdigest()),
                         Sha256Digest(entry.digest),
                     )
                     for entry in entries
