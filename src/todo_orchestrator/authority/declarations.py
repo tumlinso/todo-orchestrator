@@ -255,13 +255,20 @@ def load_plan_declaration(
     )
     if item is None:
         return None
+    return _declaration_record(plan, kind, declaration_id, item)
+
+
+def _declaration_record(
+    plan: CompiledPlan, kind: str, declaration_id: StableId, item: Any,
+) -> DeclarationRecord:
+    """Project an item from an already authority-validated accepted plan."""
     payload = _plain(item.payload)
     encoded = _canonical(payload)
     if payload.get("id") != str(declaration_id):
         raise InvalidAuthorityError("stored declaration identity differs from its typed record")
     return DeclarationRecord(
-        plan_revision_id,
-        _target(project, kind, declaration_id),
+        plan.revision.plan_revision_id,
+        _target(plan.project, kind, declaration_id),
         kind,
         _freeze(payload),
         hashlib.sha256(encoded.encode("utf-8")).hexdigest(),
@@ -406,7 +413,16 @@ def declaration_condition(
     expected_version: str | None = None,
 ) -> tuple[ConditionResult, str | None, str | None]:
     """Return canonical condition status, current interface version, and decision option."""
+    return _declaration_condition(connection, declaration, expected_version=expected_version)
 
+
+def _declaration_condition(
+    connection: sqlite3.Connection,
+    declaration: DeclarationRecord,
+    *,
+    expected_version: str | None = None,
+    accepted_plan: CompiledPlan | None = None,
+) -> tuple[ConditionResult, str | None, str | None]:
     blocker = _blocker_row(connection, declaration)
     if blocker is not None and blocker["fact_kind"] == "blocker_opened":
         return (
@@ -479,7 +495,7 @@ def declaration_condition(
                 "barrier_unreleased", str(declaration.target.entity_id),
                 "the barrier has not been explicitly released",
             ),)), None, None
-        plan = _accepted_plan_for_declaration(connection, declaration)
+        plan = accepted_plan if accepted_plan is not None else _accepted_plan_for_declaration(connection, declaration)
         participants = _barrier_participants_result(connection, declaration, plan)
         return participants, None, None
 
@@ -531,19 +547,28 @@ def native_declaration_facts(
 
     blockers: dict[EntityRef, ConditionResult] = {}
     decisions: dict[str, DecisionObservation] = {}
-    for item in plan.declarations:
-        kind = {
-            "decisions": "decision", "interfaces": "interface", "checkpoints": "checkpoint",
-            "barriers": "barrier", "rendezvous": "rendezvous",
-        }.get(item.kind)
-        if kind is None:
+    kinds = {section: kind for kind, section in _DECLARATION_KIND_TO_SECTION.items()}
+    requested = tuple(item for item in plan.declarations if item.kind in kinds)
+    if not requested:
+        return MappingProxyType(blockers), MappingProxyType(decisions)
+
+    # Revalidate once within the caller's consistent authority read, rather
+    # than reloading the entire plan for every declaration. Caller-supplied
+    # declaration payloads are never used as authoritative facts.
+    snapshot = load_plan_revision_snapshot(connection, plan.project, plan.revision.plan_revision_id)
+    if snapshot.sequence is None:
+        raise InvalidAuthorityError("accepted plan snapshot has no sequence")
+    accepted_plan = decode_accepted_plan(snapshot.canonical_json, plan.project, sequence=snapshot.sequence)
+    declarations = {(item.kind, item.declaration_id): item for item in accepted_plan.declarations}
+    for requested_item in requested:
+        item = declarations.get((requested_item.kind, requested_item.declaration_id))
+        if item is None:
             continue
-        declaration = load_plan_declaration(
-            connection, plan.project, plan.revision.plan_revision_id, kind, item.declaration_id,
+        kind = kinds[item.kind]
+        declaration = _declaration_record(accepted_plan, kind, item.declaration_id, item)
+        result, _version, option_id = _declaration_condition(
+            connection, declaration, accepted_plan=accepted_plan,
         )
-        if declaration is None:
-            continue
-        result, _version, option_id = declaration_condition(connection, declaration)
         blockers[declaration.target] = result
         if kind == "decision":
             decision_status = (
