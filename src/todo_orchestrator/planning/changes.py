@@ -1125,7 +1125,11 @@ def _effective_graph_plan(
             )
             for group in proposal.blocking_groups
         )
-    rebound_groups = old_groups
+    # Retained and newly authored groups must share the compiler's canonical
+    # source order so the complete accepted snapshot round-trips unchanged.
+    rebound_groups = sorted(
+        old_groups, key=lambda group: _canonical(_qualified_payload(group.source)),
+    )
     merged_masks: dict[str, dict[str, tuple[str, ...]]] = {
         section: {identifier: tuple(fields) for identifier, fields in records.items()}
         for section, records in accepted.record_field_masks.items()
