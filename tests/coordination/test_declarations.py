@@ -4,6 +4,7 @@ import json
 import unittest
 from datetime import timedelta
 from dataclasses import replace
+from unittest.mock import patch
 
 from todo_orchestrator.authority import (
     CapabilityDeniedError,
@@ -103,6 +104,94 @@ class DeclarationServiceTests(unittest.TestCase):
             "producers": [], "consumers": [], "compatibility": "evolvable",
         }]
         return json.dumps(document, ensure_ascii=False, sort_keys=True)
+
+    def test_native_facts_load_verified_plan_once_and_ignore_caller_payload(self):
+        f = self.fixture
+        source = json.loads(self.package_with_decision())
+        source["checkpoints"] = [{
+            "id": f"runtime-checkpoint-{index:02d}",
+            "title": f"Runtime checkpoint {index}",
+            "acceptance": {
+                "assertions": ["complete"], "required_evidence": [],
+                "allowed_dispositions": ["completed"],
+            },
+            "unknowns": [], "producers": [],
+        } for index in range(20)]
+        plan, _ = self.commit_package(json.dumps(source, sort_keys=True), "declaration-batch-plan")
+
+        module = __import__("todo_orchestrator.authority.declarations", fromlist=["unused"])
+        original_loader = module.load_plan_revision_snapshot
+        with f.open_reader() as authority:
+            with patch.object(module, "load_plan_revision_snapshot", wraps=original_loader) as loader:
+                observed, decisions = native_declaration_facts(authority.connection, plan)
+            self.assertEqual(loader.call_count, 1)
+
+            # The batch path returns the same current fact values as the exact
+            # single-declaration API, which continues to validate each read.
+            expected_conditions = {}
+            expected_decisions = {}
+            kind_by_section = {
+                "decisions": "decision", "interfaces": "interface",
+                "checkpoints": "checkpoint", "barriers": "barrier",
+                "rendezvous": "rendezvous",
+            }
+            target_kind = {
+                "decision": EntityKind.DECISION,
+                "interface": EntityKind.INTERFACE,
+                "checkpoint": EntityKind.CHECKPOINT,
+                "barrier": EntityKind.BARRIER,
+                "rendezvous": EntityKind.BARRIER,
+            }
+            for item in plan.declarations:
+                kind = kind_by_section[item.kind]
+                record = load_plan_declaration(
+                    authority.connection, PROJECT, plan.revision.plan_revision_id,
+                    kind, item.declaration_id,
+                )
+                condition, _version, option_id = declaration_condition(authority.connection, record)
+                target = EntityRef(PROJECT.project_id, target_kind[kind], item.declaration_id)
+                expected_conditions[target] = condition
+                if kind == "decision":
+                    status = (ConditionStatus.UNRESOLVED
+                              if condition.status is ConditionStatus.UNSATISFIED
+                              else condition.status)
+                    from todo_orchestrator.authority.declarations import DecisionObservation
+                    expected_decisions[str(item.declaration_id)] = DecisionObservation(status, option_id)
+            self.assertEqual(dict(observed), expected_conditions)
+            self.assertEqual(dict(decisions), expected_decisions)
+
+            # A caller may retain a stale CompiledPlan. Its declaration payload
+            # cannot invent a selected option or replace accepted contracts.
+            forged = []
+            for item in plan.declarations:
+                payload = dict(item.payload)
+                if item.kind == "decisions":
+                    payload["selected_option_id"] = "one"
+                if item.kind == "interfaces":
+                    payload["contract"] = {"forged": True}
+                forged.append(replace(item, payload=payload))
+            untrusted_plan = replace(plan, declarations=tuple(forged))
+            untrusted_facts, untrusted_decisions = native_declaration_facts(authority.connection, untrusted_plan)
+            self.assertEqual(dict(untrusted_facts), expected_conditions)
+            self.assertEqual(dict(untrusted_decisions), expected_decisions)
+            self.assertEqual(untrusted_decisions["runtime-choice"].status, ConditionStatus.UNRESOLVED)
+
+        # A real authority fact written after the first read is visible to the
+        # next call, which still uses one verified accepted-plan load.
+        decision = EntityRef(PROJECT.project_id, EntityKind.DECISION, StableId("runtime-choice"))
+        with f.open_writer() as authority:
+            self.service.resolve_decision(
+                authority, f.owner.bearer_token, plan.revision.ref, decision,
+                StableId("one"), "Resolve the current accepted declaration.",
+                idempotency_key=StableId("declaration-batch-resolve"),
+                expected_revision=f.revision(),
+            )
+        with f.open_reader() as authority:
+            with patch.object(module, "load_plan_revision_snapshot", wraps=original_loader) as loader:
+                current, current_decisions = native_declaration_facts(authority.connection, plan)
+            self.assertEqual(loader.call_count, 1)
+            self.assertEqual(current_decisions["runtime-choice"].status, ConditionStatus.SATISFIED)
+            self.assertEqual(current[decision].status, ConditionStatus.SATISFIED)
 
     def delegate_decision(self, plan, key: str):
         f = self.fixture
