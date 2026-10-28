@@ -748,10 +748,11 @@ class GitRepositoryProvider:
         destination_head = self._resolve_ref(destination)
         isolation = self._isolation(workspace_id, path, branch_ref)
         common_identity = isolation.repository_storage
+        base_digest = self._tree_digest(base_commit).hex
         request_material = {
             "workspace_id": str(workspace_id), "target": self._ref_value(target),
             "repository_id": str(self.config.repository_id), "base_ref": str(base_ref),
-            "base_commit": base_commit, "base_digest": self._tree_digest(base_commit).hex,
+            "base_commit": base_commit, "base_digest": base_digest,
             "destination_ref": str(destination), "destination_head": destination_head,
             "workspace_head": head, "isolation": {
                 "repository_storage": common_identity.hex,
@@ -761,12 +762,14 @@ class GitRepositoryProvider:
             },
         }
         request_digest = Sha256Digest(hashlib.sha256(self._canonical(request_material).encode("ascii")).hexdigest())
+        common_base = QualifiedSourceRevision(
+            self.config.project_id, self.config.repository_id, StableId(base_commit), base_digest,
+        )
         receipt = self._receipt(request_digest=request_digest, correlation_id=correlation_id,
                                 provenance_ref=StableId(base_commit), suffix="workspace")
         return WorkspaceQualification(
             workspace_id, self.config.repository_id,
-            QualifiedSourceRevision(self.config.project_id, self.config.repository_id,
-                                    StableId(base_commit), self._tree_digest(base_commit).hex),
+            common_base,
             QualifiedDestination(self.config.project_id, self.config.repository_id, destination),
             receipt, isolation,
         )

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shlex
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 
+from todo_orchestrator.authority.attempts import AttemptService
 from todo_orchestrator.contracts import (
     EntityKind,
     EntityRef,
@@ -249,6 +252,58 @@ class GitlinkProviderTests(unittest.TestCase):
         (ancestor_workspace / "modules").symlink_to(outside_modules, target_is_directory=True)
         with self.assertRaisesRegex(GitProviderError, "non-directory parent"):
             self.provider._path_state(ancestor_workspace, self.head)
+
+    def test_qualification_hashes_base_once_before_minting_fresh_bound_receipt(self) -> None:
+        workspace_id = StableId("gitlink-expensive-qualification")
+        workspace = self._create_workspace(self.provider, str(workspace_id))
+        correlation = StableId("qualification-freshness")
+        current = [datetime(2026, 10, 28, 22, 0, tzinfo=timezone.utc)]
+
+        def controlled_clock() -> datetime:
+            return current[0]
+
+        self.provider.clock = controlled_clock
+        original_tree_digest = self.provider._tree_digest
+        original_canonical = self.provider._canonical
+        calls: list[tuple[str, str, str]] = []
+        canonical_inputs: list[dict[str, object]] = []
+
+        def expensive_tree_digest(commit: str) -> Sha256Digest:
+            started = current[0]
+            digest = original_tree_digest(commit)
+            current[0] += timedelta(seconds=31)
+            calls.append((commit, started.isoformat(), current[0].isoformat()))
+            return digest
+
+        self.provider._tree_digest = expensive_tree_digest
+
+        def capture_canonical(value: dict[str, object]) -> str:
+            canonical_inputs.append(value)
+            return original_canonical(value)
+
+        self.provider._canonical = capture_canonical
+        qualification = self.provider.qualify_workspace(workspace_id, self.target, correlation)
+        returned_at = controlled_clock()
+
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(calls[0][0], self.head)
+        self.assertEqual(calls[0][1], "2026-10-28T22:00:00+00:00")
+        self.assertEqual(calls[0][2], "2026-10-28T22:00:31+00:00")
+        self.assertEqual(qualification.common_base.digest, original_tree_digest(self.head).hex)
+        self.assertEqual(qualification.receipt.observed_at, returned_at)
+        self.assertLessEqual(returned_at - qualification.receipt.observed_at, timedelta(seconds=30))
+        AttemptService._validate_qualification(
+            SimpleNamespace(max_observation_age=timedelta(seconds=30)), qualification,
+            workspace_id, self.target, correlation, returned_at, require_fresh=True,
+        )
+        self.assertEqual(len(canonical_inputs), 1)
+        request_material = canonical_inputs[0]
+        self.assertEqual(request_material["base_commit"], str(qualification.common_base.ref))
+        self.assertEqual(request_material["base_digest"], qualification.common_base.digest)
+        expected_request_digest = hashlib.sha256(
+            original_canonical(request_material).encode("ascii")
+        ).hexdigest()
+        self.assertEqual(qualification.receipt.request_digest.hex, expected_request_digest)
 
 
 if __name__ == "__main__":
