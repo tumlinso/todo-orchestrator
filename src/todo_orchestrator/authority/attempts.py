@@ -93,6 +93,7 @@ RECONCILE_ACTION = StableId("todo.attempt.reconcile_expired")
 VERIFICATION_ACTION = StableId("todo.verification.execute")
 VERIFICATION_RECONCILE_ACTION = StableId("todo.verification.reconcile")
 OUTCOME_REPORT_ACTION = StableId("todo.outcome.report")
+AUTHORING_HANDOFF_COMMAND_KIND = "todo.attempt.authoring_handoff"
 ATTEMPT_SESSION_ACTIONS = (HEARTBEAT_ACTION, RELEASE_ACTION, FINISH_ACTION)
 ATTEMPT_SESSION_VERIFY_ACTIONS = (*ATTEMPT_SESSION_ACTIONS, VERIFICATION_ACTION)
 ATTEMPT_SESSION_RECONCILE_ACTIONS = (*ATTEMPT_SESSION_ACTIONS, VERIFICATION_RECONCILE_ACTION)
@@ -528,7 +529,7 @@ class _HandbackAuthoring(_ImmutableAttemptCommand):
 
 
 class _HandbackAuthoringHandler:
-    kind = "todo.attempt.authoring_handoff"
+    kind = AUTHORING_HANDOFF_COMMAND_KIND
     command_type = _HandbackAuthoring
 
     def __init__(self, service: "AttemptService") -> None:
@@ -563,8 +564,6 @@ class _HandbackAuthoringHandler:
         if attempt.lease.lease_id != command.expected_lease_id:
             raise AttemptLeaseMismatchError("authoring handoff lease is no longer current")
         now = self.service._now()
-        if attempt.lease.expires_at <= now:
-            raise AttemptLeaseMismatchError("authoring handoff requires an unexpired lease")
         if (command.request.project_id != context.project.project_id
                 or command.request.authority_id != context.project.authority_id
                 or command.request.attempt != attempt.ref
@@ -1418,8 +1417,6 @@ class AttemptService:
                 if (attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE}
                         or attempt.lease is None or attempt.lease.lease_id != expected_lease_id):
                     raise AttemptLeaseMismatchError("authoring handback requires the exact current attempt lease")
-                if attempt.lease.expires_at <= self._now():
-                    raise AttemptLeaseMismatchError("authoring handback requires an unexpired attempt lease")
                 _require_children_resolved(connection, attempt.attempt_id)
                 _require_recovery_operations_resolved(connection, attempt.attempt_id)
 

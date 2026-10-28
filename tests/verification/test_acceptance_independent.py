@@ -8,7 +8,12 @@ from dataclasses import replace
 
 from todo_orchestrator.authority import CapabilityDeniedError, IdempotencyConflictError, SQLiteAuthority
 from todo_orchestrator.coordination import RUN_DISPATCH_ACTION
-from todo_orchestrator.authority.attempts import RECONCILE_ACTION
+from todo_orchestrator.authority.attempts import (
+    AttemptLeaseMismatchError,
+    AttemptTransitionError,
+    RECONCILE_ACTION,
+    _stored_workspace,
+)
 from todo_orchestrator.contracts import (
     ArtifactAvailability, EntityKind, EntityRef, EvidenceInput, EvidenceKind, EvidenceResult, OutcomeDisposition,
     ProviderIdentity, ProviderReceipt, Sha256Digest, StableId, VerificationEvidenceFact,
@@ -22,6 +27,7 @@ from todo_orchestrator.verification.acceptance import (
     READ_OUTCOME_ACTION,
     CandidateDeniedError,
     CandidateObservationMismatchError,
+    CandidateStateError,
     OutcomeAcceptanceService,
 )
 from todo_orchestrator.model import (
@@ -106,6 +112,25 @@ class HandoffFixtureAttemptHost:
             )
         self.last_process = observation.process
         return observation
+
+
+class StaleSafetyHandoffHost:
+    """Replays an exact handoff under an expired host-safety observation."""
+
+    def __init__(self, wrapped, clock):
+        self.wrapped = wrapped
+        self.clock = clock
+
+    def handoff_authoring(self, request):
+        return self.wrapped.handoff_authoring(request)
+
+    def inspect_attempt(self, attempt, workspace):
+        observation = self.wrapped.inspect_attempt(attempt, workspace)
+        stale_receipt = replace(
+            observation.receipt,
+            observed_at=self.clock() - timedelta(minutes=10),
+        )
+        return replace(observation, receipt=stale_receipt)
 
 
 class ArtifactVerifier(LedgerVerifier):
@@ -601,7 +626,9 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
             )
 
         # Model an edit after the host's fence. Reporting must not attach a new
-        # source observation to the earlier handoff receipt.
+        # source observation to the earlier handoff receipt, even after the
+        # execution lease expires.
+        f.clock.value += timedelta(minutes=6)
         self.acceptance.source_observer = ChangedPinnedSourceObserver(f.clock, source_commit)
         before = f.state_snapshot()
         with self.assertRaises(CandidateObservationMismatchError):
@@ -610,6 +637,225 @@ class IndependentOutcomeAcceptanceTests(unittest.TestCase):
                 "v03-handoff-source-drift-report",
             )
         self.assertEqual(f.state_snapshot(), before)
+
+    def test_expired_nonterminal_attempt_can_handback_and_report_exact_snapshot(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-expired-handoff-claim")
+        suffix = hashlib.sha256(str(attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        f.source = PinnedSourceObserver(f.clock, source_commit)
+        self.acceptance.source_observer = f.source
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id, lease_expires_at, state FROM attempts WHERE attempt_id = ?",
+                (str(attempt.entity_id),),
+            ).fetchone()
+        lease_id = StableId(row["lease_id"])
+        original_expiry = row["lease_expires_at"]
+        self.assertIn(row["state"], {"admitted", "active"})
+        f.clock.value += timedelta(minutes=6)
+        self.assertGreater(f.clock.value.isoformat(), original_expiry)
+
+        with f.open_writer() as authority:
+            handback = f.attempts.handback_authoring(
+                authority, f.owner.bearer_token, attempt, lease_id,
+                idempotency_key=StableId("v03-expired-handoff-key"),
+                expected_revision=f.revision(),
+            )
+        self.assertFalse(handback.receipt.changed)
+        self.assertEqual(host.handoff_calls, 1)
+        with f.open_reader() as authority:
+            after_handoff = authority.connection.execute(
+                "SELECT lease_id, lease_expires_at, state FROM attempts WHERE attempt_id = ?",
+                (str(attempt.entity_id),),
+            ).fetchone()
+        self.assertEqual(after_handoff["state"], row["state"])
+        self.assertEqual(after_handoff["lease_id"], str(lease_id))
+        self.assertEqual(after_handoff["lease_expires_at"], original_expiry)
+
+        _, candidate = self.report(
+            f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED, "v03-expired-handoff-report",
+        )
+        with f.open_reader() as authority:
+            after_report = authority.connection.execute(
+                "SELECT lease_id, lease_expires_at, state FROM attempts WHERE attempt_id = ?",
+                (str(attempt.entity_id),),
+            ).fetchone()
+        self.assertEqual(after_report["state"], "reported")
+        self.assertEqual(after_report["lease_id"], str(lease_id))
+        self.assertEqual(after_report["lease_expires_at"], original_expiry)
+        self.assertEqual(host.last_process, ProcessLiveness.LIVE)
+
+        accepted = self.accept(
+            f.owner.bearer_token, attempt, candidate, "v03-expired-handoff-accept",
+        )
+        self.assertEqual(accepted.receipt.result["state"], "accepted")
+        self.assertEqual(host.last_process, ProcessLiveness.LIVE)
+
+    def test_expired_report_without_handoff_is_denied_without_authority_change(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-expired-no-handoff-claim")
+        f.clock.value += timedelta(minutes=6)
+        before = f.state_snapshot()
+        request_count = len(f.source.requests)
+        with self.assertRaises(CandidateStateError):
+            self.report(
+                f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED,
+                "v03-expired-no-handoff-report",
+            )
+        self.assertEqual(f.state_snapshot(), before)
+        self.assertEqual(len(f.source.requests), request_count)
+
+    def test_expired_report_rejects_host_pin_without_committed_todo_handoff(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-expired-uncommitted-pin-claim")
+        suffix = hashlib.sha256(str(attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        f.source = PinnedSourceObserver(f.clock, source_commit)
+        self.acceptance.source_observer = f.source
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),),
+            ).fetchone()
+            workspace = _stored_workspace(authority.connection, authority.project, attempt)
+        request = AttemptAuthoringHandoffRequest(
+            PROJECT.project_id, PROJECT.authority_id, attempt, StableId(row["lease_id"]),
+            workspace.workspace_id, StableId("v03-expired-uncommitted-pin-key"),
+        )
+        # Model the host side effect succeeding before the Todo handback command
+        # can durably record its matching idempotency receipt.
+        host.handoff_authoring(request)
+        f.clock.value += timedelta(minutes=6)
+        before = f.state_snapshot()
+        with self.assertRaises(CandidateDeniedError):
+            self.report(
+                f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED,
+                "v03-expired-uncommitted-pin-report",
+            )
+        self.assertEqual(f.state_snapshot(), before)
+
+    def test_expired_handback_rejects_a_noncurrent_lease_before_host_effect(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-expired-wrong-lease-claim")
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),),
+            ).fetchone()
+        f.clock.value += timedelta(minutes=6)
+        before = f.state_snapshot()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptLeaseMismatchError):
+                f.attempts.handback_authoring(
+                    authority, f.owner.bearer_token, attempt, StableId("wrong-expired-lease"),
+                    idempotency_key=StableId("v03-expired-wrong-lease-key"),
+                    expected_revision=f.revision(),
+                )
+        self.assertEqual(host.handoff_calls, 0)
+        self.assertEqual(f.state_snapshot(), before)
+
+    def test_expired_report_rejects_stale_host_safety_after_exact_handoff(self):
+        f = self.fixture
+        attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-expired-stale-safety-claim")
+        suffix = hashlib.sha256(str(attempt.entity_id).encode("utf-8")).hexdigest()[:16]
+        source_commit = StableId("commit-" + suffix)
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        f.source = PinnedSourceObserver(f.clock, source_commit)
+        self.acceptance.source_observer = f.source
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(attempt.entity_id),),
+            ).fetchone()
+        f.clock.value += timedelta(minutes=6)
+        with f.open_writer() as authority:
+            f.attempts.handback_authoring(
+                authority, f.owner.bearer_token, attempt, StableId(row["lease_id"]),
+                idempotency_key=StableId("v03-expired-stale-safety-handoff"),
+                expected_revision=f.revision(),
+            )
+        self.acceptance.host = StaleSafetyHandoffHost(host, f.clock)
+        before = f.state_snapshot()
+        with self.assertRaises(CandidateObservationMismatchError):
+            self.report(
+                f.owner.bearer_token, attempt, OutcomeDisposition.COMPLETED,
+                "v03-expired-stale-safety-report",
+            )
+        self.assertEqual(f.state_snapshot(), before)
+
+    def test_released_or_reconciled_attempt_cannot_be_handed_back_or_reported(self):
+        f = self.fixture
+        released_attempt = f.claim("prerequisite", f.owner.bearer_token, key="v03-released-handoff-claim")
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(released_attempt.entity_id),),
+            ).fetchone()
+        released_lease = StableId(row["lease_id"])
+        with f.open_writer() as authority:
+            f.attempts.release(
+                authority, f.owner.bearer_token, released_attempt, released_lease,
+                idempotency_key=StableId("v03-release-before-handoff"), expected_revision=f.revision(),
+            )
+        host = HandoffFixtureAttemptHost(f.host, f.clock)
+        f.host = host
+        f.attempts.host = host
+        self.acceptance.host = host
+        before_release_retry = f.state_snapshot()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptLeaseMismatchError):
+                f.attempts.handback_authoring(
+                    authority, f.owner.bearer_token, released_attempt, released_lease,
+                    idempotency_key=StableId("v03-handoff-released-attempt"),
+                    expected_revision=f.revision(),
+                )
+        with self.assertRaises(CandidateStateError):
+            self.report(
+                f.owner.bearer_token, released_attempt, OutcomeDisposition.COMPLETED,
+                "v03-report-released-attempt",
+            )
+        self.assertEqual(f.state_snapshot(), before_release_retry)
+        self.assertEqual(host.handoff_calls, 0)
+
+        reconciled_attempt = f.claim("verify", f.owner.bearer_token, key="v03-reconciled-handoff-claim")
+        with f.open_reader() as authority:
+            row = authority.connection.execute(
+                "SELECT lease_id FROM attempts WHERE attempt_id = ?", (str(reconciled_attempt.entity_id),),
+            ).fetchone()
+        reconciled_lease = StableId(row["lease_id"])
+        f.clock.value += timedelta(minutes=6)
+        with f.open_writer() as authority:
+            f.attempts.reconcile_expired(
+                authority, f.owner.bearer_token, reconciled_attempt,
+                idempotency_key=StableId("v03-reconcile-before-handoff"), expected_revision=f.revision(),
+            )
+        before_reconciled_retry = f.state_snapshot()
+        with f.open_writer() as authority:
+            with self.assertRaises(AttemptLeaseMismatchError):
+                f.attempts.handback_authoring(
+                    authority, f.owner.bearer_token, reconciled_attempt, reconciled_lease,
+                    idempotency_key=StableId("v03-handoff-reconciled-attempt"),
+                    expected_revision=f.revision(),
+                )
+        with self.assertRaises(CandidateStateError):
+            self.report(
+                f.owner.bearer_token, reconciled_attempt, OutcomeDisposition.COMPLETED,
+                "v03-report-reconciled-attempt",
+            )
+        self.assertEqual(f.state_snapshot(), before_reconciled_retry)
+        self.assertEqual(host.handoff_calls, 0)
 
     def test_dispatched_check_is_accepted_by_a_distinct_scoped_actor_and_history_is_immutable(self):
         f = self.fixture

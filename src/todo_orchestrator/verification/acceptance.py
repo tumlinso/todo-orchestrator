@@ -22,6 +22,7 @@ from todo_orchestrator.authority.auth import (
     _token_digest,
 )
 from todo_orchestrator.authority.attempts import (
+    AUTHORING_HANDOFF_COMMAND_KIND,
     AttemptHost,
     AttemptNotFoundError,
     AttemptObservationMismatchError,
@@ -40,7 +41,7 @@ from todo_orchestrator.authority.declarations import (
     load_plan_declaration,
     native_declaration_facts,
 )
-from todo_orchestrator.authority.commands import MutationContext
+from todo_orchestrator.authority.commands import MutationContext, _canonical_object, _request_digest
 from todo_orchestrator.authority.sqlite import AuthorityError, InvalidAuthorityError, SQLiteAuthority, load_plan_revision_snapshot
 from todo_orchestrator.contracts import (
     AttemptState,
@@ -314,6 +315,49 @@ def _handoff_matches_source(
         and handoff.receipt.provenance_ref == handoff.source_commit
         and source.get("source_digest") == handoff.source_digest.hex
         and source.get("source_revision") == str(handoff.source_commit)
+    )
+
+
+def _committed_authoring_handoff_matches(connection, attempt, handoff: AttemptAuthoringHandoff) -> bool:
+    """Require the exact no-op handback command receipt that durably pinned this handoff."""
+    row = connection.execute(
+        "SELECT i.request_digest, r.command_kind, r.semantic_revision, r.changed, r.event_id, "
+        "r.actor_id, r.actor_incarnation_id, r.result_json "
+        "FROM command_idempotency AS i JOIN command_receipts AS r USING(receipt_id) "
+        "WHERE i.idempotency_key = ?",
+        (str(handoff.request.idempotency_key),),
+    ).fetchone()
+    if (row is None or row["command_kind"] != AUTHORING_HANDOFF_COMMAND_KIND
+            or row["changed"] or row["event_id"] is not None
+            or row["actor_id"] != str(attempt.actor.entity_id)
+            or row["actor_incarnation_id"] != str(attempt.actor.incarnation_id)):
+        return False
+    payload = {
+        "attempt_id": str(attempt.attempt_id),
+        "target": str(attempt.work_item.entity_id),
+        "definition_revision_id": str(attempt.work_item.definition_revision_id),
+        "lease_id": str(handoff.lease_id),
+        "workspace_id": str(handoff.workspace_id),
+        "request_idempotency_key": str(handoff.request.idempotency_key),
+    }
+    try:
+        _normalized, payload_json = _canonical_object(payload, "authoring handoff payload")
+        expected_digest = _request_digest(
+            kind=AUTHORING_HANDOFF_COMMAND_KIND,
+            payload_json=payload_json,
+            actor=attempt.actor,
+            expected_revision=int(row["semantic_revision"]),
+        )
+        result = json.loads(row["result_json"])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+    return (
+        row["request_digest"] == expected_digest
+        and isinstance(result, dict)
+        and result.get("attempt_id") == str(attempt.attempt_id)
+        and result.get("state") in {AttemptState.ADMITTED.value, AttemptState.ACTIVE.value}
+        and result.get("source_commit") == str(handoff.source_commit)
+        and result.get("source_digest") == handoff.source_digest.hex
     )
 
 
@@ -789,8 +833,6 @@ class _ReportHandler:
             _require_recovery_operations_resolved(context._connection, attempt.attempt_id)
         except AttemptTransitionError as exc:
             raise CandidateDeniedError("an external operation is unresolved for this attempt") from exc
-        if attempt.lease.expires_at <= now:
-            raise CandidateDeniedError("attempt lease expired before candidate report")
         _, plan = _fresh_plan(context._connection, context.project, command.target)
         item = next(item for item in plan.work_items if item.definition.ref == command.target)
         allowed = item.context.acceptance.get("allowed_dispositions", ())
@@ -810,12 +852,13 @@ class _ReportHandler:
         if callable(getattr(self.service.host, "handoff_authoring", None)):
             if command.host_observation is None:
                 raise CandidateDeniedError("host handoff-capable reports require a fresh safety observation")
+        handoff_valid = False
         if command.host_observation is not None:
+            workspace = _stored_workspace(context._connection, context.project, command.attempt)
             try:
                 host_observation = _check_observation(
                     command.host_observation, target=command.target, attempt_ref=command.attempt,
-                    row=row, workspace=_stored_workspace(context._connection, context.project, command.attempt),
-                    now=now, max_age=self.service.max_observation_age,
+                    row=row, workspace=workspace, now=now, max_age=self.service.max_observation_age,
                 )
             except Exception as exc:
                 raise CandidateObservationMismatchError(
@@ -828,19 +871,28 @@ class _ReportHandler:
                 raise CandidateDeniedError(
                     "candidate reporting requires a clean, child-free source and quiescent or handed-off authoring"
                 )
-            if (host_observation.authoring_handoff is not None
-                    and not _handoff_matches_source(
-                        host_observation.authoring_handoff,
-                        project=context.project,
-                        authority_id=context.project.authority_id,
-                        attempt=attempt,
-                        workspace=_stored_workspace(context._connection, context.project, command.attempt),
-                        source=request_body,
-                        host_identity=self.service.host_identity,
-                    )):
-                raise CandidateObservationMismatchError(
-                    "candidate source differs from the pinned authoring handoff"
+            if host_observation.authoring_handoff is not None:
+                handoff_valid = _handoff_matches_source(
+                    host_observation.authoring_handoff,
+                    project=context.project,
+                    authority_id=context.project.authority_id,
+                    attempt=attempt,
+                    workspace=workspace,
+                    source=request_body,
+                    host_identity=self.service.host_identity,
                 )
+                if not handoff_valid:
+                    raise CandidateObservationMismatchError(
+                        "candidate source differs from the pinned authoring handoff"
+                    )
+        if attempt.lease.expires_at <= now and (
+            not handoff_valid or request_body.get("working_tree") != WorkingTreeState.CLEAN.value
+        ):
+            raise CandidateDeniedError("attempt lease expired without an exact clean authoring handoff")
+        if attempt.lease.expires_at <= now and not _committed_authoring_handoff_matches(
+            context._connection, attempt, host_observation.authoring_handoff,
+        ):
+            raise CandidateDeniedError("expired candidate report requires a committed authoring handoff")
         expected_artifacts = _artifact_expectations(context._connection, attempt.attempt_id)
         if request_body.get("artifacts") != _expected_artifact_value(expected_artifacts):
             raise CandidateObservationMismatchError("candidate artifact availability no longer matches authority records")
@@ -1328,7 +1380,7 @@ class OutcomeAcceptanceService:
         if replay is not None:
             return replay, EntityRef(authority.project.project_id, EntityKind.OUTCOME, candidate_id)
         now = self._now()
-        if attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE} or attempt.lease is None or attempt.lease.expires_at <= now:
+        if attempt.state not in {AttemptState.ADMITTED, AttemptState.ACTIVE} or attempt.lease is None:
             raise CandidateStateError("candidate report requires a live admitted or active attempt")
         context = self._provider_context(actor, bearer_token, REPORT_CANDIDATE_ACTION, target,
                                          self.auth._actor_for_token(authority, _token_digest(bearer_token))[1], candidate_id)
@@ -1338,10 +1390,31 @@ class OutcomeAcceptanceService:
         host_observation = None
         if callable(getattr(self.host, "handoff_authoring", None)):
             host_observation = self._safety(attempt_ref, attempt, row, workspace, now)
+        if attempt.lease.expires_at <= now and (
+            host_observation is None or host_observation.authoring_handoff is None
+        ):
+            raise CandidateStateError("expired candidate report requires an exact authoring handoff")
         result = self.source_observer.observe(request)
         observed_now = self._now()
         source, receipt = _provider_source(result, request, self.source_identity, workspace, observed_now, self.max_observation_age)
-        source_json = _json(_source_value(source))
+        source_value = _source_value(source)
+        handoff = None if host_observation is None else host_observation.authoring_handoff
+        handoff_valid = _handoff_matches_source(
+            handoff,
+            project=authority.project,
+            authority_id=authority.project.authority_id,
+            attempt=attempt,
+            workspace=workspace,
+            source=source_value,
+            host_identity=self.host_identity,
+        )
+        if handoff is not None and not handoff_valid:
+            raise CandidateObservationMismatchError("candidate source differs from the pinned authoring handoff")
+        if attempt.lease.expires_at <= observed_now and (
+            not handoff_valid or source.working_tree is not WorkingTreeState.CLEAN
+        ):
+            raise CandidateStateError("expired candidate report requires the exact clean authoring handoff")
+        source_json = _json(source_value)
         receipt_json = _json(_source_receipt_value(receipt))
         command = _Report(
             attempt_ref, target, candidate_id, disposition, note, source_json, receipt_json,
