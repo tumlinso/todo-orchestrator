@@ -20,11 +20,13 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import secrets
+import selectors
 import shutil
 import stat
 import subprocess
 import tempfile
-from typing import Protocol
+import time
+from typing import BinaryIO, Protocol
 
 from todo_orchestrator.contracts import (
     Attempt,
@@ -157,6 +159,88 @@ class GitRepositoryConfig:
         object.__setattr__(self, "workspace_root", worktrees)
         object.__setattr__(self, "journal_root", journal)
         object.__setattr__(self, "excluded_paths", tuple(normalized))
+
+
+_GIT_OBJECT_BATCH_SIZE = 32
+_GIT_OBJECT_READ_CHUNK = 1024 * 1024
+_GIT_OBJECT_HEADER_LIMIT = 4096
+
+
+class _BatchObjectReader:
+    """Read cat-file batch records incrementally under one bounded process."""
+
+    def __init__(self, stream: BinaryIO, *, command: tuple[str, ...], timeout: float) -> None:
+        self.stream = stream
+        self.command = command
+        self.timeout = timeout
+        self.buffer = bytearray()
+        self.selector = selectors.DefaultSelector()
+        self.selector.register(stream, selectors.EVENT_READ)
+
+    def close(self) -> None:
+        self.selector.close()
+
+    def _read_from_pipe(self, size: int, deadline: float) -> bytes:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired(self.command, self.timeout)
+        ready = self.selector.select(remaining)
+        if not ready:
+            raise subprocess.TimeoutExpired(self.command, self.timeout)
+        chunk = os.read(self.stream.fileno(), min(size, 64 * 1024))
+        if not chunk:
+            raise EOFError("Git cat-file batch ended before its response was complete")
+        return chunk
+
+    def line(self, deadline: float) -> bytes:
+        while True:
+            newline = self.buffer.find(b"\n")
+            if newline >= 0:
+                if newline + 1 > _GIT_OBJECT_HEADER_LIMIT:
+                    raise ValueError("Git cat-file batch header is too long")
+                value = bytes(self.buffer[:newline + 1])
+                del self.buffer[:newline + 1]
+                return value
+            if len(self.buffer) >= _GIT_OBJECT_HEADER_LIMIT:
+                raise ValueError("Git cat-file batch header is too long")
+            self.buffer.extend(self._read_from_pipe(
+                min(8192, _GIT_OBJECT_HEADER_LIMIT - len(self.buffer)), deadline,
+            ))
+
+    def exact(self, size: int, deadline: float, consume: Callable[[bytes], None]) -> None:
+        remaining = size
+        while remaining:
+            if self.buffer:
+                count = min(remaining, len(self.buffer), _GIT_OBJECT_READ_CHUNK)
+                chunk = bytes(self.buffer[:count])
+                del self.buffer[:count]
+            else:
+                chunk = self._read_from_pipe(min(remaining, _GIT_OBJECT_READ_CHUNK), deadline)
+            consume(chunk)
+            remaining -= len(chunk)
+
+    def exact_bytes(self, size: int, deadline: float) -> bytes:
+        chunks: list[bytes] = []
+        remaining = size
+        while remaining:
+            if self.buffer:
+                count = min(remaining, len(self.buffer), _GIT_OBJECT_READ_CHUNK)
+                chunk = bytes(self.buffer[:count])
+                del self.buffer[:count]
+            else:
+                chunk = self._read_from_pipe(min(remaining, _GIT_OBJECT_READ_CHUNK), deadline)
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        return b"".join(chunks)
+
+    def has_extra_after_eof(self, deadline: float) -> bool:
+        if self.buffer:
+            return True
+        try:
+            self.buffer.extend(self._read_from_pipe(1, deadline))
+        except EOFError:
+            return False
+        return bool(self.buffer)
 
 
 @dataclass(frozen=True)
@@ -343,10 +427,111 @@ class GitRepositoryProvider:
             raise GitProviderError("workspace journal identity does not match the requested workspace")
         return record
 
+    def _blob_digests(self, object_ids: list[str], *, cwd: Path | None = None) -> tuple[str, ...]:
+        """Hash blob contents through bounded, sequential cat-file batches.
+
+        Requests and responses are interleaved on one pipe, so neither side can
+        fill the other's pipe while a caller waits. Blob bytes stream directly
+        into SHA-256; memory use is independent of object size and batch output.
+        """
+        if not object_ids:
+            return ()
+        for object_id in object_ids:
+            if (not isinstance(object_id, str) or len(object_id) not in {40, 64}
+                    or any(char not in "0123456789abcdef" for char in object_id)):
+                raise GitProviderError("Git returned an invalid object ID")
+
+        results: list[str] = []
+        directory = cwd or self.config.repository_root
+        command = ("cat-file", "--batch")
+        argv = ["git", "--no-replace-objects", "-c", "core.hooksPath=/dev/null",
+                "-C", str(directory), *command]
+        timeout = self.config.command_timeout_seconds
+        for offset in range(0, len(object_ids), _GIT_OBJECT_BATCH_SIZE):
+            batch = object_ids[offset:offset + _GIT_OBJECT_BATCH_SIZE]
+            try:
+                with tempfile.TemporaryFile(mode="w+b") as error_output:
+                    process = subprocess.Popen(
+                        argv, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                        stderr=error_output, env=self._environment(), bufsize=0,
+                    )
+                    assert process.stdin is not None and process.stdout is not None
+                    reader = _BatchObjectReader(process.stdout, command=command, timeout=timeout)
+                    try:
+                        for object_id in batch:
+                            deadline = time.monotonic() + timeout
+                            request = memoryview(object_id.encode("ascii") + b"\n")
+                            while request:
+                                written = process.stdin.write(request)
+                                if not written:
+                                    raise BrokenPipeError("Git cat-file batch closed its input")
+                                request = request[written:]
+                            header = reader.line(deadline)
+                            fields = header[:-1].split(b" ")
+                            if len(fields) != 3:
+                                raise GitProviderError("Git returned an invalid cat-file batch header")
+                            try:
+                                returned_oid = fields[0].decode("ascii")
+                                object_type = fields[1]
+                                object_size = int(fields[2], 10)
+                            except (UnicodeError, ValueError) as exc:
+                                raise GitProviderError("Git returned an invalid cat-file batch header") from exc
+                            if (returned_oid != object_id or object_type != b"blob"
+                                    or object_size < 0 or fields[2] != str(object_size).encode("ascii")):
+                                raise GitProviderError("Git cat-file batch returned the wrong object")
+                            content_digest = hashlib.sha256()
+                            object_digest = hashlib.new("sha1" if len(object_id) == 40 else "sha256")
+                            object_digest.update(f"blob {object_size}\0".encode("ascii"))
+
+                            def update_digests(chunk: bytes) -> None:
+                                content_digest.update(chunk)
+                                object_digest.update(chunk)
+
+                            reader.exact(object_size, deadline, update_digests)
+                            if reader.exact_bytes(1, deadline) != b"\n":
+                                raise GitProviderError("Git cat-file batch record is truncated or malformed")
+                            if object_digest.hexdigest() != object_id:
+                                raise GitProviderError("Git blob bytes do not match the requested object ID")
+                            results.append(content_digest.hexdigest())
+                        process.stdin.close()
+                        process.stdin = None
+                        deadline = time.monotonic() + timeout
+                        if reader.has_extra_after_eof(deadline):
+                            raise GitProviderError("Git returned extra cat-file batch data")
+                        try:
+                            return_code = process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                        except subprocess.TimeoutExpired as exc:
+                            try:
+                                process.kill()
+                            except ProcessLookupError:
+                                pass
+                            raise GitProviderError("Git cat-file batch exceeded its command timeout") from exc
+                        if return_code != 0:
+                            error_output.seek(0)
+                            detail = error_output.read(64 * 1024).decode("utf-8", errors="replace")
+                            raise GitCommandError(command, return_code, detail)
+                    finally:
+                        if process.poll() is None:
+                            try:
+                                process.kill()
+                            except ProcessLookupError:
+                                pass
+                            process.wait()
+                        if process.stdin is not None:
+                            process.stdin.close()
+                        process.stdout.close()
+                        reader.close()
+            except GitProviderError:
+                raise
+            except (OSError, EOFError, ValueError, BrokenPipeError, subprocess.TimeoutExpired) as exc:
+                raise GitProviderError("could not read exact Git blob data from a bounded batch") from exc
+        return tuple(results)
+
     def _commit_manifest(self, commit: str, *, cwd: Path | None = None,
                          excluded_paths: tuple[str, ...] | None = None) -> tuple[_ManifestEntry, ...]:
         output = self._git(["ls-tree", "-r", "-z", "--full-tree", commit], cwd=cwd)
         result: list[_ManifestEntry] = []
+        blob_entries: list[tuple[bytes, str, str]] = []
         excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
         for item in output.split(b"\0"):
             if not item:
@@ -366,8 +551,12 @@ class GitRepositoryProvider:
                 continue
             if object_type != "blob":
                 raise GitProviderError("unsupported Git tree entry type")
-            blob = self._git(["cat-file", "blob", oid], cwd=cwd)
-            result.append(_ManifestEntry(name, mode, hashlib.sha256(blob).hexdigest()))
+            blob_entries.append((name, mode, oid))
+        blob_digests = self._blob_digests([oid for _, _, oid in blob_entries], cwd=cwd)
+        result.extend(
+            _ManifestEntry(name, mode, digest)
+            for (name, mode, _), digest in zip(blob_entries, blob_digests, strict=True)
+        )
         return tuple(sorted(result, key=lambda entry: entry.path))
 
     @staticmethod
@@ -549,6 +738,7 @@ class GitRepositoryProvider:
         # fsmonitor hook. Source observation must remain a local byte read.
         output = self._git(["-c", "core.fsmonitor=false", "ls-files", "--stage", "-z"], cwd=root)
         result: list[_ManifestEntry] = []
+        blob_entries: list[tuple[bytes, str, str]] = []
         excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
         for item in output.split(b"\0"):
             if not item:
@@ -571,8 +761,12 @@ class GitRepositoryProvider:
                 entry = self._gitlink_entry(name, oid, "index-pointer")
                 result.append(_ManifestEntry(name, indexed_mode, entry.digest, entry.coverage))
             else:
-                blob = self._git(["cat-file", "blob", oid], cwd=root)
-                result.append(_ManifestEntry(name, indexed_mode, hashlib.sha256(blob).hexdigest()))
+                blob_entries.append((name, indexed_mode, oid))
+        blob_digests = self._blob_digests([oid for _, _, oid in blob_entries], cwd=root)
+        result.extend(
+            _ManifestEntry(name, mode, digest)
+            for (name, mode, _), digest in zip(blob_entries, blob_digests, strict=True)
+        )
         return tuple(sorted(result, key=lambda entry: (entry.path, entry.mode, entry.digest)))
 
     @staticmethod
