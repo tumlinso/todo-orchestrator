@@ -587,7 +587,8 @@ class GitRepositoryProvider:
                 gitlinks[name] = oid
         return gitlinks
 
-    def _observe_gitlink_path(self, root: Path, relative: bytes, oid: str) -> str:
+    def _observe_gitlink_path(self, root: Path, relative: bytes, oid: str, *,
+                              tracked_only: bool = False) -> str:
         """Validate one committed gitlink without fetching or initializing it."""
         path = root / Path(os.fsdecode(relative))
         current = root
@@ -670,6 +671,12 @@ class GitRepositoryProvider:
         if any(item.split(b"\t", 1)[0].split(b" ")[1:2] == [b"commit"]
                for item in nested_tree.split(b"\0") if item):
             raise GitProviderError(f"nested gitlinks are not covered by this provider: {os.fsdecode(relative)}")
+        if tracked_only:
+            # Only ref-only root preservation uses Git's ignored-payload
+            # boundary. Never inherit parent runtime exclusions into a module.
+            if not self._ref_only_root_is_clean(path, actual_head, excluded_paths=()):
+                raise GitProviderError(f"initialized gitlink has tracked or nonignored changes: {os.fsdecode(relative)}")
+            return "initialized-clean-tracked-at-committed-pointer"
         nested_baseline = self._commit_manifest(actual_head, cwd=path, excluded_paths=())
         nested_files = self._filesystem_manifest(path, actual_head, excluded_paths=())
         nested_index = self._index_manifest(path, excluded_paths=())
@@ -1594,6 +1601,60 @@ class GitRepositoryProvider:
         return GitEffectObservation(request.operation_id, GitEffectDisposition.APPLIED,
                                     base_digest, (), branch)
 
+    def _ref_only_root_is_clean(self, root: Path, head: str, *,
+                                excluded_paths: tuple[str, ...] | None = None) -> bool:
+        """Protect tracked/index state without reading unrelated ignored payloads.
+
+        Only unchecked-out ref integration uses this narrower root guard. Its
+        merge-tree/commit-tree/update-ref path never writes a worktree/index;
+        managed source observations still use the complete raw manifest.
+        """
+        excluded = self.config.excluded_paths if excluded_paths is None else excluded_paths
+        baseline = self._commit_manifest(head, cwd=root, excluded_paths=excluded)
+        if self._index_manifest(root, excluded_paths=excluded) != baseline:
+            return False
+        untracked = self._git([
+            "-c", "core.fsmonitor=false", "-c", "core.untrackedCache=false",
+            "ls-files", "--others", "--exclude-standard", "-z",
+        ], cwd=root)
+        if any(not self._excluded(os.fsdecode(path), excluded)
+               for path in untracked.split(b"\0") if path):
+            return False
+        gitlinks = self._commit_gitlinks(head, cwd=root, excluded_paths=excluded) if self.config.gitlink_policy == "opaque_clean" else {}
+        for expected in baseline:
+            path = root / os.fsdecode(expected.path)
+            try:
+                parent = root
+                for part in Path(os.fsdecode(expected.path)).parts[:-1]:
+                    parent /= part
+                    if not stat.S_ISDIR(parent.lstat().st_mode):
+                        return False
+                if expected.mode == "160000":
+                    oid = gitlinks.get(expected.path)
+                    if oid is None:
+                        return False
+                    coverage = self._observe_gitlink_path(root, expected.path, oid, tracked_only=True)
+                    actual = self._gitlink_entry(expected.path, oid, coverage)
+                else:
+                    info = path.lstat()
+                    if stat.S_ISLNK(info.st_mode):
+                        actual = _ManifestEntry(expected.path, "120000",
+                            hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest())
+                    elif stat.S_ISREG(info.st_mode):
+                        digest = hashlib.sha256()
+                        with path.open("rb") as source:
+                            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                        actual = _ManifestEntry(expected.path,
+                            "100755" if info.st_mode & 0o111 else "100644", digest.hexdigest())
+                    else:
+                        return False
+                if actual != expected:
+                    return False
+            except OSError:
+                return False
+        return True
+
     def _integrate(self, request: GitEffectRequest) -> GitEffectObservation:
         if (request.workspace_id is None or request.source_commit is None or request.destination_ref is None
                 or request.expected_destination is None):
@@ -1634,10 +1695,21 @@ class GitRepositoryProvider:
             _root_common, root_head, _root_index = self._assert_worktree(self.config.repository_root, checked_out_ref)
         except GitProviderError:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.UNKNOWN)
-        _destination_entries, _destination_index, destination_safety = self._path_state(
-            self.config.repository_root, root_head,
-        )
-        if destination_safety is not SourceSafety.CLEAN:
+        # The destination was proved unchecked-out above. This path uses only
+        # immutable Git objects and an expected-old ref CAS, never the root's
+        # index or files. Preserve ignored caches/payloads without hashing them.
+        external_config = self._git([
+            "config", "--name-only", "--get-regexp",
+            r"^merge\..*\.driver$|^merge\.renormalize$|^commit\.gpgsign$",
+        ], check=False).strip()
+        if external_config:
+            # Custom drivers/renormalization/signing are not proved to be
+            # in-core. Preserve the original full raw-root protection there.
+            _entries, _index, root_safety = self._path_state(self.config.repository_root, root_head)
+            root_clean = root_safety is SourceSafety.CLEAN
+        else:
+            root_clean = self._ref_only_root_is_clean(self.config.repository_root, root_head)
+        if not root_clean:
             return GitEffectObservation(request.operation_id, GitEffectDisposition.DIRTY)
         if source_oid == current or self._is_ancestor(source_oid, current):
             return GitEffectObservation(request.operation_id, GitEffectDisposition.REJECTED)

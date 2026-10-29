@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import hashlib
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -10,6 +12,7 @@ import subprocess
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 from todo_orchestrator.authority.attempts import AttemptService
 from todo_orchestrator.contracts import (
@@ -165,6 +168,42 @@ class GitlinkProviderTests(unittest.TestCase):
         subprocess.run(["git", "clone", "--separate-git-dir", str(gitdir), str(self.nested_source), str(nested)],
                        check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         return nested
+
+    def test_ref_only_root_ignores_nested_private_payload_but_keeps_tracked_guards(self) -> None:
+        workspace = self._create_workspace(self.provider, "ref-only-nested")
+        nested = self._initialize_nested_checkout(workspace)
+        private = nested / "ignored.dat"
+        private.write_bytes(b"preserved private module payload\0")
+        original_open = Path.open
+        def guard(path, *args, **kwargs):
+            if path == private:
+                raise AssertionError("ref-only root read ignored module payload")
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, "open", guard):
+            self.assertTrue(self.provider._ref_only_root_is_clean(workspace, self.head))
+        self.assertEqual(private.read_bytes(), b"preserved private module payload\0")
+        runtime_dir = nested / ".todo-orchestrator"
+        runtime_dir.mkdir()
+        runtime_file = runtime_dir / "unignored-runtime"
+        runtime_file.write_text("must not inherit the parent exclusion\n")
+        parent_excluding = GitRepositoryProvider(replace(self.provider.config,
+                                                         excluded_paths=(".todo-orchestrator",)))
+        with self.assertRaises(GitProviderError):
+            parent_excluding._ref_only_root_is_clean(workspace, self.head)
+        runtime_file.unlink()
+        runtime_dir.rmdir()
+        # The same bytes remain unacceptable for a managed source observation.
+        with self.assertRaises(GitProviderError):
+            self.provider._path_state(workspace, self.head)
+        tracked = nested / "nested.txt"
+        original = tracked.read_bytes()
+        tracked.write_bytes(b"modified tracked module source\n")
+        with self.assertRaises(GitProviderError):
+            self.provider._ref_only_root_is_clean(workspace, self.head)
+        git(nested, "add", "nested.txt")
+        tracked.write_bytes(original)
+        with self.assertRaises(GitProviderError):
+            self.provider._ref_only_root_is_clean(workspace, self.head)
 
     def test_initialized_gitlink_requires_trusted_gitfile_exact_head_and_no_nested_changes(self) -> None:
         workspace = self._create_workspace(self.provider, "gitlink-initialized")

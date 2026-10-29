@@ -11,6 +11,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from todo_orchestrator.contracts import (
     EffectInspectionRequest,
@@ -536,6 +537,75 @@ class GitProviderIndependentTests(unittest.TestCase):
         self.assertEqual(observed.status, ProviderStatus.OBSERVED_SUCCESS, observed)
         self.assertEqual(self.git.snapshot(self.git.repository), before_root)
         self.assertEqual(self.git.snapshot(workspace), before_workspace)
+
+    def test_ref_only_integration_preserves_and_never_reads_ignored_root_payload(self):
+        workspace = self.create_workspace("ignored-root")
+        (workspace / "feature.txt").write_bytes(b"source change\n")
+        self.git.git(workspace, "add", "feature.txt")
+        self.git.git(workspace, "commit", "--quiet", "-m", "source change")
+        source = self.git.git(workspace, "rev-parse", "HEAD").stdout.strip()
+        (self.git.repository / ".git/info/exclude").write_text("*.cache\n")
+        ignored = self.git.repository / "large.cache"
+        ignored.write_bytes(b"preserved ignored payload\0" * 100000)
+        root_before = self.git.snapshot(self.git.repository)
+        source_before = self.git.snapshot(workspace)
+        original_open = Path.open
+        def guarded_open(path, *args, **kwargs):
+            if path == ignored:
+                raise AssertionError("ref-only integration read unrelated ignored payload")
+            return original_open(path, *args, **kwargs)
+        with patch.object(Path, "open", guarded_open):
+            result = self.provider.perform(self.integrate_request("ignored-root", source))
+        self.assertEqual(result.status, ProviderStatus.OBSERVED_SUCCESS)
+        self.assertEqual(result.value.disposition, GitEffectDisposition.APPLIED)
+        self.assertEqual(self.git.snapshot(self.git.repository), root_before)
+        self.assertEqual(self.git.snapshot(workspace), source_before)
+
+    def test_external_merge_configuration_retains_full_raw_root_guard(self):
+        workspace = self.create_workspace("external-merge-root")
+        source = self.git.git(workspace, "rev-parse", "HEAD").stdout.strip()
+        (self.git.repository / ".git/info/exclude").write_text("*.cache\n")
+        (self.git.repository / "retained.cache").write_bytes(b"ignored payload\n")
+        self.git.git(self.git.repository, "config", "merge.custom.driver", "false")
+        result = self.provider.perform(self.integrate_request("external-merge-root", source))
+        self.assertEqual(result.value.disposition, GitEffectDisposition.DIRTY)
+
+    def test_ref_only_guard_rejects_modified_root_and_nonignored_untracked_files(self):
+        for kind in ("modified", "untracked"):
+            with self.subTest(kind=kind):
+                path = self.git.repository / ("README.md" if kind == "modified" else "new.txt")
+                original = path.read_bytes() if path.exists() else None
+                path.write_bytes(b"preserved dirty root\n")
+                self.assertFalse(self.provider._ref_only_root_is_clean(self.git.repository, self.git.base))
+                if original is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(original)
+
+    def test_ref_only_does_not_exempt_ignored_dirty_managed_source(self):
+        workspace = self.create_workspace("ignored-source")
+        (self.git.repository / ".git/info/exclude").write_text("*.cache\n")
+        source = self.git.git(workspace, "rev-parse", "HEAD").stdout.strip()
+        ignored = workspace / "source.cache"
+        ignored.write_bytes(b"source identity must include this\n")
+        before = self.git.snapshot(workspace)
+        result = self.provider.perform(self.integrate_request("ignored-source", source))
+        self.assertEqual(result.value.disposition, GitEffectDisposition.DIRTY)
+        self.assertEqual(self.git.snapshot(workspace), before)
+
+    def test_ref_only_refuses_checked_out_integration_destination(self):
+        workspace = self.create_workspace("checked-destination")
+        (workspace / "feature.txt").write_bytes(b"source change\n")
+        self.git.git(workspace, "add", "feature.txt")
+        self.git.git(workspace, "commit", "--quiet", "-m", "source change")
+        source = self.git.git(workspace, "rev-parse", "HEAD").stdout.strip()
+        self.git.git(self.git.repository, "worktree", "add", str(self.git.worktree_root / "destination"),
+                     str(self.config.integration_ref).removeprefix("refs/heads/"))
+        self.assertTrue(self.provider._ref_is_checked_out(self.config.integration_ref))
+        before = self.git.snapshot(self.git.repository)
+        result = self.provider.perform(self.integrate_request("checked-destination", source))
+        self.assertEqual(result.value.disposition, GitEffectDisposition.REJECTED)
+        self.assertEqual(self.git.snapshot(self.git.repository), before)
 
     def test_dirty_destination_with_staged_unstaged_and_untracked_files_is_preserved(self):
         workspace = self.create_workspace("dirty-destination")
