@@ -760,8 +760,9 @@ class RecoveryInspectionService:
                         and (request.source_commit is None
                              or source_observation.source_revision == request.source_commit)
                     )
-                    host_safe = self._host_safe_for_retry(
-                        host_observation, attempt_ref, request.attempt,
+                    host_safe = (
+                        self._host_safe_for_retry(host_observation, attempt_ref, request.attempt)
+                        or self._accepted_integration_fenced_for_retry(authority, request, source_observation)
                     ) and _native_children_safe(children)
                 if source_matches and host_safe:
                     status = RecoveryOperationStatus.SAFELY_RETRYABLE
@@ -1065,6 +1066,45 @@ class RecoveryInspectionService:
             and tuple(sorted((str(item.name), item.digest.hex) for item in source.inputs))
                 == tuple(sorted((str(item.name), item.digest.hex) for item in request.inputs))
         )
+
+    def _accepted_integration_fenced_for_retry(
+        self, authority: SQLiteAuthority, request: GitEffectRequest,
+        source: SourceObservation | None,
+    ) -> bool:
+        """Revalidate one accepted immutable integration, without a worker lease.
+
+        All other operation recovery retains the stopped-process requirement.
+        A host's durable source fence must exactly match accepted provenance,
+        and the full current source must still equal that accepted observation.
+        """
+        if request.operation is not GitOperationKind.INTEGRATE or source is None:
+            return False
+        handoff_for = getattr(self.host, "authoring_handoff_for", None)
+        if not callable(handoff_for):
+            return False
+        try:
+            from todo_orchestrator.providers.git.service import _accepted_identity, _source_value
+            from todo_orchestrator.verification.acceptance import _authoring_handoff_value
+            from todo_orchestrator.model import AttemptAuthoringHandoff
+
+            with authority.read_transaction() as connection:
+                provenance, _receipt, _digest = _accepted_identity(
+                    connection, authority.project, request, self.operation_inspectors["git"].identity,
+                )
+                attempt, _row = _stored_attempt(connection, authority.project, request.attempt)
+            proof = handoff_for(attempt)
+            return bool(
+                isinstance(proof, AttemptAuthoringHandoff)
+                and proof.attempt == request.attempt
+                and proof.workspace_id == request.workspace_id
+                and proof.source_commit == request.source_commit
+                and proof.source_digest == request.expected_source
+                and _source_value(source) == provenance["source"]
+                and _authoring_handoff_value(proof)
+                    == provenance["host_safety"]["authoring_handoff"]
+            )
+        except Exception:
+            return False
 
     @staticmethod
     def _host_safe_for_retry(observation: AttemptSafetyObservation | None,
